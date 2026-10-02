@@ -55,12 +55,12 @@ cp .env.example .env
 # Set SECRET_KEY. Local identity JWKS URL is already in .env.example
 npm ci && npm run build:css
 uv run python manage.py migrate
-uv run python manage.py runserver 8002
+uv run python manage.py runserver 8003
 ```
 
 The landing page (`templates/home.html`) uses Tailwind compiled into `static/css/site.css`. With `DEBUG=true`, `runserver` runs `npm run build:css` once at startup (and runs `npm ci` if `node_modules` is missing). For live CSS edits, use a second terminal: `npm run watch:css`.
 
-Open `http://localhost:8002/`.
+Open `http://localhost:8003/`.
 
 Dependencies live in `pyproject.toml` and are locked in `uv.lock`.
 
@@ -107,7 +107,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Host port: `8002` (container listens on `8000`).
+Host port: `8003` (container listens on `8000`). Identity uses 8000, storage 8001, and hosting 8002.
 
 Publishing the image is manual. See [PUBLISH.md](PUBLISH.md).
 

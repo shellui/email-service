@@ -104,8 +104,8 @@ ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
 CSRF_TRUSTED_ORIGINS = _env_csv(
     'CSRF_TRUSTED_ORIGINS',
     (
-        'http://localhost:8002',
-        'http://127.0.0.1:8002',
+        'http://localhost:8003',
+        'http://127.0.0.1:8003',
         'http://localhost:4000',
         'http://127.0.0.1:4000',
         'http://localhost:5174',

@@ -21,6 +21,7 @@ When `DEBUG=true`, those three keys are derived from `SECRET_KEY` so local runs 
 
 | Variable | Default | Role |
 | --- | --- | --- |
+| `EMAIL_SERVICE_PORT` | `8003` | Host port for Docker Compose. The container still listens on `8000`. Identity is 8000, storage 8001, hosting 8002. |
 | `PUBLIC_BASE_URL` | `https://email.shellui.com` | Unsubscribe links and the public origin |
 | `DEFAULT_FROM_EMAIL` | `no-reply@shellui.com` | Auth and transactional fallback |
 | `DEFAULT_FROM_NAME` | `Shellui` | Display name |

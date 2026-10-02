@@ -10,7 +10,7 @@ Publishing to Docker Hub is manual. There is no CI workflow that pushes the imag
 | --- | --- |
 | Registry | Docker Hub |
 | Repository | `shellui/email-service` |
-| Listen port | `8000` (Compose maps host `${EMAIL_SERVICE_PORT:-8002}`) |
+| Listen port | `8000` (Compose maps host `${EMAIL_SERVICE_PORT:-8003}`) |
 | Data volume | `/app/data` |
 
 The image contains application code, the React Email renderer (`EMAIL_RENDERER=node`), and collected static files. Gunicorn listens on port 8000. Secrets come from the environment at start (see `.env.example`).
@@ -48,7 +48,7 @@ export EMAIL_HASH_PEPPER="$(uv run python -c "import secrets; print(secrets.toke
 VERSION=0.1.0
 docker build -t "shellui/email-service:${VERSION}" .
 
-docker run --rm -d --name email-release-smoke -p 18002:8000 \
+docker run --rm -d --name email-release-smoke -p 18003:8000 \
   -e SECRET_KEY \
   -e EMAIL_CREDENTIALS_KEY \
   -e EMAIL_VARIABLES_KEY \
@@ -67,7 +67,7 @@ docker run --rm -d --name email-release-smoke -p 18002:8000 \
 `GET /api/v1/health` does not open Postgres. A full boot with `DEBUG=false` still requires the variables above to be set, and a real `POSTGRES_DATABASE_URL` plus `REDIS_URL` before traffic. For a local health check without those services, run the container with `DEBUG=true` and SQLite.
 
 ```bash
-curl -sS http://127.0.0.1:18002/api/v1/health
+curl -sS http://127.0.0.1:18003/api/v1/health
 docker stop email-release-smoke
 ```
 

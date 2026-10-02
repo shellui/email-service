@@ -10,7 +10,7 @@ OpenAPI (generated from the running service): `GET /api/schema/`, Swagger at `/a
 
 | Variable | Default | Use |
 | --- | --- | --- |
-| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. Callers append paths such as `/api/v1/send`. No trailing slash required. |
+| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. Callers append paths such as `/api/v1/send`. No trailing slash required. Local Compose is `http://localhost:8003`. |
 | `EMAIL_SERVICE_API_KEY` | none | Service key issued by email-service. Prefix `esk_`. Send as `Authorization: Bearer <key>`. |
 
 Store the key in the caller's secret store. email-service stores only a SHA-256 hash and a 12-character prefix. The plaintext is returned once, from `POST /api/v1/service-clients` or `manage.py create_service_key`.
@@ -113,16 +113,23 @@ Callers that retry network failures must send the same key and the same body.
 
 ## Retries (callers)
 
-| Result | Caller behavior |
-| --- | --- |
-| `202` | Accepted. Read `messages[].status`. Do not send again unless you intend a new message. |
-| `409 lane_paused` | Retry with the same idempotency key after a delay. |
-| `429` | Retry with the same idempotency key. Honor any wait you already use for your own webhooks. |
-| `502 provider_test_failed` | Test send only. Safe to retry. |
-| `422 recipient_suppressed` | Do not retry. Tell the user the address cannot receive auth mail. |
-| `400`, `401`, `403`, `404` | Do not retry unchanged. |
+Retry with the same `idempotency_key` and the same JSON body. Backoff matches Shellui Actions webhook delivery in identity, storage, and hosting: **30 seconds times 2^(attempt-1)**, capped at **1 hour**, up to **8** attempts. For `429` and `503`, wait `Retry-After` when that header is present, still capped at 1 hour.
 
-Workers inside email-service retry provider failures on their own. Callers should not poll `/send` to force a retry.
+| Result | What the caller does |
+| --- | --- |
+| 2xx | Done. `202` with `skipped_reason` (`rule_disabled` or `no_recipients`) is finished. Do not retry it. |
+| 404, 408, 409, 425, 429, any other 4xx not in the next row, 5xx, timeouts, connection errors | Retry |
+| 400, 401, 403, 405, 410, 413, 422 | Permanent. Do not retry that body. |
+
+`404` is retryable. Sibling webhook delivery retries `404` so an inactive n8n workflow can start later. On this API, `404` means `template_not_found`, `message_not_found`, or `not_found`.
+
+`409` is retryable. `lane_paused` clears when the lane resumes. `idempotency_conflict` means this key was already stored with a different body. Send the original body, or use a new key.
+
+`422` is permanent. For auth mail it is `recipient_suppressed`.
+
+`5xx` (including `502 provider_test_failed`) and connection errors are retryable. The event was not accepted.
+
+Workers inside email-service retry provider failures on their own. Callers do not poll `/send` to force a provider retry.
 
 ## Direct send
 
@@ -297,7 +304,7 @@ Recipient selection:
 
 `language` on the request wins. If omitted, the rule language is used, then `en`.
 
-`payload` keys match the template variables. For `hosting.deployment.failed` the failure text is `error` (for example `artifact_extract_failed`), the same field hosting stores on its webhook payload.
+`payload` keys match the template variables. Extra keys are ignored. For `hosting.deployment.failed` the failure text is `error` (for example `artifact_extract_failed`), the same field hosting stores on its webhook payload.
 
 `company_name` may be omitted. email-service fills it before validation, in this order:
 

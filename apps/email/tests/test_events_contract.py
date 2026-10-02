@@ -67,6 +67,24 @@ class HostingContractTests(TestCase):
         body.update(extra)
         return body
 
+    def test_local_port_and_caller_retry_contract(self):
+        compose = (ROOT / 'docker-compose.yml').read_text(encoding='utf-8')
+        example = (ROOT / '.env.example').read_text(encoding='utf-8')
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        integration = (ROOT / 'docs' / 'integration.md').read_text(encoding='utf-8')
+        self.assertIn('EMAIL_SERVICE_PORT:-8003', compose)
+        self.assertIn('EMAIL_SERVICE_PORT=8003', example)
+        self.assertIn('localhost:8003', readme)
+        self.assertIn('http://localhost:8003', integration)
+        self.assertNotIn('8002', compose)
+        self.assertNotIn('8002', example)
+        self.assertNotIn('localhost:8002', readme)
+        self.assertNotIn('localhost:8002', integration)
+        self.assertIn('404, 408, 409, 425, 429', integration)
+        self.assertIn('400, 401, 403, 405, 410, 413, 422', integration)
+        self.assertIn('`404` is retryable', integration)
+        self.assertIn('connection errors', integration)
+
     def test_catalog_and_docs_use_error(self):
         definition = get_definition('hosting.deployment.failed')
         tokens = {item['token'] for item in definition['variables']}
