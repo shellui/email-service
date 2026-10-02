@@ -4,6 +4,8 @@
 
 Enabled means a new company receives the mail when a service calls `POST /api/v1/events`, with no `EmailRule` row yet. Direct `/send` does not consult this flag. Identity should still call `/send` for the two auth templates so a later rule change cannot stop sign-in mail.
 
+An enabled event with no recipient (`recipients: []`, or a static rule with no addresses) is accepted and skipped. See [integration.md](integration.md). Callers do not send `company_name`. email-service fills it from a name it already stored, or the mail uses the template's language default.
+
 Disabled events are noisy (every upload, every user edit). A company turns them on from the admin API.
 
 Languages: `en` and `fr` for every row. Variables are on the catalog response.

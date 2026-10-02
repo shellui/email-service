@@ -236,10 +236,9 @@ Auth: service key. `service` must equal the key's service name.
   "language": "en",
   "idempotency_key": "hosting-deployment-99-failed",
   "payload": {
-    "company_name": "Acme",
     "display_name": "My App",
     "app_version": "1.2.0",
-    "error_summary": "Build exited 1"
+    "error": "artifact_extract_failed"
   },
   "recipients": [
     {"email": "ada@acme.com", "user_id": 7}
@@ -264,7 +263,7 @@ When the rule is disabled, `202`:
 }
 ```
 
-When the rule is enabled, `202`:
+When the rule is enabled and at least one recipient resolves, `202`:
 
 ```json
 {
@@ -274,18 +273,42 @@ When the rule is enabled, `202`:
 }
 ```
 
-`messages` uses the same object as `/send`.
+`messages` uses the same object as `/send`. An empty `messages` array here means every recipient was suppressed on a non-auth lane.
+
+When the rule is enabled but no recipient resolves, `202` (not `400`):
+
+```json
+{
+  "idempotent_replay": false,
+  "rule_enabled": true,
+  "skipped_reason": "no_recipients",
+  "messages": []
+}
+```
+
+That covers `recipients: []`, a missing `recipients` field, and a `static` rule whose `static_recipients` list is empty. The event is counted in `GET /api/v1/stats` under `skipped.no_recipients`. Callers should treat this `202` as finished. Do not retry it. A non-list `recipients` value is still `400 validation_failed`.
 
 Recipient selection:
 
 | `recipient_mode` | Behavior |
 | --- | --- |
-| `hints` (default) | Use the `recipients` array on the request. |
-| `static` | Ignore request recipients. Use `static_recipients` on the rule (strings or `{email, user_id}` objects). |
+| `hints` (default) | Use the `recipients` array on the request. An empty list is `skipped_reason: no_recipients`. |
+| `static` | Ignore request recipients. Use `static_recipients` on the rule (strings or `{email, user_id}` objects). An empty list is `skipped_reason: no_recipients`. |
 
 `language` on the request wins. If omitted, the rule language is used, then `en`.
 
-`payload` keys must match the template variables. Required variables with an empty value return `validation_failed` and `field_errors` such as `payload.company_name: ["required"]`.
+`payload` keys match the template variables. For `hosting.deployment.failed` the failure text is `error` (for example `artifact_extract_failed`), the same field hosting stores on its webhook payload.
+
+`company_name` may be omitted. email-service fills it before validation, in this order:
+
+1. `company_name` on this request, when it is non-empty. That value is stored for the company.
+2. A `company_name` stored from an earlier `/send` or `/events` call for the same `company_id` (identity mail usually does this).
+3. The company provider `from_name`, when the provider is configured and `from_name` is not the platform default (`Shellui`).
+4. Otherwise the variable is left unset. Suggested templates then use their language default (`your company` in English, `votre entreprise` in French).
+
+Hosting and storage do not need to send `company_name`. Identity still may. Auth templates that require `company_name` (`identity.auth.magic_link.requested`, `identity.user.invited`, `identity.user.invitation_revoked`) succeed without it once a name is stored. If none of the sources above has a name, those templates still return `validation_failed` with `variables.company_name: ["required"]`. Other required variables are unchanged.
+
+email-service does not call identity's company API. That API is limited to members of the company, and a service key is not a member.
 
 URL variables must be `https`, `mailto`, or `tel`. `http://localhost` and `http://127.0.0.1` are allowed only when `DEBUG=true`. Auth URL variables (`magic_link_url`) must use a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false`, `localhost`, `127.0.0.1`, and `::1` are removed from that list even if the environment includes them.
 
@@ -514,6 +537,7 @@ Default window: the last 30 days.
     "suppressed": 0,
     "cancelled": 0
   },
+  "skipped": {"total": 0, "no_recipients": 0, "rule_disabled": 0},
   "by_lane": {},
   "by_event": {},
   "by_day": [{"day": "2026-10-01", "sent": 1, "delivered": 0, "bounced": 0, "complained": 0, "expired": 0, "failed": 0, "queued": 0, "suppressed": 0, "cancelled": 0}]
@@ -521,6 +545,8 @@ Default window: the last 30 days.
 ```
 
 `sent` counts provider-accepted messages. A `delivered` or `bounced` row is also included in `sent`, so `sent` is a superset of the later provider statuses. `by_event` keys are `event_type` (the catalog id).
+
+`skipped` counts accepted `POST /api/v1/events` calls that queued no message. `no_recipients` is an enabled rule with no resolvable address. `rule_disabled` is a catalog or company rule that is off. `from`, `to`, `event_type`, and `lane` filter these rows the same way they filter messages. `lane` uses the catalog lane of the event.
 
 ## Admin: suppressions, lanes, privacy, clients
 

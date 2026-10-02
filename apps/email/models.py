@@ -134,6 +134,32 @@ class EmailRule(models.Model):
         ]
 
 
+class CompanyProfile(models.Model):
+    """Display name learned from a caller. Later events can omit ``company_name``."""
+
+    company_id = models.PositiveIntegerField(unique=True)
+    name = models.CharField(max_length=255)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class EventSkip(models.Model):
+    """An accepted event that did not queue mail."""
+
+    REASON_RULE_DISABLED = 'rule_disabled'
+    REASON_NO_RECIPIENTS = 'no_recipients'
+
+    company_id = models.PositiveIntegerField(db_index=True)
+    service = models.CharField(max_length=64)
+    event_type = models.CharField(max_length=128)
+    reason = models.CharField(max_length=32)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['company_id', 'created_at'], name='email_skip_company_day_idx'),
+        ]
+
+
 class SendRequest(models.Model):
     service = models.CharField(max_length=64)
     company_id = models.PositiveIntegerField()

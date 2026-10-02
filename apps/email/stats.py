@@ -10,7 +10,8 @@ from django.db.models.functions import TruncDate
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from apps.email.models import Message
+from apps.email.catalog import get_definition
+from apps.email.models import EventSkip, Message
 
 COUNT_KEYS = (
     'sent',
@@ -96,11 +97,26 @@ def company_stats(
         by_day[key][bucket] += row['n']
         if row['status'] in Message.PROVIDER_ACCEPTED and bucket != 'sent':
             by_day[key]['sent'] += row['n']
+    skips = EventSkip.objects.filter(company_id=company_id, created_at__gte=start, created_at__lte=end)
+    if event_type:
+        skips = skips.filter(event_type=event_type)
+    skipped = {'total': 0, 'no_recipients': 0, 'rule_disabled': 0}
+    for row in skips.values('reason', 'event_type').annotate(n=Count('id')):
+        if lane:
+            definition = get_definition(row['event_type'])
+            if definition is None or definition.get('lane_class') != lane:
+                continue
+        reason = row['reason']
+        count = row['n']
+        skipped['total'] += count
+        if reason in skipped:
+            skipped[reason] += count
     return {
         'company_id': company_id,
         'from': start.isoformat().replace('+00:00', 'Z'),
         'to': end.isoformat().replace('+00:00', 'Z'),
         'totals': totals,
+        'skipped': skipped,
         'by_lane': dict(by_lane),
         'by_event': dict(by_event),
         'by_day': [{'day': day, **counts} for day, counts in sorted(by_day.items())],

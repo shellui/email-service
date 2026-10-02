@@ -15,11 +15,13 @@ from django.utils import timezone
 
 from apps.actions.emit import emit_email_event
 from apps.email.catalog import LANE_AUTH, LANE_BULK, get_definition
+from apps.email.companies import apply_company_name
 from apps.email.crypto import decrypt_json, email_hmac, encrypt_json, mask_email
 from apps.email.models import (
     CompanyProvider,
     EmailRule,
     EmailTemplate,
+    EventSkip,
     LaneState,
     Message,
     MessageEvent,
@@ -466,6 +468,7 @@ def accept_send(principal, body: dict) -> tuple[int, dict]:
             raise
         merged = dict(variables_in)
         merged.setdefault('recipient_email', recipient['email'])
+        apply_company_name(company_id, merged)
         cleaned = _validate_variables(definition, merged, field_prefix='variables.')
         prepared.append((recipient, cleaned, hmac_value))
     messages = []
@@ -579,6 +582,7 @@ def accept_batch(principal, body: dict) -> tuple[int, dict]:
                 _check_rates(company_id=company_id, lane=lane, hmac_value=hmac_value)
                 merged = dict(variables_in)
                 merged.setdefault('recipient_email', recipient['email'])
+                apply_company_name(company_id, merged)
                 cleaned = _validate_variables(definition, merged, field_prefix=f'items.{index}.variables.')
             except SendError as exc:
                 rejected.append({'index': index, 'error_code': exc.code})
@@ -670,22 +674,31 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
         return replay
     enabled, template_key, rule_language, mode, static_recipients = rule_for(company_id, event_type)
     if not enabled:
-        response = {
-            'idempotent_replay': False,
-            'rule_enabled': False,
-            'skipped_reason': 'rule_disabled',
-            'messages': [],
-        }
-        if idem:
-            SendRequest.objects.create(
-                service=principal.service,
-                company_id=company_id,
-                idempotency_key=idem,
-                payload_hash=payload_hash(body),
-                response_status=202,
-                response_body=response,
-            )
-        return 202, response
+        return _skip_event(
+            principal,
+            company_id,
+            event_type,
+            idem,
+            body,
+            reason=EventSkip.REASON_RULE_DISABLED,
+            rule_enabled=False,
+        )
+    if mode == EmailRule.MODE_STATIC:
+        recipients_raw = [{'email': item} if isinstance(item, str) else item for item in static_recipients]
+    else:
+        recipients_raw = body.get('recipients') if body.get('recipients') is not None else []
+    if not isinstance(recipients_raw, list):
+        raise SendError(400, 'validation_failed', {'recipients': ['invalid']})
+    if not recipients_raw:
+        return _skip_event(
+            principal,
+            company_id,
+            event_type,
+            idem,
+            body,
+            reason=EventSkip.REASON_NO_RECIPIENTS,
+            rule_enabled=True,
+        )
     language = str(body.get('language') or rule_language or 'en')
     definition = get_definition(template_key)
     lane = _check_lane(principal, definition, None, company_id)
@@ -693,12 +706,6 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
     payload = body.get('payload') or {}
     if not isinstance(payload, dict):
         raise SendError(400, 'validation_failed', {'payload': ['invalid']})
-    if mode == EmailRule.MODE_STATIC:
-        recipients_raw = [{'email': item} if isinstance(item, str) else item for item in static_recipients]
-    else:
-        recipients_raw = body.get('recipients') or []
-    if not recipients_raw:
-        raise SendError(400, 'validation_failed', {'recipients': ['required']})
     if len(recipients_raw) > settings.EMAIL_MAX_RECIPIENTS:
         raise SendError(400, 'validation_failed', {'recipients': ['too_many']})
     definition, content = resolve_content(company_id, template_key, language)
@@ -714,6 +721,7 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
             _check_rates(company_id=company_id, lane=lane, hmac_value=hmac_value)
             merged = {key: _coerce(value) for key, value in payload.items()}
             merged.setdefault('recipient_email', recipient['email'])
+            apply_company_name(company_id, merged)
             cleaned = _validate_variables(definition, merged, field_prefix='payload.')
             message = _queue_message(
                 company_id=company_id,
@@ -751,6 +759,31 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
         transaction.on_commit(lambda: _notify(lane))
     fresh = [_message_payload(Message.objects.get(pk=item.pk)) for item in messages]
     response = {'idempotent_replay': False, 'rule_enabled': True, 'messages': fresh}
+    return 202, response
+
+
+def _skip_event(principal, company_id: int, event_type: str, idem: str, body: dict, *, reason: str, rule_enabled: bool):
+    EventSkip.objects.create(
+        company_id=company_id,
+        service=principal.service,
+        event_type=event_type,
+        reason=reason,
+    )
+    response = {
+        'idempotent_replay': False,
+        'rule_enabled': rule_enabled,
+        'skipped_reason': reason,
+        'messages': [],
+    }
+    if idem:
+        SendRequest.objects.create(
+            service=principal.service,
+            company_id=company_id,
+            idempotency_key=idem,
+            payload_hash=payload_hash(body),
+            response_status=202,
+            response_body=response,
+        )
     return 202, response
 
 
