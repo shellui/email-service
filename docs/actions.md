@@ -42,7 +42,7 @@ Backoff is 30s * 2^(attempt-1), capped at 1 hour, up to 8 attempts, then `dead`.
 | 400, 401, 403, 405, 410, 413, 422 | Dead (no retry) |
 | 429 / 503 with `Retry-After` | Next attempt uses `Retry-After` (capped at 1 hour) |
 
-SSRF checks reject private and link-local targets unless `ACTIONS_WEBHOOK_ALLOW_PRIVATE=true` (local only).
+SSRF checks reject private and link-local targets unless `ACTIONS_WEBHOOK_ALLOW_PRIVATE=true` (local only). The check runs when the rule is saved and again at delivery. Delivery connects to the resolved public address, keeps the original `Host` header, and does not follow redirects.
 
 ```cron
 * * * * * python manage.py retry_webhooks

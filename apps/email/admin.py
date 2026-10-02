@@ -29,4 +29,4 @@ class EmailRuleAdmin(admin.ModelAdmin):
 
 @admin.register(LaneState)
 class LaneStateAdmin(admin.ModelAdmin):
-    list_display = ('lane', 'paused', 'reason', 'paused_at')
+    list_display = ('lane', 'company_id', 'paused', 'reason', 'paused_at')

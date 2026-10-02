@@ -30,6 +30,11 @@ class ProviderResult:
     error_code: str = ''
 
 
+def sanitize_header_value(value: str) -> str:
+    """Drop CR and LF so a display name cannot inject SMTP headers."""
+    return ''.join(ch for ch in (value or '') if ch not in '\r\n')
+
+
 class EmailProvider(Protocol):
     name: str
 

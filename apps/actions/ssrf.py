@@ -59,6 +59,35 @@ def _blocked_hostname(host: str, *, allow_private: bool) -> None:
         raise SSRFError('Localhost webhook URLs are not allowed.')
 
 
+def resolve_public_host(hostname: str, port: int, *, allow_private: bool = False) -> str:
+    """Return one public IP for ``hostname``. Raises ``SSRFError`` for private targets."""
+    host = (hostname or '').strip().lower()
+    if not host:
+        raise SSRFError('Host is required.')
+    _blocked_hostname(host, allow_private=allow_private)
+    try:
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        _validate_ip(literal, allow_private=allow_private)
+        return host
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise SSRFError(f'Could not resolve hostname: {host}') from exc
+    if not infos:
+        raise SSRFError(f'Could not resolve hostname: {host}')
+    for info in infos:
+        candidate = ipaddress.ip_address(info[4][0])
+        try:
+            _validate_ip(candidate, allow_private=allow_private)
+        except SSRFError:
+            continue
+        return info[4][0]
+    raise SSRFError('Hostname resolves only to private or non-public addresses.')
+
+
 def resolve_webhook_endpoint(url: str, *, allow_private: bool = False) -> ResolvedWebhookEndpoint:
     """
     Resolve the hostname once and return the address used for the TCP connection.
@@ -74,38 +103,18 @@ def resolve_webhook_endpoint(url: str, *, allow_private: bool = False) -> Resolv
     hostname = (parsed.hostname or '').lower()
     if not hostname:
         raise SSRFError('Webhook URL must include a hostname.')
-    _blocked_hostname(hostname, allow_private=allow_private)
+    port = parsed.port or (443 if parsed.scheme == 'https' else 80)
     try:
-        literal = ipaddress.ip_address(hostname)
-        _validate_ip(literal, allow_private=allow_private)
-        connect_host = hostname
-    except ValueError:
-        port = parsed.port or (443 if parsed.scheme == 'https' else 80)
-        try:
-            infos = socket.getaddrinfo(
-                hostname,
-                port,
-                type=socket.SOCK_STREAM,
-                proto=socket.IPPROTO_TCP,
-            )
-        except socket.gaierror as exc:
+        connect_host = resolve_public_host(hostname, port, allow_private=allow_private)
+    except SSRFError as exc:
+        message = str(exc)
+        if 'Host is required' in message:
+            raise SSRFError('Webhook URL must include a hostname.') from exc
+        if message.startswith('Could not resolve hostname:'):
             raise SSRFError(f'Could not resolve webhook hostname: {hostname}') from exc
-        if not infos:
-            raise SSRFError(f'Could not resolve webhook hostname: {hostname}')
-        connect_host = None
-        for info in infos:
-            candidate = ipaddress.ip_address(info[4][0])
-            try:
-                _validate_ip(candidate, allow_private=allow_private)
-            except SSRFError:
-                continue
-            connect_host = info[4][0]
-            port = info[4][1] or port
-            break
-        if connect_host is None:
-            raise SSRFError('Webhook hostname resolves only to private or non-public addresses.')
-    else:
-        port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+        if message.startswith('Hostname resolves only'):
+            raise SSRFError('Webhook hostname resolves only to private or non-public addresses.') from exc
+        raise
 
     path = parsed.path or '/'
     if parsed.query:

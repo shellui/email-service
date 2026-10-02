@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import requests
 
-from apps.providers.base import ProviderMessage, ProviderResult
+from apps.providers.base import ProviderMessage, ProviderResult, sanitize_header_value
 
 RESEND_URL = 'https://api.resend.com/emails'
 USER_AGENT = 'shellui-email-service/1.0'
 
 
 def _format_from(name: str, email: str) -> str:
-    if name:
-        safe = name.replace('"', '')
-        return f'"{safe}" <{email}>'
-    return email
+    safe_email = sanitize_header_value(email).strip()
+    safe_name = sanitize_header_value(name).replace('"', '').strip()
+    if safe_name:
+        return f'"{safe_name}" <{safe_email}>'
+    return safe_email
 
 
 class ResendProvider:

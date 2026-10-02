@@ -41,6 +41,8 @@ class EmailApiTests(TestCase):
     def setUp(self):
         fake_provider().sent.clear()
         fake_provider().fail_code = ''
+        fake_provider().raise_on_send = None
+        fake_provider().retryable = False
         self.client = APIClient()
         raw, _client = issue_service_key(
             service='identity',
@@ -54,6 +56,18 @@ class EmailApiTests(TestCase):
             allowed_template_prefixes=['hosting.'],
         )
         self.hosting_key = raw
+        from apps.email.crypto import encrypt_json
+        from apps.email.models import CompanyProvider
+
+        CompanyProvider.objects.create(
+            company_id=7,
+            provider='fake',
+            from_email='ops@acme.com',
+            from_name='Acme',
+            credentials_ciphertext=encrypt_json({'marker': 'company'}, setting='EMAIL_CREDENTIALS_KEY'),
+            credentials_hint='••••test',
+            configured=True,
+        )
 
     def _auth(self, key):
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {key}')

@@ -9,6 +9,7 @@ import requests
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from requests.adapters import HTTPAdapter
 
 from apps.actions.emit import store_rule_secret
 from apps.actions.models import ActionOutbox, DeliveryAttempt
@@ -47,6 +48,48 @@ def _backoff_seconds(attempt: int, retry_after: float | None) -> int:
     return min(delay, 3600)
 
 
+class _PinnedTLSAdapter(HTTPAdapter):
+    """HTTPS to a pinned IP, with SNI and certificate checks on the original hostname."""
+
+    def __init__(self, hostname: str, **kwargs):
+        self._hostname = hostname
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        pool_kwargs['server_hostname'] = self._hostname
+        pool_kwargs['assert_hostname'] = self._hostname
+        return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+
+
+def _pinned_url(resolved) -> str:
+    host = resolved.connect_host
+    if ':' in host and not host.startswith('['):
+        netloc = f'[{host}]:{resolved.port}'
+    else:
+        netloc = f'{host}:{resolved.port}'
+    return f'{resolved.scheme}://{netloc}{resolved.path}'
+
+
+def _post_pinned(resolved, body: bytes, headers: dict, timeout: float):
+    """POST to the resolved IP. Redirects are not followed."""
+    request_headers = dict(headers)
+    request_headers['Host'] = resolved.host_header
+    session = requests.Session()
+    try:
+        if resolved.scheme == 'https':
+            hostname = resolved.host_header.split(':', 1)[0]
+            session.mount('https://', _PinnedTLSAdapter(hostname))
+        return session.post(
+            _pinned_url(resolved),
+            data=body,
+            headers=request_headers,
+            timeout=timeout,
+            allow_redirects=False,
+        )
+    finally:
+        session.close()
+
+
 def deliver_one(row_id) -> None:
     with transaction.atomic():
         row = ActionOutbox.objects.select_for_update().get(pk=row_id)
@@ -75,14 +118,17 @@ def deliver_one(row_id) -> None:
     retry_after = None
     try:
         resolved = resolve_webhook_endpoint(url, allow_private=allow_private)
-        response = requests.post(
-            resolved.original_url,
-            data=body,
-            headers=headers,
-            timeout=settings.ACTIONS_WEBHOOK_TIMEOUT_SECONDS,
+        response = _post_pinned(
+            resolved,
+            body,
+            headers,
+            settings.ACTIONS_WEBHOOK_TIMEOUT_SECONDS,
         )
         http_status = response.status_code
-        if 200 <= http_status < 300:
+        if 300 <= http_status < 400:
+            error_code = 'redirect_blocked'
+            retryable = False
+        elif 200 <= http_status < 300:
             error_code = ''
         elif http_status in _DEAD_STATUS:
             error_code = f'http_{http_status}'

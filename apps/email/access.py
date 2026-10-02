@@ -17,10 +17,13 @@ def require_admin(request, company_id, *, allow_platform: bool = False):
     if company_id is None:
         raise SendError(400, 'validation_failed', {'company_id': ['required']})
     token_company = getattr(user, 'company_id', None)
-    if token_company is not None and int(token_company) != int(company_id):
-        if not getattr(user, 'is_staff', False):
-            raise SendError(403, 'company_mismatch')
-    if getattr(user, 'is_staff', False) or getattr(user, 'is_company_owner', False):
+    if getattr(user, 'is_staff', False):
+        return user
+    if token_company is None:
+        raise SendError(403, 'forbidden')
+    if int(token_company) != int(company_id):
+        raise SendError(403, 'company_mismatch')
+    if getattr(user, 'is_company_owner', False):
         return user
     raise SendError(403, 'forbidden')
 

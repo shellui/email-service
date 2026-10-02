@@ -15,6 +15,17 @@ from apps.email.service import SendError
 from apps.email.views import error_response
 
 
+def _public_webhook_url(url: str) -> str:
+    from django.conf import settings
+
+    from apps.actions.ssrf import SSRFError, validate_webhook_url
+
+    try:
+        return validate_webhook_url(url, allow_private=settings.ACTIONS_WEBHOOK_ALLOW_PRIVATE)
+    except SSRFError as exc:
+        raise SendError(400, 'validation_failed', {'url': ['not_public']}) from exc
+
+
 def _mask_config(config: dict) -> dict:
     raw = dict(config or {})
     secret = raw.pop('secret', '') or ''
@@ -93,6 +104,7 @@ class ActionRuleListCreateView(APIView):
 
             if not is_registered_event(event_type):
                 raise SendError(400, 'validation_failed', {'event_type': ['unknown']})
+            url = _public_webhook_url(url)
             secret = store_rule_secret(str(request.data.get('secret') or ''))
             rule = ActionRule.objects.create(
                 company_id=company_id,
@@ -124,19 +136,19 @@ class ActionRuleDetailView(APIView):
             return error_response(SendError(404, 'not_found'), request)
         try:
             require_admin(request, rule.company_id)
+            if 'name' in request.data:
+                rule.name = str(request.data.get('name') or rule.name)
+            if 'description' in request.data:
+                rule.description = str(request.data.get('description') or '')
+            if 'enabled' in request.data:
+                rule.enabled = bool(request.data.get('enabled'))
+            if 'url' in request.data:
+                config = dict(rule.config or {})
+                config['url'] = _public_webhook_url(str(request.data.get('url') or ''))
+                rule.config = config
+            rule.save()
         except SendError as exc:
             return error_response(exc, request)
-        if 'name' in request.data:
-            rule.name = str(request.data.get('name') or rule.name)
-        if 'description' in request.data:
-            rule.description = str(request.data.get('description') or '')
-        if 'enabled' in request.data:
-            rule.enabled = bool(request.data.get('enabled'))
-        if 'url' in request.data:
-            config = dict(rule.config or {})
-            config['url'] = str(request.data.get('url') or '')
-            rule.config = config
-        rule.save()
         return Response(_rule_payload(rule))
 
     def delete(self, request, pk):

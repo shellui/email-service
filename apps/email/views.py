@@ -396,6 +396,10 @@ class TemplatePublishView(APIView):
             require_admin(request, template.company_id, allow_platform=template.company_id is None)
             definition = get_definition(template.template_key)
             tokens = document_tokens(version.document, version.subject, version.preheader)
+            if definition and definition.get('lane_class') == 'auth':
+                from apps.email.auth_templates import validate_auth_template
+
+                validate_auth_template(definition, version.document, version.subject, version.preheader)
             if definition and definition['lane_class'] == 'bulk' and 'system.unsubscribe_url' not in tokens:
                 raise SendError(400, 'unsubscribe_link_missing')
             html, text, renderer = render_document(version.document)
@@ -611,6 +615,17 @@ class ProviderView(APIView):
             from_email = str(request.data.get('from_email') or '')
             if '@' not in from_email:
                 raise SendError(400, 'validation_failed', {'from_email': ['invalid_format']})
+            platform_from = {
+                settings.DEFAULT_FROM_EMAIL.lower(),
+                settings.BULK_FROM_EMAIL.lower(),
+            }
+            if from_email.lower() in platform_from and company_id not in settings.EMAIL_PLATFORM_COMPANY_IDS:
+                raise SendError(403, 'platform_sender_not_allowed', {'from_email': ['platform_from']})
+            bulk_from = str(request.data.get('bulk_from_email') or '')
+            if bulk_from.lower() in platform_from and company_id not in settings.EMAIL_PLATFORM_COMPANY_IDS:
+                raise SendError(403, 'platform_sender_not_allowed', {'bulk_from_email': ['platform_from']})
+            if provider == 'smtp' and not settings.EMAIL_ALLOW_COMPANY_SMTP:
+                raise SendError(400, 'company_smtp_disabled')
             existing = CompanyProvider.objects.filter(company_id=company_id).first()
             credentials = request.data.get('credentials')
             if credentials is None and existing and existing.provider == provider:
@@ -619,6 +634,18 @@ class ProviderView(APIView):
             else:
                 if not isinstance(credentials, dict) or not credentials:
                     raise SendError(400, 'validation_failed', {'credentials': ['required']})
+                if provider == 'smtp':
+                    from apps.actions.ssrf import SSRFError, resolve_public_host
+
+                    host = str(credentials.get('host') or '').strip()
+                    try:
+                        port = int(credentials.get('port') or 587)
+                    except (TypeError, ValueError):
+                        raise SendError(400, 'validation_failed', {'credentials': ['invalid_port']})
+                    try:
+                        resolve_public_host(host, port)
+                    except SSRFError:
+                        raise SendError(400, 'provider_host_not_public', {'host': ['not_public']})
                 secret = credentials.get('api_key') or credentials.get('password') or ''
                 ciphertext = encrypt_json(credentials, setting='EMAIL_CREDENTIALS_KEY')
                 hint = mask_secret(str(secret))
@@ -754,14 +781,18 @@ class LanePauseView(APIView):
         if action not in {'pause', 'resume'}:
             return error_response(SendError(404, 'not_found'), request)
         paused = action == 'pause'
-        state, _created = LaneState.objects.update_or_create(
-            lane=lane,
-            defaults={
-                'paused': paused,
-                'paused_at': timezone.now() if paused else None,
-                'reason': 'staff' if paused else '',
-            },
-        )
+        defaults = {
+            'paused': paused,
+            'paused_at': timezone.now() if paused else None,
+            'reason': 'staff' if paused else '',
+        }
+        state = LaneState.objects.filter(lane=lane, company_id__isnull=True).first()
+        if state is None:
+            state = LaneState.objects.create(lane=lane, company_id=None, **defaults)
+        else:
+            for key, value in defaults.items():
+                setattr(state, key, value)
+            state.save()
         return Response({'lane': state.lane, 'paused': state.paused})
 
 
@@ -819,12 +850,21 @@ class ProviderWebhookView(APIView):
     def post(self, request, stream):
         raw = request.body or b''
         headers = {key.lower(): value for key, value in request.headers.items()}
-        secret = settings.RESEND_WEBHOOK_SECRET
         company_id = request.query_params.get('company_id')
         if company_id:
-            row = CompanyProvider.objects.filter(company_id=company_id, provider='resend').first()
+            try:
+                company_int = int(company_id)
+            except (TypeError, ValueError):
+                return error_response(SendError(401, 'unauthorized'), request)
+            row = CompanyProvider.objects.filter(company_id=company_int, provider='resend').first()
+            secret = ''
             if row and row.webhook_ciphertext:
-                secret = decrypt_json(row.webhook_ciphertext, setting='EMAIL_CREDENTIALS_KEY').get('secret') or secret
+                try:
+                    secret = decrypt_json(row.webhook_ciphertext, setting='EMAIL_CREDENTIALS_KEY').get('secret') or ''
+                except Exception:
+                    secret = ''
+        else:
+            secret = settings.RESEND_WEBHOOK_SECRET
         if not secret or not verify_svix(secret=secret, body=raw, headers=headers):
             return error_response(SendError(401, 'unauthorized'), request)
         try:
@@ -846,25 +886,35 @@ class ProviderWebhookView(APIView):
         return Response({'status': 'ok'})
 
 
-def _unsubscribe_token(company_id: int, email: str, category: str) -> str:
-    mac = hmac.new(
+def unsubscribe_signature(company_id: int, email_hmac_value: str, category: str) -> str:
+    return hmac.new(
         settings.EMAIL_HASH_PEPPER.encode('utf-8'),
-        f'{company_id}|{email_hmac(email)}|{category}'.encode('utf-8'),
+        f'{company_id}|{email_hmac_value}|{category}'.encode('utf-8'),
         hashlib.sha256,
     ).hexdigest()
-    return f'{company_id}.{category}.{mac}'
+
+
+def _unsubscribe_token(company_id: int, email: str, category: str) -> str:
+    digest = email_hmac(email)
+    signature = unsubscribe_signature(company_id, digest, category)
+    return f'{company_id}.{category}.{digest}.{signature}'
 
 
 def parse_unsubscribe_token(token: str) -> tuple[int, str, str] | None:
     parts = (token or '').split('.')
-    if len(parts) != 3:
+    if len(parts) != 4:
         return None
     try:
         company_id = int(parts[0])
     except ValueError:
         return None
-    category, mac = parts[1], parts[2]
-    return company_id, category, mac
+    category, digest, signature = parts[1], parts[2], parts[3]
+    if not category or not digest or not signature:
+        return None
+    expected = unsubscribe_signature(company_id, digest, category)
+    if not hmac.compare_digest(expected, signature):
+        return None
+    return company_id, category, digest
 
 
 @csrf_exempt
@@ -872,7 +922,7 @@ def unsubscribe_page(request, token):
     parsed = parse_unsubscribe_token(token)
     if parsed is None:
         return HttpResponse('Unknown token.', status=404, content_type='text/plain')
-    company_id, category, mac = parsed
+    company_id, category, hmac_value = parsed
     if request.method == 'GET':
         return HttpResponse(
             '<!doctype html><title>Shellui</title><p>Confirm unsubscribe by submitting this page.</p>',
@@ -880,23 +930,11 @@ def unsubscribe_page(request, token):
         )
     if request.method != 'POST':
         return HttpResponse(status=405)
-    email = request.POST.get('email') or request.GET.get('email') or ''
-    # One-click (RFC 8058) posts without a body. The token is bound to an address HMAC
-    # only when the caller includes the address. Without it we still record the token mac
-    # as the lookup key so a later send can match messages that embedded this token.
-    hmac_value = email_hmac(email) if email else mac
-    expected = hmac.new(
-        settings.EMAIL_HASH_PEPPER.encode('utf-8'),
-        f'{company_id}|{hmac_value}|{category}'.encode('utf-8'),
-        hashlib.sha256,
-    ).hexdigest()
-    if email and not hmac.compare_digest(expected, mac):
-        return HttpResponse(status=404)
     Unsubscribe.objects.get_or_create(
         company_id=company_id,
         email_hmac=hmac_value,
         category=category,
-        defaults={'source': 'one_click' if not email else 'link'},
+        defaults={'source': 'one_click'},
     )
     from apps.actions.emit import emit_email_event
 

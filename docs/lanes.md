@@ -20,7 +20,9 @@ Auth rate limit: 5 messages per recipient per company per 10 minutes (`429 recip
 
 ## Pause
 
-`POST /api/v1/lanes/{lane}/pause` and `/resume` are staff-only. A provider HTTP 401 or 403 also pauses the lane (`reason` `provider_unauthorized`) so a bad key does not burn the queue. New sends receive `409 lane_paused` until resume.
+`POST /api/v1/lanes/{lane}/pause` and `/resume` are staff-only and pause that lane for every company. A provider HTTP 401 or 403 pauses only the company whose key was rejected (`reason` `provider_unauthorized`). Other companies keep sending. New sends for a paused company receive `409 lane_paused` until that pause is cleared.
+
+Auth mail also has a company-wide cap (`EMAIL_COMPANY_AUTH_LIMIT`, default 30 per `EMAIL_COMPANY_AUTH_WINDOW_SECONDS`, default 60). Over the cap the response is `429 company_rate_limited`. The per-recipient cap is unchanged.
 
 ## Workers
 

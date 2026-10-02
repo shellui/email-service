@@ -344,7 +344,8 @@ if JWT_HS256_FALLBACK_SECRET and not DEBUG and not ALLOW_JWT_HS256_FALLBACK:
     )
 JWT_ALGORITHMS = _env_csv('JWT_ALGORITHMS', ('RS256',))
 
-CORS_ALLOW_ALL_ORIGINS = _env_bool('CORS_ALLOW_ALL_ORIGINS', True)
+# Allow-all is a local convenience. Production (DEBUG=false) stays off unless set explicitly.
+CORS_ALLOW_ALL_ORIGINS = _env_bool('CORS_ALLOW_ALL_ORIGINS', DEBUG)
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
@@ -419,10 +420,16 @@ EMAIL_USE_SSL = _env_bool('EMAIL_USE_SSL', False)
 EMAIL_RENDERER = os.getenv('EMAIL_RENDERER', 'python').strip().lower() or 'python'
 EMAIL_DELIVER_SYNC = _env_bool('EMAIL_DELIVER_SYNC', False)
 EMAIL_ALLOW_FAKE_PROVIDER = _env_bool('EMAIL_ALLOW_FAKE_PROVIDER', DEBUG)
-EMAIL_AUTH_LINK_HOSTS = _env_csv(
-    'EMAIL_AUTH_LINK_HOSTS',
-    ('id.shellui.com', 'localhost', '127.0.0.1'),
-)
+# Company SMTP opens a connection from the worker. Off until an operator opts in.
+# Even when enabled, the host must resolve to a public address.
+EMAIL_ALLOW_COMPANY_SMTP = _env_bool('EMAIL_ALLOW_COMPANY_SMTP', False)
+_LOCAL_AUTH_HOSTS = {'localhost', '127.0.0.1', '::1'}
+_auth_host_default = ('id.shellui.com', 'localhost', '127.0.0.1') if DEBUG else ('id.shellui.com',)
+EMAIL_AUTH_LINK_HOSTS = [
+    host
+    for host in _env_csv('EMAIL_AUTH_LINK_HOSTS', _auth_host_default)
+    if DEBUG or host.lower().strip('[]') not in _LOCAL_AUTH_HOSTS
+]
 EMAIL_AUTH_DEFAULT_TTL_SECONDS = _env_int('EMAIL_AUTH_DEFAULT_TTL_SECONDS', 120)
 EMAIL_AUTH_MAX_TTL_SECONDS = _env_int('EMAIL_AUTH_MAX_TTL_SECONDS', 300)
 EMAIL_MESSAGE_RETENTION_DAYS = _env_int('EMAIL_MESSAGE_RETENTION_DAYS', 30)
@@ -433,6 +440,22 @@ EMAIL_MAX_VARIABLES_BYTES = _env_int('EMAIL_MAX_VARIABLES_BYTES', 8192)
 EMAIL_COMPANY_TRANSACTIONAL_PER_HOUR = _env_int('EMAIL_COMPANY_TRANSACTIONAL_PER_HOUR', 1000)
 EMAIL_RECIPIENT_AUTH_LIMIT = _env_int('EMAIL_RECIPIENT_AUTH_LIMIT', 5)
 EMAIL_RECIPIENT_AUTH_WINDOW_SECONDS = _env_int('EMAIL_RECIPIENT_AUTH_WINDOW_SECONDS', 600)
+# Company-wide auth budget so one tenant cannot fill the auth worker past the magic-link TTL.
+EMAIL_COMPANY_AUTH_LIMIT = _env_int('EMAIL_COMPANY_AUTH_LIMIT', 30)
+EMAIL_COMPANY_AUTH_WINDOW_SECONDS = _env_int('EMAIL_COMPANY_AUTH_WINDOW_SECONDS', 60)
+# Longer than the SMTP (15s) and Resend (10s) provider timeouts.
+EMAIL_SEND_LEASE_SECONDS = _env_int('EMAIL_SEND_LEASE_SECONDS', 120)
+EMAIL_PLATFORM_COMPANY_IDS = []
+for _company_raw in os.getenv('EMAIL_PLATFORM_COMPANY_IDS', '').split(','):
+    _company_raw = _company_raw.strip()
+    if not _company_raw:
+        continue
+    try:
+        EMAIL_PLATFORM_COMPANY_IDS.append(int(_company_raw))
+    except ValueError as exc:
+        raise ImproperlyConfigured(
+            f'EMAIL_PLATFORM_COMPANY_IDS must be a comma-separated list of integers. Got: {_company_raw!r}'
+        ) from exc
 EMAIL_VARIABLES_KEY = os.getenv('EMAIL_VARIABLES_KEY', '').strip()
 EMAIL_CREDENTIALS_KEY = os.getenv('EMAIL_CREDENTIALS_KEY', '').strip()
 EMAIL_HASH_PEPPER = os.getenv('EMAIL_HASH_PEPPER', '').strip()
@@ -481,6 +504,11 @@ if not DEBUG:
         _production_config_errors.append('EMAIL_VARIABLES_KEY is required when DEBUG=false.')
     if not os.getenv('EMAIL_HASH_PEPPER', '').strip():
         _production_config_errors.append('EMAIL_HASH_PEPPER is required when DEBUG=false.')
+    if IDENTITY_JWKS_DOCUMENT is None:
+        _production_config_errors.append(
+            'IDENTITY_JWKS or IDENTITY_JWKS_FILE is required when DEBUG=false. '
+            'Pin the identity public keys. A runtime fetch of IDENTITY_JWKS_URL is not enough.'
+        )
     if _production_config_errors:
         raise ImproperlyConfigured('\n'.join(_production_config_errors))
 

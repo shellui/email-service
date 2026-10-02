@@ -269,10 +269,27 @@ class Unsubscribe(models.Model):
 
 
 class LaneState(models.Model):
-    lane = models.CharField(max_length=32, unique=True)
+    """A pause is global when ``company_id`` is null, otherwise it covers one company."""
+
+    lane = models.CharField(max_length=32)
+    company_id = models.PositiveIntegerField(null=True, blank=True)
     paused = models.BooleanField(default=False)
     paused_at = models.DateTimeField(null=True, blank=True)
     reason = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['lane'],
+                condition=Q(company_id__isnull=True),
+                name='uniq_global_lane_state',
+            ),
+            models.UniqueConstraint(
+                fields=['lane', 'company_id'],
+                condition=Q(company_id__isnull=False),
+                name='uniq_company_lane_state',
+            ),
+        ]
 
 
 def message_public_id(value: uuid.UUID | str) -> str:

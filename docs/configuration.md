@@ -4,6 +4,7 @@ Copy `.env.example` to `.env`. Production (`DEBUG=false`) refuses to boot withou
 
 - `SECRET_KEY`
 - `IDENTITY_ISSUER` and `IDENTITY_AUDIENCE`
+- `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` (a pinned document, not a runtime JWKS URL)
 - `POSTGRES_DATABASE_URL`
 - `REDIS_URL` (rate limits)
 - `EMAIL_CREDENTIALS_KEY`, `EMAIL_VARIABLES_KEY`, `EMAIL_HASH_PEPPER` (Fernet keys and the HMAC pepper)
@@ -24,7 +25,12 @@ When `DEBUG=true`, those three keys are derived from `SECRET_KEY` so local runs 
 | `DEFAULT_FROM_EMAIL` | `no-reply@shellui.com` | Auth and transactional fallback |
 | `DEFAULT_FROM_NAME` | `Shellui` | Display name |
 | `BULK_FROM_EMAIL` | `news@news.shellui.com` | Reserved for later bulk mail |
-| `EMAIL_AUTH_LINK_HOSTS` | `id.shellui.com,localhost,127.0.0.1` | Hosts allowed in auth URL variables |
+| `EMAIL_AUTH_LINK_HOSTS` | `id.shellui.com` plus localhost only when `DEBUG=true` | Hosts allowed in auth URL variables. `DEBUG=false` drops `localhost`, `127.0.0.1`, and `::1`. |
+| `EMAIL_PLATFORM_COMPANY_IDS` | empty | Company ids that may use the platform From for non-auth mail |
+| `EMAIL_ALLOW_COMPANY_SMTP` | `false` | Allow a company to store an SMTP relay |
+| `EMAIL_COMPANY_AUTH_LIMIT` | `30` | Auth messages per company per window |
+| `EMAIL_COMPANY_AUTH_WINDOW_SECONDS` | `60` | Window for the company auth cap |
+| `CORS_ALLOW_ALL_ORIGINS` | `true` when `DEBUG=true`, otherwise `false` | Set explicitly to widen browser origins |
 
 `email.shellui.com` is the API host. Mail is not sent from that domain.
 

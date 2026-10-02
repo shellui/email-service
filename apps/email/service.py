@@ -64,17 +64,28 @@ def _coerce(value):
     return value
 
 
-def _lane_paused(lane: str) -> bool:
-    state = LaneState.objects.filter(lane=lane).first()
-    return bool(state and state.paused)
+def _lane_paused(lane: str, company_id: int | None = None) -> bool:
+    if LaneState.objects.filter(lane=lane, company_id__isnull=True, paused=True).exists():
+        return True
+    if company_id is None:
+        return False
+    return LaneState.objects.filter(lane=lane, company_id=company_id, paused=True).exists()
 
 
-def pause_lane(lane: str, reason: str) -> None:
-    LaneState.objects.update_or_create(
-        lane=lane,
-        defaults={'paused': True, 'paused_at': timezone.now(), 'reason': reason},
-    )
-    logger.error('lane paused lane=%s reason=%s', lane, reason)
+def pause_lane(lane: str, reason: str, company_id: int | None = None) -> None:
+    """Pause one company, or every company when ``company_id`` is omitted (staff)."""
+    defaults = {'paused': True, 'paused_at': timezone.now(), 'reason': reason}
+    if company_id is None:
+        state = LaneState.objects.filter(lane=lane, company_id__isnull=True).first()
+        if state is None:
+            LaneState.objects.create(lane=lane, company_id=None, **defaults)
+        else:
+            for key, value in defaults.items():
+                setattr(state, key, value)
+            state.save()
+    else:
+        LaneState.objects.update_or_create(lane=lane, company_id=company_id, defaults=defaults)
+    logger.error('lane paused lane=%s company_id=%s reason=%s', lane, company_id, reason)
 
 
 def _rate_allow(key: str, limit: int, ttl: int) -> bool:
@@ -92,6 +103,13 @@ def _rate_allow(key: str, limit: int, ttl: int) -> bool:
 
 def _check_rates(*, company_id: int, lane: str, hmac_value: str) -> None:
     if lane == LANE_AUTH:
+        company_key = f'email:auth-company:{company_id}'
+        if not _rate_allow(
+            company_key,
+            settings.EMAIL_COMPANY_AUTH_LIMIT,
+            settings.EMAIL_COMPANY_AUTH_WINDOW_SECONDS,
+        ):
+            raise SendError(429, 'company_rate_limited')
         key = f'email:auth:{company_id}:{hmac_value}'
         if not _rate_allow(key, settings.EMAIL_RECIPIENT_AUTH_LIMIT, settings.EMAIL_RECIPIENT_AUTH_WINDOW_SECONDS):
             raise SendError(429, 'recipient_rate_limited')
@@ -243,7 +261,7 @@ def _validate_variables(definition: dict, variables: dict, *, field_prefix: str)
     return cleaned
 
 
-def _check_lane(principal, definition: dict, requested_lane: str | None) -> str:
+def _check_lane(principal, definition: dict, requested_lane: str | None, company_id: int) -> str:
     lane = requested_lane or definition['default_lane']
     if lane == LANE_BULK or definition['lane_class'] == LANE_BULK:
         raise SendError(400, 'lane_requires_campaign')
@@ -253,9 +271,27 @@ def _check_lane(principal, definition: dict, requested_lane: str | None) -> str:
         raise SendError(403, 'lane_not_allowed')
     if not principal.allows_template(definition['key']):
         raise SendError(403, 'forbidden')
-    if _lane_paused(lane):
+    if _lane_paused(lane, company_id):
         raise SendError(409, 'lane_paused')
     return lane
+
+
+def company_may_use_platform_sender(company_id: int, lane: str) -> bool:
+    """Auth mail may use the platform fallback. Other lanes may only for Shellui companies."""
+    if int(company_id) in settings.EMAIL_PLATFORM_COMPANY_IDS:
+        return True
+    return lane == LANE_AUTH
+
+
+def _require_sender(company_id: int, lane: str) -> None:
+    company = CompanyProvider.objects.filter(company_id=company_id, configured=True).first()
+    if company:
+        if company.provider == 'smtp' and not settings.EMAIL_ALLOW_COMPANY_SMTP:
+            raise SendError(409, 'company_smtp_disabled')
+        return
+    if company_may_use_platform_sender(company_id, lane):
+        return
+    raise SendError(409, 'platform_sender_not_allowed')
 
 
 def _expires_at(definition: dict, lane: str, ttl_seconds):
@@ -395,7 +431,8 @@ def accept_send(principal, body: dict) -> tuple[int, dict]:
     if definition is None:
         raise SendError(404, 'template_not_found')
     language = str(body.get('language') or 'en')
-    lane = _check_lane(principal, definition, body.get('lane') or None)
+    lane = _check_lane(principal, definition, body.get('lane') or None, company_id)
+    _require_sender(company_id, lane)
     recipients_raw = body.get('to') or []
     if not isinstance(recipients_raw, list) or not recipients_raw:
         raise SendError(400, 'validation_failed', {'to': ['required']})
@@ -505,7 +542,8 @@ def accept_batch(principal, body: dict) -> tuple[int, dict]:
     if definition is None:
         raise SendError(404, 'template_not_found')
     language = str(body.get('language') or 'en')
-    lane = _check_lane(principal, definition, body.get('lane') or None)
+    lane = _check_lane(principal, definition, body.get('lane') or None, company_id)
+    _require_sender(company_id, lane)
     items = body.get('items') or []
     if not isinstance(items, list) or not items:
         raise SendError(400, 'validation_failed', {'items': ['required']})
@@ -650,7 +688,8 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
         return 202, response
     language = str(body.get('language') or rule_language or 'en')
     definition = get_definition(template_key)
-    lane = _check_lane(principal, definition, None)
+    lane = _check_lane(principal, definition, None, company_id)
+    _require_sender(company_id, lane)
     payload = body.get('payload') or {}
     if not isinstance(payload, dict):
         raise SendError(400, 'validation_failed', {'payload': ['invalid']})
@@ -787,6 +826,7 @@ def _platform_credentials(provider_name: str) -> dict | None:
             'password': settings.EMAIL_HOST_PASSWORD,
             'use_tls': settings.EMAIL_USE_TLS,
             'use_ssl': settings.EMAIL_USE_SSL,
+            'trusted_platform': True,
         }
     if provider_name == 'fake' and settings.EMAIL_ALLOW_FAKE_PROVIDER:
         return {}
@@ -806,10 +846,10 @@ def deliver_message(message_id) -> None:
         if message.expires_at and message.expires_at <= now:
             _expire(message)
             return
-        if _lane_paused(message.lane):
+        if _lane_paused(message.lane, message.company_id):
             return
         message.status = Message.STATUS_SENDING
-        message.locked_until = now + timedelta(seconds=60)
+        message.locked_until = now + timedelta(seconds=settings.EMAIL_SEND_LEASE_SECONDS)
         message.attempt_count += 1
         message.save(update_fields=['status', 'locked_until', 'attempt_count'])
         variables = decrypt_json(message.variables_ciphertext)
@@ -863,6 +903,15 @@ def deliver_message(message_id) -> None:
         _finish_failed(message_id, exc.code if exc.code != 'invalid_url_scheme' else 'variable_url_not_allowed')
         return
     provider_name, credentials, from_email, from_name = _credentials_for(Message.objects.get(pk=message_id))
+    platform_from = {settings.DEFAULT_FROM_EMAIL.lower(), settings.BULK_FROM_EMAIL.lower()}
+    uses_platform_from = (from_email or '').lower() in platform_from
+    shellui_company = snapshot['company_id'] in settings.EMAIL_PLATFORM_COMPANY_IDS
+    has_company_provider = CompanyProvider.objects.filter(
+        company_id=snapshot['company_id'], configured=True
+    ).exists()
+    if uses_platform_from and not shellui_company and (has_company_provider or snapshot['lane'] != LANE_AUTH):
+        _finish_failed(message_id, 'platform_sender_not_allowed')
+        return
     provider = get_provider(provider_name)
     if provider is None or (provider_name != 'fake' and not credentials):
         _finish_failed(message_id, 'provider_not_configured')
@@ -888,7 +937,12 @@ def deliver_message(message_id) -> None:
     if provider is None:
         _finish_failed(message_id, 'provider_not_configured')
         return
-    result = provider.send(provider_message, credentials)
+    try:
+        result = provider.send(provider_message, credentials)
+    except Exception:
+        logger.exception('provider send crashed message=%s', message_id)
+        _finish_failed(message_id, 'provider_error')
+        return
     _apply_result(message_id, provider_name, result)
 
 
@@ -914,7 +968,7 @@ def _apply_result(message_id, provider_name: str, result) -> None:
             message.save()
             _record_event(message, 'failed', {'error_code': result.error_code})
             _emit_status(message, 'email.message.failed', {'error_code': result.error_code})
-            pause_lane(message.lane, 'provider_unauthorized')
+            pause_lane(message.lane, 'provider_unauthorized', company_id=message.company_id)
             return
         if _schedule_retry(message, result):
             return
@@ -992,7 +1046,14 @@ def deliver_due(lane: str, *, limit: int = 20) -> int:
         .values_list('id', flat=True)[:limit]
     )
     for message_id in ids:
-        deliver_message(message_id)
+        try:
+            deliver_message(message_id)
+        except Exception:
+            logger.exception('deliver_message crashed id=%s', message_id)
+            try:
+                _finish_failed(message_id, 'provider_error')
+            except Exception:
+                logger.exception('could not record provider failure id=%s', message_id)
     return len(ids)
 
 
@@ -1018,6 +1079,14 @@ def sweep() -> dict:
         with transaction.atomic():
             locked = Message.objects.select_for_update().get(pk=message.pk)
             if locked.status != Message.STATUS_SENDING:
+                continue
+            if locked.provider_message_id:
+                locked.status = Message.STATUS_SENT
+                if locked.sent_at is None:
+                    locked.sent_at = now
+                locked.locked_until = None
+                locked.save()
+                released += 1
                 continue
             if locked.expires_at and locked.expires_at <= now:
                 _expire(locked)

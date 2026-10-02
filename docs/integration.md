@@ -74,15 +74,20 @@ JSON errors never contain translated sentences. Shape:
 | `unknown_event` | 400 | `event_type` is not in the catalog |
 | `template_lane_mismatch` | 400 | Requested lane does not match the template's lane class |
 | `lane_requires_campaign` | 400 | `bulk` is not accepted on `/send`. Campaigns are not in this version. |
-| `lane_paused` | 409 | Staff or a provider 401/403 paused the lane. Retry later. |
+| `lane_paused` | 409 | Staff paused the lane for every company, or this company's provider returned 401/403. Retry later. |
 | `idempotency_conflict` | 409 | Same `idempotency_key`, different body |
 | `recipient_invalid` | 400 | Address failed the format check |
 | `recipient_suppressed` | 422 | Auth lane, hard bounce. Do not retry. |
 | `recipient_rate_limited` | 429 | Auth lane, 5 messages per recipient per company per 10 minutes |
-| `company_rate_limited` | 429 | Transactional lane, 1000 messages per company per hour |
+| `company_rate_limited` | 429 | Transactional lane, 1000 messages per company per hour. Auth lane, 30 messages per company per 60 seconds (`EMAIL_COMPANY_AUTH_LIMIT`). |
 | `variable_url_not_allowed` | 400 | URL variable is not `https`, `mailto`, or `tel`, or the host is not on `EMAIL_AUTH_LINK_HOSTS` |
 | `unsubscribe_link_missing` | 400 | A bulk template publish omitted `{{ system.unsubscribe_url }}` |
-| `provider_not_configured` | 409 | No company provider and no platform fallback |
+| `provider_not_configured` | 409 | No usable provider credentials for this send |
+| `platform_sender_not_allowed` | 409 | Non-auth mail for a company with no provider, and the company is not listed in `EMAIL_PLATFORM_COMPANY_IDS`. Auth mail still uses the platform fallback. The same code is HTTP 403 when a company sets `from_email` to the platform From address. |
+| `company_smtp_disabled` | 400 or 409 | Company SMTP is off (`EMAIL_ALLOW_COMPANY_SMTP` defaults to false). 400 when saving the provider, 409 when a send is refused. |
+| `provider_host_not_public` | 400 | Company SMTP host is missing, private, or not a public address |
+| `auth_link_missing` | 400 | An auth-lane template override dropped a required link variable such as `magic_link_url` |
+| `auth_link_host_not_allowed` | 400 | An auth-lane button `href` is not an allowlisted `https` host or an allowed link variable |
 | `provider_not_available` | 400 | Provider name is not `resend` or `smtp` |
 | `provider_test_failed` | 502 | The test send was refused by the provider |
 | `message_not_found` | 404 | Unknown message id |
@@ -282,7 +287,13 @@ Recipient selection:
 
 `payload` keys must match the template variables. Required variables with an empty value return `validation_failed` and `field_errors` such as `payload.company_name: ["required"]`.
 
-URL variables must be `https`, `mailto`, or `tel`. `http://localhost` and `http://127.0.0.1` are allowed only when `DEBUG=true`. Auth URL variables (`magic_link_url`) must use a host in `EMAIL_AUTH_LINK_HOSTS`.
+URL variables must be `https`, `mailto`, or `tel`. `http://localhost` and `http://127.0.0.1` are allowed only when `DEBUG=true`. Auth URL variables (`magic_link_url`) must use a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false`, `localhost`, `127.0.0.1`, and `::1` are removed from that list even if the environment includes them.
+
+Non-auth mail (`POST /api/v1/send` on a transactional template, and `POST /api/v1/events` when the rule is enabled) requires a company provider, unless `company_id` is in `EMAIL_PLATFORM_COMPANY_IDS`. Otherwise the response is `409 platform_sender_not_allowed`. Identity auth templates (`identity.auth.magic_link.requested`, `identity.user.invited`) still send through the platform fallback when the company has no provider, from `no-reply@shellui.com`.
+
+A company that is not in `EMAIL_PLATFORM_COMPANY_IDS` cannot set `from_email` or `bulk_from_email` to `DEFAULT_FROM_EMAIL` or `BULK_FROM_EMAIL` (`403 platform_sender_not_allowed`).
+
+Auth-lane template overrides must still contain every required URL variable (`magic_link_url` or `invitation_url`). Each button `href` must be one of those variables (or another declared URL variable) or a literal `https` URL whose host is on `EMAIL_AUTH_LINK_HOSTS`. Otherwise publish returns `auth_link_missing` or `auth_link_host_not_allowed`.
 
 ## Message status
 
@@ -385,7 +396,7 @@ Auth: staff or company owner. `company_id` query parameter, or the token's compa
 }
 ```
 
-The API key is never returned. `configured: false` means the platform fallback is used when `fallback_configured` is true.
+The API key is never returned. `configured: false` means auth mail can still use the platform fallback. Non-auth mail then returns `platform_sender_not_allowed` unless this company is in `EMAIL_PLATFORM_COMPANY_IDS`.
 
 `PUT /api/v1/provider?company_id=42`
 
@@ -401,7 +412,7 @@ The API key is never returned. `configured: false` means the platform fallback i
 }
 ```
 
-SMTP `credentials`: `host`, `port`, `username`, `password`, `use_tls`, `use_ssl`.
+SMTP `credentials`: `host`, `port`, `username`, `password`, `use_tls`, `use_ssl`. Company SMTP is rejected with `company_smtp_disabled` unless `EMAIL_ALLOW_COMPANY_SMTP=true`. When it is on, `host` must resolve to a public address (`provider_host_not_public` otherwise). The platform `EMAIL_HOST` relay is separate and is not gated by that flag.
 
 If `provider` is unchanged and `credentials` is omitted, the stored secret is kept. A provider change requires `credentials`.
 
@@ -413,7 +424,19 @@ If `provider` is unchanged and `credentials` is omitted, the stored secret is ke
 
 Staff may choose `to`. A company owner may only send to the email on their JWT. Response: `{"status": "sent", "provider": "resend", "provider_message_id": "re_example"}`.
 
-Platform fallback (no company row): `EMAIL_FALLBACK_PROVIDER` (`resend` or `smtp`) plus `RESEND_API_KEY` or `EMAIL_HOST` and related SMTP variables. Used for Shellui's own companies that have no provider row, and for any company with `configured: false`. Set `EMAIL_FALLBACK_PROVIDER=none` to require a company provider (no matching adapter, so sends fail with `provider_not_configured`).
+Platform fallback (no company row): `EMAIL_FALLBACK_PROVIDER` (`resend` or `smtp`) plus `RESEND_API_KEY` or `EMAIL_HOST` and related SMTP variables.
+
+Who may use it:
+
+| Caller | Lane | Result |
+| --- | --- | --- |
+| Any company | `auth` | Platform provider and `no-reply@shellui.com` |
+| Company id in `EMAIL_PLATFORM_COMPANY_IDS` | any lane the key allows | Platform provider and the platform From for that lane |
+| Any other company | `transactional` | `409 platform_sender_not_allowed` |
+
+Set `EMAIL_FALLBACK_PROVIDER=none` to require a company provider for auth mail as well (sends then fail with `provider_not_configured`).
+
+Auth rate limits: 5 messages per recipient per company per 10 minutes (`recipient_rate_limited`), and 30 messages per company per 60 seconds (`company_rate_limited`, `EMAIL_COMPANY_AUTH_LIMIT` and `EMAIL_COMPANY_AUTH_WINDOW_SECONDS`). A provider HTTP 401 or 403 pauses that company's lane only. `POST /api/v1/lanes/{lane}/pause` is still staff-only and pauses the lane for every company.
 
 Default from address when the company has none: `no-reply@shellui.com`. Bulk from address: `news@news.shellui.com`. The HTTP host is `email.shellui.com` and is not a sending domain.
 
@@ -554,7 +577,7 @@ Prometheus text. See [metrics.md](metrics.md).
 
 `POST /api/v1/provider-webhooks/resend/{stream}`
 
-No Bearer token. Svix headers `svix-id`, `svix-timestamp`, `svix-signature` are verified with `RESEND_WEBHOOK_SECRET`, or with the company webhook secret when `?company_id=` is set and that company stored one.
+No Bearer token. Svix headers `svix-id`, `svix-timestamp`, `svix-signature` are verified with `RESEND_WEBHOOK_SECRET` when `company_id` is omitted. When `?company_id=` is set, only that company's stored webhook secret is accepted. A missing company secret does not fall back to the platform secret. The request is `401 unauthorized`.
 
 Opens and clicks are ignored. Delivery, bounce, complaint, and delay update message status and emit Shellui Actions events. Point the Resend webhook at this URL. `stream` is recorded on the event and is not used to choose a lane.
 
@@ -562,7 +585,7 @@ Opens and clicks are ignored. Delivery, bounce, complaint, and delay update mess
 
 `GET /u/{token}` shows a confirmation page and does not unsubscribe.
 
-`POST /u/{token}` records the unsubscribe (one-click, including an empty body). Token form: `{company_id}.{category}.{hmac}`.
+`POST /u/{token}` records the unsubscribe (one-click, including an empty body) only when the token signature matches. Token form: `{company_id}.{category}.{email_hmac}.{signature}`. `signature` is HMAC-SHA256 of `{company_id}|{email_hmac}|{category}` with `EMAIL_HASH_PEPPER`. A token that does not verify returns 404 and does not emit `email.unsubscribe.created`.
 
 This is for later bulk mail. Transactional and auth templates do not include a one-click unsubscribe control.
 

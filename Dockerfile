@@ -43,6 +43,7 @@ RUN DEBUG=true \
     uv run python manage.py collectstatic --noinput --skip-checks
 
 RUN useradd --create-home --shell /bin/bash appuser \
+    && mkdir -p /app/data \
     && chown -R appuser:appuser /app \
     && chmod +x /app/tools/docker-entrypoint.sh
 
@@ -51,5 +52,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 VOLUME ["/app/data"]
 
 EXPOSE 8000
+
+USER appuser
 
 ENTRYPOINT ["/app/tools/docker-entrypoint.sh"]

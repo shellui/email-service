@@ -16,13 +16,11 @@ Shellui Actions signing secrets are encrypted at rest and revealed only on creat
 
 ## CORS and cookies
 
-Browser calls use Bearer JWTs, not cookies. `CORS_ALLOW_CREDENTIALS` defaults to false, so `CORS_ALLOW_ALL_ORIGINS=true` is the same choice storage-service documents. Startup fails if both allow-all and credentials are true.
+Browser calls use Bearer JWTs, not cookies. `CORS_ALLOW_CREDENTIALS` defaults to false. `CORS_ALLOW_ALL_ORIGINS` defaults to true only when `DEBUG=true`. Production defaults to false unless the variable is set. Startup fails if both allow-all and credentials are true.
 
 ## JWT issuer and audience
 
-When `DEBUG=false`, `IDENTITY_ISSUER` and `IDENTITY_AUDIENCE` are required and must match identity-service `JWT_ISSUER` and `JWT_AUDIENCE` (typically `https://id.shellui.com` and `shellui`).
-
-Pin JWKS with `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE`. Do not depend on a runtime fetch of `id.shellui.com` from the production container.
+When `DEBUG=false`, `IDENTITY_ISSUER`, `IDENTITY_AUDIENCE`, and a pinned JWKS document (`IDENTITY_JWKS` or `IDENTITY_JWKS_FILE`) are required. Issuer and audience must match identity-service `JWT_ISSUER` and `JWT_AUDIENCE` (typically `https://id.shellui.com` and `shellui`). The process refuses to start if the document is missing, including when only `IDENTITY_JWKS_URL` is set.
 
 ## Transport
 
@@ -30,7 +28,7 @@ When `DEBUG=false`, `SECURE_SSL_REDIRECT`, HSTS (one year), and secure session a
 
 ## Links in auth mail
 
-`magic_link_url` must use `https` and a host in `EMAIL_AUTH_LINK_HOSTS`. Other URL variables must be `https`, `mailto`, or `tel`. This blocks a template variable that would point a button at an unexpected host.
+`magic_link_url` must use `https` and a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false` that list cannot include `localhost`, `127.0.0.1`, or `::1`. Other URL variables must be `https`, `mailto`, or `tel`. An auth-lane company override must keep the required link variable, and every button `href` must be that variable or an allowlisted `https` host.
 
 ## Webhook targets
 
