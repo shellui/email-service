@@ -1,4 +1,5 @@
-@import "tailwindcss";
+/* Templates only. Automatic detection treats words in docs and Python as classes. */
+@import "tailwindcss" source(none);
 @import "./extras.css";
 
 @source "../../templates/**/*.html";
