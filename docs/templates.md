@@ -17,13 +17,13 @@ A template is a small block document, not raw HTML from the caller:
 
 Placeholders: `{{ token }}` and `{{ token|default:"fallback" }}`. Django template tags (`{%`) are rejected.
 
-`EMAIL_RENDERER=python` (local and tests) renders those blocks to HTML. `EMAIL_RENDERER=node` (the Docker image) renders the same document with React Email in `renderer/render.mjs` (`@react-email/components`). Both renderers leave placeholders intact. Substitution happens at send time, with HTML escaping. URL tokens are checked before they are inserted.
+`EMAIL_RENDERER=python` (local and tests) renders those blocks to HTML. `EMAIL_RENDERER=node` (the Docker image) renders the same document with React Email in `renderer/render.mjs` (`@react-email/components`). Both renderers leave placeholders intact and apply the version's `theme_palette` (`{}` is the Shellui palette). Substitution happens at send time, with HTML escaping. URL tokens are checked before they are inserted.
 
 Rendered bodies are not stored on the message and are not returned by status APIs. Sensitive variables stay encrypted until the provider accepts the message, then the ciphertext is cleared.
 
 ## Versions
 
-`POST /api/v1/templates` copies the suggested document into a company draft. `POST /api/v1/templates/{id}/versions` saves another draft. `POST /api/v1/templates/{id}/versions/{number}/publish` renders it and sets `active_version`. Sends prefer:
+`POST /api/v1/templates` copies the suggested document into a company draft. `POST /api/v1/templates/{id}/versions` saves another draft (`subject`, `preheader`, `document`, optional `theme_name` and `theme_palette`). `GET` on the version list or one version returns those fields so the editor can reopen the company copy. `POST /api/v1/templates/{id}/versions/{number}/publish` renders it with the stored palette and sets `active_version`. Sends prefer:
 
 1. The company's published version for the requested language
 2. The company's published English version

@@ -30,6 +30,7 @@ from apps.email.models import (
     Unsubscribe,
     parse_message_id,
 )
+from apps.email.palette import PaletteError, stored_palette
 from apps.email.rendering import checksum, document_tokens, render_document
 from apps.email.service import (
     SendError,
@@ -38,6 +39,7 @@ from apps.email.service import (
     accept_send,
     platform_fallback_configured,
     send_test_message,
+    _url_tokens,
 )
 from apps.email.stats import company_stats
 from apps.email.substitution import SubstitutionError, substitute
@@ -219,7 +221,7 @@ class CatalogView(APIView):
                         },
                     }
                 )
-            return Response({'events': events})
+            return Response({'auth_link_hosts': list(settings.EMAIL_AUTH_LINK_HOSTS), 'events': events})
         return error_response(SendError(401, 'unauthorized'), request)
 
 
@@ -332,6 +334,47 @@ class TemplateDetailView(APIView):
         return Response(status=204)
 
 
+def _version_payload(version: TemplateVersion) -> dict:
+    published_at = None
+    if version.published_at:
+        published_at = version.published_at.isoformat().replace('+00:00', 'Z')
+    return {
+        'number': version.number,
+        'state': version.state,
+        'subject': version.subject,
+        'preheader': version.preheader,
+        'document': version.document,
+        'theme_name': version.theme_name,
+        'theme_palette': version.theme_palette or {},
+        'published_at': published_at,
+    }
+
+
+def _theme_name(raw) -> str:
+    if raw is None:
+        return 'shellui'
+    if not isinstance(raw, str):
+        raise SendError(400, 'validation_failed', {'theme_name': ['invalid']})
+    name = raw.strip() or 'shellui'
+    if len(name) > 64:
+        raise SendError(400, 'validation_failed', {'theme_name': ['too_long']})
+    return name
+
+
+def _palette_or_error(raw) -> dict:
+    try:
+        return stored_palette(raw)
+    except PaletteError as exc:
+        raise SendError(400, 'validation_failed', {'theme_palette': ['invalid_color']}) from exc
+
+
+def _rendered(document: dict, palette) -> tuple[str, str, str]:
+    try:
+        return render_document(document, palette)
+    except PaletteError as exc:
+        raise SendError(400, 'validation_failed', {'theme_palette': ['invalid_color']}) from exc
+
+
 class TemplateVersionListView(APIView):
     def get(self, request, template_id):
         template = EmailTemplate.objects.filter(pk=template_id).first()
@@ -341,19 +384,7 @@ class TemplateVersionListView(APIView):
             require_admin(request, template.company_id, allow_platform=template.company_id is None)
         except SendError as exc:
             return error_response(exc, request)
-        return Response(
-            {
-                'versions': [
-                    {
-                        'number': version.number,
-                        'state': version.state,
-                        'subject': version.subject,
-                        'published_at': version.published_at.isoformat().replace('+00:00', 'Z') if version.published_at else None,
-                    }
-                    for version in template.versions.all()
-                ]
-            }
-        )
+        return Response({'versions': [_version_payload(version) for version in template.versions.all()]})
 
     def post(self, request, template_id):
         template = EmailTemplate.objects.filter(pk=template_id).first()
@@ -366,6 +397,8 @@ class TemplateVersionListView(APIView):
             if not isinstance(document, dict) or not subject:
                 raise SendError(400, 'validation_failed', {'document': ['required']})
             document_tokens(document, subject, str(request.data.get('preheader') or ''))
+            theme_name = _theme_name(request.data.get('theme_name')) if 'theme_name' in request.data else 'shellui'
+            theme_palette = _palette_or_error(request.data.get('theme_palette') if 'theme_palette' in request.data else None)
             number = (template.versions.order_by('-number').values_list('number', flat=True).first() or 0) + 1
             TemplateVersion.objects.create(
                 template=template,
@@ -373,8 +406,8 @@ class TemplateVersionListView(APIView):
                 subject=subject,
                 preheader=str(request.data.get('preheader') or ''),
                 document=document,
-                theme_name=str(request.data.get('theme_name') or 'shellui'),
-                theme_palette=request.data.get('theme_palette') or {},
+                theme_name=theme_name,
+                theme_palette=theme_palette,
                 created_by_user_id=getattr(request.user, 'user_id', None),
             )
         except SubstitutionError:
@@ -402,7 +435,7 @@ class TemplatePublishView(APIView):
                 validate_auth_template(definition, version.document, version.subject, version.preheader)
             if definition and definition['lane_class'] == 'bulk' and 'system.unsubscribe_url' not in tokens:
                 raise SendError(400, 'unsubscribe_link_missing')
-            html, text, renderer = render_document(version.document)
+            html, text, renderer = _rendered(version.document, version.theme_palette)
             version.html = html
             version.text = text
             version.renderer_version = renderer
@@ -420,6 +453,21 @@ class TemplatePublishView(APIView):
         except SendError as exc:
             return error_response(exc, request)
         return Response({'number': version.number, 'state': version.state, 'checksum': version.checksum})
+
+
+class TemplateVersionDetailView(APIView):
+    def get(self, request, template_id, number):
+        template = EmailTemplate.objects.filter(pk=template_id).first()
+        if template is None:
+            return error_response(SendError(404, 'template_not_found'), request)
+        version = TemplateVersion.objects.filter(template=template, number=number).first()
+        if version is None:
+            return error_response(SendError(404, 'template_not_found'), request)
+        try:
+            require_admin(request, template.company_id, allow_platform=template.company_id is None)
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(_version_payload(version))
 
 
 class RenderView(APIView):
@@ -452,12 +500,15 @@ class RenderView(APIView):
         else:
             subject = str(request.data.get('subject') or '')
         try:
-            html, text, _renderer = render_document(document)
+            palette = request.data.get('theme_palette') if 'theme_palette' in request.data else None
+            html, text, _renderer = _rendered(document, palette)
             rendered_subject, missing_subject = substitute(subject, variables, html=False, subject=True)
             rendered_html, missing_html = substitute(html, variables, html=True, allow_http_localhost=settings.DEBUG)
             rendered_text, missing_text = substitute(text, variables, html=False, allow_http_localhost=settings.DEBUG)
         except SubstitutionError as exc:
             return error_response(SendError(400, exc.code), request)
+        except SendError as exc:
+            return error_response(exc, request)
         missing = sorted(set(missing_subject + missing_html + missing_text))
         return Response(
             {
@@ -469,21 +520,69 @@ class RenderView(APIView):
         )
 
 
+def _example_variables(definition: dict | None) -> dict:
+    variables = {
+        'system.message_id': 'msg_test',
+        'system.unsubscribe_url': f'{settings.PUBLIC_BASE_URL}/u/preview',
+        'system.preferences_url': f'{settings.PUBLIC_BASE_URL}/u/preview',
+    }
+    for item in (definition or {}).get('variables') or []:
+        example = item.get('example') or ''
+        if example:
+            variables[item['token']] = example
+    return variables
+
+
 class TemplateTestSendView(APIView):
     def post(self, request, template_id):
         template = EmailTemplate.objects.filter(pk=template_id).first()
         if template is None:
             return error_response(SendError(404, 'template_not_found'), request)
         try:
-            require_admin(request, template.company_id, allow_platform=template.company_id is None)
-        except SendError as exc:
-            return error_response(exc, request)
-        to_email = getattr(request.user, 'email', '') or ''
-        if not to_email:
-            return error_response(SendError(400, 'validation_failed', {'to': ['required']}), request)
-        company_id = template.company_id or getattr(request.user, 'company_id', None) or 0
-        try:
-            result = send_test_message(company_id=company_id, to_email=to_email)
+            user = require_admin(request, template.company_id, allow_platform=template.company_id is None)
+            jwt_email = (getattr(user, 'email', '') or '').strip()
+            requested = request.data.get('to') if 'to' in request.data else None
+            if requested in (None, ''):
+                to_email = jwt_email
+            else:
+                to_email = str(requested).strip()
+                if not getattr(user, 'is_staff', False) and to_email.lower() != jwt_email.lower():
+                    raise SendError(403, 'forbidden')
+            if '@' not in to_email:
+                raise SendError(400, 'validation_failed', {'to': ['required']})
+            if 'document' in request.data:
+                document = request.data.get('document')
+                if not isinstance(document, dict):
+                    raise SendError(400, 'validation_failed', {'document': ['required']})
+                subject = str(request.data.get('subject') or '')
+                preheader = str(request.data.get('preheader') or '')
+                if not subject:
+                    raise SendError(400, 'validation_failed', {'subject': ['required']})
+                palette = _palette_or_error(request.data.get('theme_palette') if 'theme_palette' in request.data else None)
+            else:
+                draft = template.versions.filter(state=TemplateVersion.STATE_DRAFT).order_by('-number').first()
+                if draft is None:
+                    raise SendError(400, 'validation_failed', {'version': ['draft_required']})
+                document = draft.document
+                subject = draft.subject
+                preheader = draft.preheader
+                palette = draft.theme_palette or {}
+            document_tokens(document, subject, preheader)
+            html, text, _renderer = _rendered(document, palette)
+            definition = get_definition(template.template_key)
+            variables = _example_variables(definition)
+            url_tokens = _url_tokens(definition) if definition else {}
+            subject, _missing_subject = substitute(subject, variables, html=False, subject=True, url_tokens=url_tokens)
+            html, _missing_html = substitute(
+                html, variables, html=True, url_tokens=url_tokens, allow_http_localhost=settings.DEBUG
+            )
+            text, _missing_text = substitute(
+                text, variables, html=False, url_tokens=url_tokens, allow_http_localhost=settings.DEBUG
+            )
+            company_id = template.company_id or getattr(user, 'company_id', None) or 0
+            result = send_test_message(company_id=company_id, to_email=to_email, subject=subject, html=html, text=text)
+        except SubstitutionError:
+            return error_response(SendError(400, 'validation_failed', {'document': ['template_tags_forbidden']}), request)
         except SendError as exc:
             return error_response(exc, request)
         return Response(result)
@@ -568,15 +667,29 @@ class RuleDetailView(APIView):
         return Response(status=204)
 
 
+def _provider_common() -> dict:
+    return {
+        'fallback_provider': settings.EMAIL_FALLBACK_PROVIDER,
+        'fallback_configured': platform_fallback_configured(),
+        'smtp_allowed': bool(settings.EMAIL_ALLOW_COMPANY_SMTP),
+        'auth_link_hosts': list(settings.EMAIL_AUTH_LINK_HOSTS),
+    }
+
+
 def _provider_payload(row: CompanyProvider | None) -> dict:
+    common = _provider_common()
     if row is None:
         return {
             'configured': False,
             'provider': None,
-            'fallback_provider': settings.EMAIL_FALLBACK_PROVIDER,
-            'fallback_configured': platform_fallback_configured(),
             'from_email': settings.DEFAULT_FROM_EMAIL,
+            'from_name': '',
+            'sending_domain': '',
             'bulk_from_email': settings.BULK_FROM_EMAIL,
+            'credentials_hint': '',
+            'webhook_configured': False,
+            'webhook_hint': '',
+            **common,
         }
     return {
         'configured': row.configured,
@@ -588,9 +701,20 @@ def _provider_payload(row: CompanyProvider | None) -> dict:
         'credentials_hint': row.credentials_hint,
         'webhook_configured': bool(row.webhook_ciphertext),
         'webhook_hint': row.webhook_hint,
-        'fallback_provider': settings.EMAIL_FALLBACK_PROVIDER,
-        'fallback_configured': platform_fallback_configured(),
+        **common,
     }
+
+
+def _kept_text(request, key: str, existing: CompanyProvider | None, default: str = '') -> str:
+    """Omitted fields keep the stored value. A present empty string clears it."""
+    if key not in request.data:
+        if existing is not None:
+            return getattr(existing, key) or ''
+        return default
+    value = request.data.get(key)
+    if value is None:
+        return ''
+    return str(value)
 
 
 class ProviderView(APIView):
@@ -621,12 +745,12 @@ class ProviderView(APIView):
             }
             if from_email.lower() in platform_from and company_id not in settings.EMAIL_PLATFORM_COMPANY_IDS:
                 raise SendError(403, 'platform_sender_not_allowed', {'from_email': ['platform_from']})
-            bulk_from = str(request.data.get('bulk_from_email') or '')
+            existing = CompanyProvider.objects.filter(company_id=company_id).first()
+            bulk_from = _kept_text(request, 'bulk_from_email', existing)
             if bulk_from.lower() in platform_from and company_id not in settings.EMAIL_PLATFORM_COMPANY_IDS:
                 raise SendError(403, 'platform_sender_not_allowed', {'bulk_from_email': ['platform_from']})
             if provider == 'smtp' and not settings.EMAIL_ALLOW_COMPANY_SMTP:
                 raise SendError(400, 'company_smtp_disabled')
-            existing = CompanyProvider.objects.filter(company_id=company_id).first()
             credentials = request.data.get('credentials')
             if credentials is None and existing and existing.provider == provider:
                 ciphertext = existing.credentials_ciphertext
@@ -664,9 +788,9 @@ class ProviderView(APIView):
                 defaults={
                     'provider': provider,
                     'from_email': from_email,
-                    'from_name': str(request.data.get('from_name') or ''),
-                    'sending_domain': str(request.data.get('sending_domain') or ''),
-                    'bulk_from_email': str(request.data.get('bulk_from_email') or ''),
+                    'from_name': _kept_text(request, 'from_name', existing),
+                    'sending_domain': _kept_text(request, 'sending_domain', existing),
+                    'bulk_from_email': bulk_from,
                     'credentials_ciphertext': ciphertext,
                     'credentials_hint': hint,
                     'webhook_ciphertext': webhook_ciphertext,

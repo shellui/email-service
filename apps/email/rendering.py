@@ -10,6 +10,7 @@ from pathlib import Path
 
 from django.conf import settings
 
+from apps.email.palette import resolve_palette
 from apps.email.substitution import escape_keeping_tokens, find_tokens, reject_template_tags
 
 RENDERER_VERSION = 'shellui-email-1'
@@ -24,20 +25,20 @@ def document_tokens(document: dict, subject: str = '', preheader: str = '') -> s
     return tokens
 
 
-def _python_html(document: dict) -> str:
+def _python_html(document: dict, colors: dict[str, str]) -> str:
     preview = escape(str(document.get('preview') or ''))
     parts = [
         '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        f'<title>Shellui</title></head>',
-        '<body style="margin:0;background:#f6f4ef;color:#1a1408;font-family:Georgia,serif;">',
+        '<title>Shellui</title></head>',
+        f'<body style="margin:0;background:{colors["muted"]};color:{colors["foreground"]};font-family:Georgia,serif;">',
         '<div style="display:none;max-height:0;overflow:hidden;">' + preview + '</div>',
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f4ef;">',
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{colors["muted"]};">',
         '<tr><td align="center" style="padding:32px 16px;">',
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        'style="max-width:560px;background:#ffffff;border:1px solid #e7e0d4;border-radius:12px;">',
+        f'style="max-width:560px;background:{colors["background"]};border:1px solid {colors["border"]};border-radius:12px;">',
         '<tr><td style="padding:28px 32px 8px;font-family:Georgia,serif;font-size:14px;letter-spacing:0.08em;'
-        'text-transform:uppercase;color:#8a6a12;">Shellui</td></tr>',
+        f'text-transform:uppercase;color:{colors["primary"]};">Shellui</td></tr>',
     ]
     for block in document.get('blocks') or []:
         kind = block.get('type')
@@ -45,25 +46,25 @@ def _python_html(document: dict) -> str:
         if kind == 'heading':
             parts.append(
                 '<tr><td style="padding:8px 32px 12px;font-family:Georgia,serif;font-size:26px;'
-                f'line-height:1.3;color:#1a1408;">{text}</td></tr>'
+                f'line-height:1.3;color:{colors["foreground"]};">{text}</td></tr>'
             )
         elif kind == 'text':
             parts.append(
                 '<tr><td style="padding:0 32px 14px;font-family:Georgia,serif;font-size:16px;'
-                f'line-height:1.55;color:#3f3a32;">{text}</td></tr>'
+                f'line-height:1.55;color:{colors["foreground"]};">{text}</td></tr>'
             )
         elif kind == 'button':
             href = escape_keeping_tokens(str(block.get('href') or ''))
             parts.append(
                 '<tr><td style="padding:8px 32px 20px;">'
-                f'<a href="{href}" style="display:inline-block;background:#e3a512;color:#1a1408;'
+                f'<a href="{href}" style="display:inline-block;background:{colors["primary"]};color:{colors["primaryForeground"]};'
                 'text-decoration:none;font-family:Georgia,serif;font-size:16px;font-weight:700;'
                 f'padding:12px 22px;border-radius:8px;">{text}</a></td></tr>'
             )
         elif kind == 'footer':
             parts.append(
                 '<tr><td style="padding:8px 32px 28px;font-family:Georgia,serif;font-size:12px;'
-                f'line-height:1.5;color:#6b645b;">{text}</td></tr>'
+                f'line-height:1.5;color:{colors["mutedForeground"]};">{text}</td></tr>'
             )
     parts.append('</table></td></tr></table></body></html>')
     return ''.join(parts)
@@ -91,11 +92,11 @@ def _python_text(document: dict) -> str:
     return '\n'.join(lines).strip() + '\n'
 
 
-def _node_render(document: dict) -> tuple[str, str]:
+def _node_render(document: dict, colors: dict[str, str]) -> tuple[str, str]:
     script = Path(settings.BASE_DIR) / 'renderer' / 'render.mjs'
     completed = subprocess.run(
         ['node', str(script)],
-        input=json.dumps(document).encode('utf-8'),
+        input=json.dumps({'document': document, 'palette': colors}).encode('utf-8'),
         capture_output=True,
         check=False,
         timeout=30,
@@ -106,13 +107,17 @@ def _node_render(document: dict) -> tuple[str, str]:
     return payload['html'], payload['text']
 
 
-def render_document(document: dict) -> tuple[str, str, str]:
-    """Return html, text, renderer version. Placeholders are left intact."""
+def render_document(document: dict, palette: dict | None = None) -> tuple[str, str, str]:
+    """Return html, text, renderer version. Placeholders are left intact.
+
+    ``palette`` is the stored theme palette. None and {} use the Shellui colors.
+    """
+    colors = resolve_palette(palette)
     mode = getattr(settings, 'EMAIL_RENDERER', 'python')
     if mode == 'node':
-        html, text = _node_render(document)
+        html, text = _node_render(document, colors)
         return html, text, 'react-email'
-    return _python_html(document), _python_text(document), RENDERER_VERSION
+    return _python_html(document, colors), _python_text(document), RENDERER_VERSION
 
 
 def checksum(subject: str, html: str, text: str) -> str:

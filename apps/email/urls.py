@@ -27,6 +27,7 @@ from apps.email.views import (
     TemplateListView,
     TemplatePublishView,
     TemplateTestSendView,
+    TemplateVersionDetailView,
     TemplateVersionListView,
 )
 
@@ -44,6 +45,11 @@ urlpatterns = [
     path('templates', TemplateListView.as_view(), name='email-templates'),
     path('templates/<int:template_id>', TemplateDetailView.as_view(), name='email-template-detail'),
     path('templates/<int:template_id>/versions', TemplateVersionListView.as_view(), name='email-template-versions'),
+    path(
+        'templates/<int:template_id>/versions/<int:number>',
+        TemplateVersionDetailView.as_view(),
+        name='email-template-version',
+    ),
     path(
         'templates/<int:template_id>/versions/<int:number>/publish',
         TemplatePublishView.as_view(),

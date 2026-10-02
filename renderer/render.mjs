@@ -2,7 +2,8 @@
  * Render a Shellui email document with React Email.
  * Placeholders such as {{ company_name }} are left as text.
  *
- * stdin: JSON document { preview, blocks: [{type, text, href?}] }
+ * stdin: JSON { document: { preview, blocks }, palette } or a bare document.
+ * palette colors are #RRGGBB. Anything else falls back to the Shellui palette.
  * stdout: JSON { html, text }
  */
 import React from 'react';
@@ -19,7 +20,31 @@ import {
   Text,
 } from '@react-email/components';
 
-function Email({ document }) {
+const DEFAULT_PALETTE = {
+  background: '#ffffff',
+  foreground: '#1a1408',
+  muted: '#f6f4ef',
+  mutedForeground: '#6b645b',
+  primary: '#e3a512',
+  primaryForeground: '#1a1408',
+  border: '#e7e0d4',
+};
+
+function color(value, fallback) {
+  return typeof value === 'string' && /^#[0-9A-Fa-f]{6}$/.test(value) ? value : fallback;
+}
+
+function paletteColors(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const colors = {};
+  for (const key of Object.keys(DEFAULT_PALETTE)) {
+    colors[key] = color(source[key], DEFAULT_PALETTE[key]);
+  }
+  return colors;
+}
+
+function Email({ document, palette }) {
+  const colors = paletteColors(palette);
   const blocks = document.blocks || [];
   return React.createElement(
     Html,
@@ -27,7 +52,7 @@ function Email({ document }) {
     React.createElement(Head, null),
     React.createElement(
       Body,
-      { style: { backgroundColor: '#f6f4ef', margin: 0, fontFamily: 'Georgia, serif' } },
+      { style: { backgroundColor: colors.muted, margin: 0, fontFamily: 'Georgia, serif', color: colors.foreground } },
       React.createElement(Preview, null, document.preview || ''),
       React.createElement(
         Container,
@@ -35,8 +60,8 @@ function Email({ document }) {
           style: {
             maxWidth: '560px',
             margin: '32px auto',
-            backgroundColor: '#ffffff',
-            border: '1px solid #e7e0d4',
+            backgroundColor: colors.background,
+            border: `1px solid ${colors.border}`,
             borderRadius: '12px',
             padding: '8px 0 12px',
           },
@@ -45,7 +70,7 @@ function Email({ document }) {
           Text,
           {
             style: {
-              color: '#8a6a12',
+              color: colors.primary,
               fontSize: '14px',
               letterSpacing: '0.08em',
               textTransform: 'uppercase',
@@ -60,7 +85,7 @@ function Email({ document }) {
               Heading,
               {
                 key: index,
-                style: { color: '#1a1408', fontSize: '26px', padding: '8px 32px', fontWeight: 700 },
+                style: { color: colors.foreground, fontSize: '26px', padding: '8px 32px', fontWeight: 700 },
               },
               block.text || '',
             );
@@ -74,8 +99,8 @@ function Email({ document }) {
                 {
                   href: block.href || '',
                   style: {
-                    backgroundColor: '#e3a512',
-                    color: '#1a1408',
+                    backgroundColor: colors.primary,
+                    color: colors.primaryForeground,
                     borderRadius: '8px',
                     padding: '12px 22px',
                     fontWeight: 700,
@@ -90,7 +115,7 @@ function Email({ document }) {
             {
               key: index,
               style: {
-                color: block.type === 'footer' ? '#6b645b' : '#3f3a32',
+                color: block.type === 'footer' ? colors.mutedForeground : colors.foreground,
                 fontSize: block.type === 'footer' ? '12px' : '16px',
                 lineHeight: '1.55',
                 padding: '0 32px',
@@ -108,8 +133,9 @@ const chunks = [];
 for await (const chunk of process.stdin) {
   chunks.push(chunk);
 }
-const document = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
-const element = React.createElement(Email, { document });
+const raw = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+const document = raw && Object.prototype.hasOwnProperty.call(raw, 'document') ? raw.document : raw;
+const element = React.createElement(Email, { document: document || {}, palette: raw.palette });
 const html = await render(element);
 const text = await render(element, { plainText: true });
 process.stdout.write(JSON.stringify({ html, text }));

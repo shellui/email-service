@@ -362,6 +362,7 @@ Auth: service key, staff, or company owner.
 
 ```json
 {
+  "auth_link_hosts": ["id.shellui.com"],
   "events": [
     {
       "service": "identity",
@@ -383,7 +384,7 @@ Auth: service key, staff, or company owner.
 }
 ```
 
-`variables[]` items: `token`, `type` (`string` or `url`), `required`, `description` (an i18n key `email.var.<token>`), `example`, `is_url`, and optionally `sensitive` and `allowed_hosts_setting`.
+`auth_link_hosts` is the read-only `EMAIL_AUTH_LINK_HOSTS` list. The editor uses it to check a button `href` before publish. `variables[]` items: `token`, `type` (`string` or `url`), `required`, `description` (an i18n key `email.var.<token>`), `example`, `is_url`, and optionally `sensitive` and `allowed_hosts_setting`. A variable with `allowed_hosts_setting: "EMAIL_AUTH_LINK_HOSTS"` must use one of those hosts.
 
 Full documents (blocks, not only subject) are on `GET /api/v1/templates/defaults?template_key=&languages=en,fr` (admin JWT).
 
@@ -401,7 +402,7 @@ Auth: service key, staff, or company owner. Does not send mail.
 }
 ```
 
-Or send your own `document` and `subject`. Response: `subject`, `html`, `text`, `missing_variables` (tokens left unsubstituted).
+Or send your own `document` and `subject`. Optional `theme_palette` is applied to that HTML. Omit it, or send `{}`, for the Shellui palette. Response: `subject`, `html`, `text`, `missing_variables` (tokens left unsubstituted).
 
 ## Admin: provider
 
@@ -422,11 +423,15 @@ Auth: staff or company owner. `company_id` query parameter, or the token's compa
   "webhook_configured": false,
   "webhook_hint": "",
   "fallback_provider": "resend",
-  "fallback_configured": true
+  "fallback_configured": true,
+  "smtp_allowed": false,
+  "auth_link_hosts": ["id.shellui.com"]
 }
 ```
 
-The API key is never returned. `configured: false` means auth mail can still use the platform fallback. Non-auth mail then returns `platform_sender_not_allowed` unless this company is in `EMAIL_PLATFORM_COMPANY_IDS`.
+`smtp_allowed` is `EMAIL_ALLOW_COMPANY_SMTP` (default false). `auth_link_hosts` is the same list as on `GET /api/v1/catalog`.
+
+When the company has no provider row the same keys are present: `configured` is false, `provider` is null, `credentials_hint`, `from_name`, `sending_domain`, and `webhook_hint` are empty strings, and `webhook_configured` is false. `from_email` and `bulk_from_email` are the platform addresses. The API key is never returned. `configured: false` means auth mail can still use the platform fallback. Non-auth mail then returns `platform_sender_not_allowed` unless this company is in `EMAIL_PLATFORM_COMPANY_IDS`.
 
 `PUT /api/v1/provider?company_id=42`
 
@@ -444,7 +449,9 @@ The API key is never returned. `configured: false` means auth mail can still use
 
 SMTP `credentials`: `host`, `port`, `username`, `password`, `use_tls`, `use_ssl`. Company SMTP is rejected with `company_smtp_disabled` unless `EMAIL_ALLOW_COMPANY_SMTP=true`. When it is on, `host` must resolve to a public address (`provider_host_not_public` otherwise). The platform `EMAIL_HOST` relay is separate and is not gated by that flag.
 
-If `provider` is unchanged and `credentials` is omitted, the stored secret is kept. A provider change requires `credentials`.
+Omitted fields keep the stored value. A present empty string clears that field. This applies to `from_name`, `sending_domain`, and `bulk_from_email`. Admin sends `bulk_from_email` on every save, including `""` when the company has no bulk From.
+
+If `provider` is unchanged and `credentials` is omitted, the stored secret is kept. A provider change requires `credentials`. An omitted `webhook_secret` keeps the stored webhook secret.
 
 `POST /api/v1/provider/test-send?company_id=42`
 
@@ -474,6 +481,27 @@ Default from address when the company has none: `no-reply@shellui.com`. Bulk fro
 
 `GET /api/v1/rules?company_id=42` returns every catalog event, including ones the company has not customized (`customized: false` uses the catalog default).
 
+```json
+{
+  "company_id": 42,
+  "rules": [
+    {
+      "event_type": "hosting.deployment.failed",
+      "service": "hosting",
+      "template_key": "hosting.deployment.failed",
+      "enabled": true,
+      "language": "",
+      "recipient_mode": "hints",
+      "static_recipients": [],
+      "customized": false,
+      "default_enabled": true
+    }
+  ]
+}
+```
+
+`language` is empty until the company sets one. `recipient_mode` is `hints` or `static`. `static_recipients` is a list of address strings or `{email, user_id}` objects.
+
 `POST` or `PATCH /api/v1/rules?company_id=42`
 
 ```json
@@ -500,11 +528,27 @@ Suggested copy is used until a company publishes a version.
 | `GET` | `/api/v1/templates/{id}` | Metadata |
 | `PATCH` | `/api/v1/templates/{id}` | `400` with `field_errors.template: ["use_versions"]` |
 | `DELETE` | `/api/v1/templates/{id}` | `204`. Later sends use the suggested document again. |
-| `GET` | `/api/v1/templates/{id}/versions` | `{versions: [{number, state, subject, published_at}]}` |
-| `POST` | `/api/v1/templates/{id}/versions` | Body `subject`, `preheader`, `document`. `201` `{number, state: "draft"}` |
-| `POST` | `/api/v1/templates/{id}/versions/{number}/publish` | Renders HTML, sets `active_version`. `{number, state, checksum}` |
-| `POST` | `/api/v1/templates/{id}/send-test` | Sends a plain test to the admin's own JWT email. Does not render the draft. |
+| `GET` | `/api/v1/templates/{id}/versions` | `{versions: [{number, state, subject, preheader, document, theme_name, theme_palette, published_at}]}` |
+| `GET` | `/api/v1/templates/{id}/versions/{number}` | One version, same fields |
+| `POST` | `/api/v1/templates/{id}/versions` | Body `subject`, `preheader`, `document`, optional `theme_name` (default `shellui`) and `theme_palette`. `201` `{number, state: "draft"}` |
+| `POST` | `/api/v1/templates/{id}/versions/{number}/publish` | Renders HTML with the stored palette, sets `active_version`. `{number, state, checksum}` |
+| `POST` | `/api/v1/templates/{id}/send-test` | Renders the draft in the body, or the latest unpublished version, and sends it to the admin's own JWT email |
 | `GET` | `/api/v1/templates/defaults?template_key=&languages=en,fr` | Suggested subject, preheader, document, variables |
+
+`theme_palette` is either `{}` or all of these keys, each a `#RRGGBB` color: `background`, `foreground`, `muted`, `mutedForeground`, `primary`, `primaryForeground`, `border`. `{}` uses the Shellui palette (`primary` `#e3a512`). Any other shape is `400 validation_failed` with `theme_palette: ["invalid_color"]`. Publish and later sends apply the stored palette, so the message matches the admin preview. An omitted `theme_name` is stored as `shellui`.
+
+`POST /api/v1/templates/{id}/send-test` body, all optional:
+
+```json
+{
+  "document": {"preview": "Short inbox preview", "blocks": []},
+  "subject": "Hello",
+  "preheader": "",
+  "theme_palette": {}
+}
+```
+
+When `document` is present it is the draft being edited, including one that has not been saved as a version. When it is omitted, the highest-numbered `draft` version is rendered. No draft is `400` with `version: ["draft_required"]`. Catalog `example` values fill `{{ token }}` so the message is readable. A company owner can only send to the email on their JWT. Staff may set `to`. The response matches provider test-send: `status`, `provider`, `provider_message_id`.
 
 `document` shape:
 

@@ -29,6 +29,7 @@ from apps.email.models import (
     Suppression,
     TemplateVersion,
 )
+from apps.email.palette import PaletteError
 from apps.email.rendering import render_document
 from apps.email.substitution import SubstitutionError, substitute
 from apps.providers.registry import get_provider
@@ -227,11 +228,18 @@ def resolve_content(company_id: int, template_key: str, language: str) -> tuple[
             state=TemplateVersion.STATE_PUBLISHED,
         ).first()
         if version and version.html:
+            html = version.html
+            text = version.text
+            if version.theme_palette:
+                try:
+                    html, text, _renderer = render_document(version.document, version.theme_palette)
+                except PaletteError as exc:
+                    raise SendError(400, 'validation_failed', {'theme_palette': ['invalid_color']}) from exc
             return definition, {
                 'subject': version.subject,
                 'preheader': version.preheader,
-                'html': version.html,
-                'text': version.text,
+                'html': html,
+                'text': text,
                 'version': version.number,
                 'language': override.language,
             }
@@ -1185,8 +1193,16 @@ def apply_provider_event(*, provider_message_id: str, event_name: str, provider_
     return True
 
 
-def send_test_message(*, company_id: int, to_email: str, provider_name: str | None = None) -> dict:
-    """Send one plain test message with the company provider, or the platform fallback."""
+def send_test_message(
+    *,
+    company_id: int,
+    to_email: str,
+    provider_name: str | None = None,
+    subject: str | None = None,
+    html: str | None = None,
+    text: str | None = None,
+) -> dict:
+    """Send one test message with the company provider, or the platform fallback."""
     from apps.providers.base import ProviderMessage
 
     company = CompanyProvider.objects.filter(company_id=company_id, configured=True).first()
@@ -1208,9 +1224,9 @@ def send_test_message(*, company_id: int, to_email: str, provider_name: str | No
         to_email=to_email,
         from_email=from_email,
         from_name=from_name,
-        subject='[Shellui] Test message',
-        html='<p>This is a test message from Shellui.</p>',
-        text='This is a test message from Shellui.\n',
+        subject=subject or '[Shellui] Test message',
+        html=html or '<p>This is a test message from Shellui.</p>',
+        text=text or 'This is a test message from Shellui.\n',
         idempotency_key=f'test-{company_id}-{to_email}',
         tags={'lane': 'transactional', 'company_id': str(company_id)},
     )
