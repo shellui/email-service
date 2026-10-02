@@ -88,6 +88,7 @@ JSON errors never contain translated sentences. Shape:
 | `provider_host_not_public` | 400 | Company SMTP host is missing, private, or not a public address |
 | `auth_link_missing` | 400 | An auth-lane template override dropped a required link variable such as `magic_link_url` |
 | `auth_link_host_not_allowed` | 400 | An auth-lane button `href` is not an allowlisted `https` host or an allowed link variable |
+| `auth_literal_link` | 400 | An auth-lane override has a literal URL in the subject, preheader, preview, heading, text, footer, or button label |
 | `provider_not_available` | 400 | Provider name is not `resend` or `smtp` |
 | `provider_test_failed` | 502 | The test send was refused by the provider |
 | `message_not_found` | 404 | Unknown message id |
@@ -308,8 +309,8 @@ Recipient selection:
 
 `company_name` may be omitted. email-service fills it before validation, in this order:
 
-1. `company_name` on this request, when it is non-empty. That value is stored for the company.
-2. A `company_name` stored from an earlier `/send` or `/events` call for the same `company_id` (identity mail usually does this).
+1. `company_name` on this request, when it is non-empty. It is stored for later mail only when the caller is the identity service key, or a service key whose `allowed_company_ids` is exactly this company. Any other caller, including a hosting or storage key that can address every company, uses the name for this message only.
+2. A `company_name` stored from an earlier allowed caller for the same `company_id` (identity mail usually does this).
 3. The company provider `from_name`, when the provider is configured and `from_name` is not the platform default (`Shellui`).
 4. Otherwise the variable is left unset. Suggested templates then use their language default (`your company` in English, `votre entreprise` in French).
 
@@ -323,7 +324,7 @@ Non-auth mail (`POST /api/v1/send` on a transactional template, and `POST /api/v
 
 A company that is not in `EMAIL_PLATFORM_COMPANY_IDS` cannot set `from_email` or `bulk_from_email` to `DEFAULT_FROM_EMAIL` or `BULK_FROM_EMAIL` (`403 platform_sender_not_allowed`).
 
-Auth-lane template overrides must still contain every required URL variable (`magic_link_url` or `invitation_url`). Each button `href` must be one of those variables (or another declared URL variable) or a literal `https` URL whose host is on `EMAIL_AUTH_LINK_HOSTS`. Otherwise publish returns `auth_link_missing` or `auth_link_host_not_allowed`.
+Auth-lane template overrides must still contain every required URL variable (`magic_link_url` or `invitation_url`). Each button `href` must be one of those variables (or another declared URL variable) or a literal `https` URL whose host is on `EMAIL_AUTH_LINK_HOSTS`. Otherwise publish returns `auth_link_missing` or `auth_link_host_not_allowed`. Subject, preheader, preview, heading, text, footer, and the button label must not contain a literal URL. The required link variable may appear there. A literal URL returns `auth_literal_link`.
 
 ## Message status
 
@@ -662,9 +663,9 @@ Opens and clicks are ignored. Delivery, bounce, complaint, and delay update mess
 
 `GET /u/{token}` shows a confirmation page and does not unsubscribe.
 
-`POST /u/{token}` records the unsubscribe (one-click, including an empty body) only when the token signature matches. Token form: `{company_id}.{category}.{email_hmac}.{signature}`. `signature` is HMAC-SHA256 of `{company_id}|{email_hmac}|{category}` with `EMAIL_HASH_PEPPER`. A token that does not verify returns 404 and does not emit `email.unsubscribe.created`.
+`POST /u/{token}` records the unsubscribe (one-click, including an empty body) only when the token signature matches. Token form: `{company_id}.{category}.{email_hmac}.{signature}`. `category` is the lane (`transactional` or `bulk`). `signature` is HMAC-SHA256 of `{company_id}|{email_hmac}|{category}` with `EMAIL_HASH_PEPPER`. A token that does not verify returns 404 and does not emit `email.unsubscribe.created`.
 
-This is for later bulk mail. Transactional and auth templates do not include a one-click unsubscribe control.
+Non-auth messages set `system.unsubscribe_url` and `system.preferences_url` to that signed URL. Auth messages do not. Bulk messages also set `List-Unsubscribe` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. Transactional messages do not add those headers.
 
 ## Shellui Actions (outbound)
 

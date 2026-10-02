@@ -36,6 +36,6 @@ Rendered bodies are not stored on the message and are not returned by status API
 
 Each catalog entry lists tokens, types, and whether they are required. `description` is an i18n key (`email.var.<token>`), not a sentence, so clients can translate it.
 
-`system.message_id`, `system.unsubscribe_url`, and `system.preferences_url` are filled by the worker. Callers must not send them.
+`system.message_id` is filled by the worker. On non-auth mail, `system.unsubscribe_url` and `system.preferences_url` are the signed `POST /u/{token}` URL for that recipient. Auth mail does not set them. Callers must not send these tokens.
 
 Auth URL hosts are limited by `EMAIL_AUTH_LINK_HOSTS` (default `id.shellui.com`, `localhost`, `127.0.0.1`).

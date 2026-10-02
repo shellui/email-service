@@ -28,11 +28,15 @@ When `DEBUG=false`, `SECURE_SSL_REDIRECT`, HSTS (one year), and secure session a
 
 ## Links in auth mail
 
-`magic_link_url` must use `https` and a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false` that list cannot include `localhost`, `127.0.0.1`, or `::1`. Other URL variables must be `https`, `mailto`, or `tel`. An auth-lane company override must keep the required link variable, and every button `href` must be that variable or an allowlisted `https` host.
+`magic_link_url` must use `https` and a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false` that list cannot include `localhost`, `127.0.0.1`, or `::1`. Other URL variables must be `https`, `mailto`, or `tel`. An auth-lane company override must keep the required link variable, and every button `href` must be that variable or an allowlisted `https` host. Subject, preheader, preview, heading, text, footer, and the button label cannot contain a literal URL (`auth_literal_link`). The required link variable is the only link allowed in that prose.
 
 ## Webhook targets
 
-Outbound Shellui Actions URLs are resolved and checked for private addresses (`apps/actions/ssrf.py`). Set `ACTIONS_WEBHOOK_ALLOW_PRIVATE=true` only on a local network.
+Outbound Shellui Actions URLs are resolved and checked for private addresses (`apps/actions/ssrf.py`). Set `ACTIONS_WEBHOOK_ALLOW_PRIVATE=true` only on a local network. A rule's `config` cannot turn that check off.
+
+## SMTP duplicate window
+
+Resend retries use `Idempotency-Key` set to the message id, so a second handoff of the same message does not send another copy. SMTP has no equivalent. `Message-ID` is stable (`<{message_id}@email.shellui.com>`), and a row that already has `provider_message_id` is marked sent instead of resent. If the worker stops after the relay has accepted the message and before that id is saved, the next attempt can deliver a second copy. That window is a property of SMTP.
 
 ## Privacy erase
 

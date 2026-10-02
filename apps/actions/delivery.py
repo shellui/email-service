@@ -108,8 +108,6 @@ def deliver_one(row_id) -> None:
         headers['X-Shellui-Delivery-Attempt'] = str(row.attempt_count)
         attempt_number = row.attempt_count
         allow_private = settings.ACTIONS_WEBHOOK_ALLOW_PRIVATE
-        if row.action_rule_id and (row.action_rule.config or {}).get('allow_private_urls'):
-            allow_private = True
 
     started = time.monotonic()
     error_code = ''

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 
 from django.conf import settings
@@ -31,6 +29,8 @@ from apps.email.models import (
     parse_message_id,
 )
 from apps.email.palette import PaletteError, stored_palette
+from apps.email.unsubscribe import parse_unsubscribe_token, unsubscribe_token, unsubscribe_url
+from apps.providers.credentials import strip_internal_credentials
 from apps.email.rendering import checksum, document_tokens, render_document
 from apps.email.service import (
     SendError,
@@ -523,8 +523,6 @@ class RenderView(APIView):
 def _example_variables(definition: dict | None) -> dict:
     variables = {
         'system.message_id': 'msg_test',
-        'system.unsubscribe_url': f'{settings.PUBLIC_BASE_URL}/u/preview',
-        'system.preferences_url': f'{settings.PUBLIC_BASE_URL}/u/preview',
     }
     for item in (definition or {}).get('variables') or []:
         example = item.get('example') or ''
@@ -550,6 +548,7 @@ class TemplateTestSendView(APIView):
                     raise SendError(403, 'forbidden')
             if '@' not in to_email:
                 raise SendError(400, 'validation_failed', {'to': ['required']})
+            company_id = template.company_id or getattr(user, 'company_id', None) or 0
             if 'document' in request.data:
                 document = request.data.get('document')
                 if not isinstance(document, dict):
@@ -571,6 +570,11 @@ class TemplateTestSendView(APIView):
             html, text, _renderer = _rendered(document, palette)
             definition = get_definition(template.template_key)
             variables = _example_variables(definition)
+            if not definition or definition.get('lane_class') != 'auth':
+                category = (definition or {}).get('lane_class') or 'transactional'
+                link = unsubscribe_url(int(company_id), to_email, category)
+                variables['system.unsubscribe_url'] = link
+                variables['system.preferences_url'] = link
             url_tokens = _url_tokens(definition) if definition else {}
             subject, _missing_subject = substitute(subject, variables, html=False, subject=True, url_tokens=url_tokens)
             html, _missing_html = substitute(
@@ -579,7 +583,6 @@ class TemplateTestSendView(APIView):
             text, _missing_text = substitute(
                 text, variables, html=False, url_tokens=url_tokens, allow_http_localhost=settings.DEBUG
             )
-            company_id = template.company_id or getattr(user, 'company_id', None) or 0
             result = send_test_message(company_id=company_id, to_email=to_email, subject=subject, html=html, text=text)
         except SubstitutionError:
             return error_response(SendError(400, 'validation_failed', {'document': ['template_tags_forbidden']}), request)
@@ -771,6 +774,7 @@ class ProviderView(APIView):
                     except SSRFError:
                         raise SendError(400, 'provider_host_not_public', {'host': ['not_public']})
                 secret = credentials.get('api_key') or credentials.get('password') or ''
+                credentials = strip_internal_credentials(credentials)
                 ciphertext = encrypt_json(credentials, setting='EMAIL_CREDENTIALS_KEY')
                 hint = mask_secret(str(secret))
             webhook_secret = request.data.get('webhook_secret')
@@ -1010,35 +1014,8 @@ class ProviderWebhookView(APIView):
         return Response({'status': 'ok'})
 
 
-def unsubscribe_signature(company_id: int, email_hmac_value: str, category: str) -> str:
-    return hmac.new(
-        settings.EMAIL_HASH_PEPPER.encode('utf-8'),
-        f'{company_id}|{email_hmac_value}|{category}'.encode('utf-8'),
-        hashlib.sha256,
-    ).hexdigest()
-
-
 def _unsubscribe_token(company_id: int, email: str, category: str) -> str:
-    digest = email_hmac(email)
-    signature = unsubscribe_signature(company_id, digest, category)
-    return f'{company_id}.{category}.{digest}.{signature}'
-
-
-def parse_unsubscribe_token(token: str) -> tuple[int, str, str] | None:
-    parts = (token or '').split('.')
-    if len(parts) != 4:
-        return None
-    try:
-        company_id = int(parts[0])
-    except ValueError:
-        return None
-    category, digest, signature = parts[1], parts[2], parts[3]
-    if not category or not digest or not signature:
-        return None
-    expected = unsubscribe_signature(company_id, digest, category)
-    if not hmac.compare_digest(expected, signature):
-        return None
-    return company_id, category, digest
+    return unsubscribe_token(company_id, email, category)
 
 
 @csrf_exempt

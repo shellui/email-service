@@ -15,7 +15,9 @@ from django.utils import timezone
 
 from apps.actions.emit import emit_email_event
 from apps.email.catalog import LANE_AUTH, LANE_BULK, get_definition
-from apps.email.companies import apply_company_name
+from apps.email.companies import apply_company_name, company_name_may_be_stored
+from apps.email.unsubscribe import unsubscribe_url
+from apps.providers.credentials import strip_internal_credentials
 from apps.email.crypto import decrypt_json, email_hmac, encrypt_json, mask_email
 from apps.email.models import (
     CompanyProvider,
@@ -160,10 +162,25 @@ def _url_tokens(definition: dict) -> dict[str, set[str] | None]:
 
 
 def _system_variables(message: Message) -> dict:
+    values = {'system.message_id': message.public_id}
+    if message.lane == LANE_AUTH:
+        return values
+    url = unsubscribe_url(message.company_id, message.to_email, message.lane)
+    values['system.unsubscribe_url'] = url
+    values['system.preferences_url'] = url
+    return values
+
+
+def _list_unsubscribe_headers(lane: str, variables: dict) -> dict[str, str]:
+    """One-click headers for bulk mail. Transactional templates do not add them."""
+    if lane != LANE_BULK:
+        return {}
+    url = variables.get('system.unsubscribe_url') or ''
+    if not url:
+        return {}
     return {
-        'system.message_id': message.public_id,
-        'system.unsubscribe_url': f'{settings.PUBLIC_BASE_URL}/u/preview',
-        'system.preferences_url': f'{settings.PUBLIC_BASE_URL}/u/preview',
+        'List-Unsubscribe': f'<{url}>',
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     }
 
 
@@ -476,7 +493,7 @@ def accept_send(principal, body: dict) -> tuple[int, dict]:
             raise
         merged = dict(variables_in)
         merged.setdefault('recipient_email', recipient['email'])
-        apply_company_name(company_id, merged)
+        apply_company_name(company_id, merged, store=company_name_may_be_stored(principal, company_id))
         cleaned = _validate_variables(definition, merged, field_prefix='variables.')
         prepared.append((recipient, cleaned, hmac_value))
     messages = []
@@ -590,7 +607,9 @@ def accept_batch(principal, body: dict) -> tuple[int, dict]:
                 _check_rates(company_id=company_id, lane=lane, hmac_value=hmac_value)
                 merged = dict(variables_in)
                 merged.setdefault('recipient_email', recipient['email'])
-                apply_company_name(company_id, merged)
+                apply_company_name(
+                    company_id, merged, store=company_name_may_be_stored(principal, company_id)
+                )
                 cleaned = _validate_variables(definition, merged, field_prefix=f'items.{index}.variables.')
             except SendError as exc:
                 rejected.append({'index': index, 'error_code': exc.code})
@@ -729,7 +748,7 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
             _check_rates(company_id=company_id, lane=lane, hmac_value=hmac_value)
             merged = {key: _coerce(value) for key, value in payload.items()}
             merged.setdefault('recipient_email', recipient['email'])
-            apply_company_name(company_id, merged)
+            apply_company_name(company_id, merged, store=company_name_may_be_stored(principal, company_id))
             cleaned = _validate_variables(definition, merged, field_prefix='payload.')
             message = _queue_message(
                 company_id=company_id,
@@ -843,7 +862,9 @@ def _credentials_for(message: Message) -> tuple[str, dict, str, str]:
             return 'smtp', {}, settings.DEFAULT_FROM_EMAIL, settings.DEFAULT_FROM_NAME
         return 'smtp', creds, settings.DEFAULT_FROM_EMAIL, settings.DEFAULT_FROM_NAME
     if company:
-        creds = decrypt_json(company.credentials_ciphertext, setting='EMAIL_CREDENTIALS_KEY')
+        creds = strip_internal_credentials(
+            decrypt_json(company.credentials_ciphertext, setting='EMAIL_CREDENTIALS_KEY')
+        )
         from_email = company.from_email or settings.DEFAULT_FROM_EMAIL
         if message.lane == LANE_BULK and (company.bulk_from_email or settings.BULK_FROM_EMAIL):
             from_email = company.bulk_from_email or settings.BULK_FROM_EMAIL
@@ -867,7 +888,6 @@ def _platform_credentials(provider_name: str) -> dict | None:
             'password': settings.EMAIL_HOST_PASSWORD,
             'use_tls': settings.EMAIL_USE_TLS,
             'use_ssl': settings.EMAIL_USE_SSL,
-            'trusted_platform': True,
         }
     if provider_name == 'fake' and settings.EMAIL_ALLOW_FAKE_PROVIDER:
         return {}
@@ -973,6 +993,7 @@ def deliver_message(message_id) -> None:
             'lane': snapshot['lane'],
             'company_id': str(snapshot['company_id']),
         },
+        headers=_list_unsubscribe_headers(snapshot['lane'], snapshot['variables']),
         stream='bulk' if snapshot['lane'] == LANE_BULK else 'transactional',
     )
     if provider is None:

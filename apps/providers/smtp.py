@@ -28,6 +28,26 @@ class _PinnedSMTPSSL(smtplib.SMTP_SSL):
         return self.context.wrap_socket(new_socket, server_hostname=self._tls_hostname)
 
 
+def _is_settings_relay(creds: dict) -> bool:
+    """True when these credentials are the operator relay, not a company copy of the flag."""
+    platform_host = (settings.EMAIL_HOST or '').strip()
+    if not platform_host or host_of(creds) != platform_host:
+        return False
+    try:
+        port = int(creds.get('port') or 0)
+    except (TypeError, ValueError):
+        return False
+    return (
+        port == int(settings.EMAIL_PORT or 0)
+        and str(creds.get('username') or '') == str(settings.EMAIL_HOST_USER or '')
+        and str(creds.get('password') or '') == str(settings.EMAIL_HOST_PASSWORD or '')
+    )
+
+
+def host_of(creds: dict) -> str:
+    return sanitize_header_value(creds.get('host') or '').strip()
+
+
 def _open_client(hostname: str, connect_host: str, port: int, *, use_ssl: bool):
     if use_ssl:
         client = _PinnedSMTPSSL(timeout=SMTP_TIMEOUT_SECONDS, tls_hostname=hostname)
@@ -56,7 +76,9 @@ class SmtpProvider:
         password = creds.get('password') or ''
         use_tls = bool(creds.get('use_tls', True))
         use_ssl = bool(creds.get('use_ssl', False))
-        trusted_platform = bool(creds.get('trusted_platform'))
+        # A flag inside company credentials cannot skip the public-host pin.
+        # Only the relay from settings (host, port, username, password) is trusted.
+        trusted_platform = _is_settings_relay(creds)
         if not trusted_platform and not settings.EMAIL_ALLOW_COMPANY_SMTP:
             return ProviderResult(ok=False, retryable=False, error_code='company_smtp_disabled')
         if trusted_platform:

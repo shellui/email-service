@@ -17,6 +17,23 @@ def remember_company_name(company_id: int, name: str) -> None:
     )
 
 
+def company_name_may_be_stored(principal, company_id: int) -> bool:
+    """Identity is the source of truth. A key for every company must not write the name.
+
+    A service key may store the name when it is the identity key, or when
+    ``allowed_company_ids`` is exactly this company. Hosting and storage keys
+    that can address every company use the name for that message only.
+    """
+    if not getattr(principal, 'is_service', False):
+        return False
+    if getattr(principal, 'service', '') == 'identity':
+        return True
+    allowed = getattr(principal, 'allowed_company_ids', None)
+    if not allowed or len(allowed) != 1:
+        return False
+    return int(allowed[0]) == int(company_id)
+
+
 def resolve_company_name(company_id: int) -> str:
     """Name from a previous caller, then the company provider From name."""
     profile = CompanyProfile.objects.filter(company_id=company_id).first()
@@ -32,11 +49,16 @@ def resolve_company_name(company_id: int) -> str:
     return name
 
 
-def apply_company_name(company_id: int, variables: dict) -> dict:
-    """Fill ``company_name`` when the caller left it out. Remember a name they did send."""
+def apply_company_name(company_id: int, variables: dict, *, store: bool = False) -> dict:
+    """Fill ``company_name`` when the caller left it out.
+
+    A name on this request is used for the message. It is written to
+    ``CompanyProfile`` only when ``store`` is true.
+    """
     current = str(variables.get('company_name') or '').strip()
     if current:
-        remember_company_name(company_id, current)
+        if store:
+            remember_company_name(company_id, current)
         variables['company_name'] = current
         return variables
     resolved = resolve_company_name(company_id)

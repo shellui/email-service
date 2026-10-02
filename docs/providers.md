@@ -22,7 +22,7 @@ Inbound events: `POST /api/v1/provider-webhooks/resend/{stream}` with Svix verif
 
 ## SMTP
 
-Company SMTP is off unless `EMAIL_ALLOW_COMPANY_SMTP=true`. Saving `provider: "smtp"` while it is off returns `company_smtp_disabled`. When it is on, `host` is resolved and rejected unless the address is public (`provider_host_not_public`). The worker connects to that public address, not to a private or link-local target. The platform relay in `EMAIL_HOST` is operator configuration and is not gated by this flag.
+Company SMTP is off unless `EMAIL_ALLOW_COMPANY_SMTP=true`. Saving `provider: "smtp"` while it is off returns `company_smtp_disabled`. When it is on, `host` is resolved and rejected unless the address is public (`provider_host_not_public`). The worker connects to that public address, not to a private or link-local target. The platform relay in `EMAIL_HOST` is operator configuration and is not gated by this flag. A `trusted_platform` flag, or any key starting with `_`, in company credentials is ignored and is not stored. Only credentials that match the configured relay (host, port, username, and password) skip the public-host pin.
 
 Company credentials:
 
