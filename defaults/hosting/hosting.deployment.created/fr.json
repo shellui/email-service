@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] Déploiement commencé pour {{ display_name|default:\"votre application\" }}",
+  "preheader": "Un déploiement attend son artefact.",
+  "document": {
+    "preview": "Un déploiement attend son artefact.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Déploiement créé"
+      },
+      {
+        "type": "text",
+        "text": "Un déploiement de {{ display_name|default:\"votre application\" }} ({{ app_version|default:\"sans version\" }}) a été créé pour {{ company_name|default:\"votre entreprise\" }}. Il ne sert pas encore le trafic."
+      },
+      {
+        "type": "footer",
+        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
+      }
+    ]
+  }
+}

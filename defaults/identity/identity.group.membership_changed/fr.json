@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] Membres modifiés dans {{ display_name|default:\"un groupe\" }}",
+  "preheader": "Les membres d'un groupe ont changé.",
+  "document": {
+    "preview": "Les membres d'un groupe ont changé.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Membres du groupe modifiés"
+      },
+      {
+        "type": "text",
+        "text": "Les membres de {{ display_name|default:\"un groupe\" }} dans {{ company_name|default:\"votre entreprise\" }} ont changé ({{ change|default:\"updated\" }})."
+      },
+      {
+        "type": "footer",
+        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
+      }
+    ]
+  }
+}

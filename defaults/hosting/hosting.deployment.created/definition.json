@@ -1,0 +1,35 @@
+{
+  "key": "hosting.deployment.created",
+  "owner_service": "hosting",
+  "lane_class": "transactional",
+  "default_lane": "transactional",
+  "category": "transactional",
+  "default_enabled": false,
+  "default_ttl_seconds": null,
+  "variables": [
+    {
+      "token": "company_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.company_name",
+      "example": "Acme",
+      "is_url": false
+    },
+    {
+      "token": "display_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.display_name",
+      "example": "My App",
+      "is_url": false
+    },
+    {
+      "token": "app_version",
+      "type": "string",
+      "required": false,
+      "description": "email.var.app_version",
+      "example": "1.0.0",
+      "is_url": false
+    }
+  ]
+}

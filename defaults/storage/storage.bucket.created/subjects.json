@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] Storage is ready for {{ company_name|default:\"your company\" }}",
+  "fr": "[Shellui] Le stockage est prêt pour {{ company_name|default:\"votre entreprise\" }}"
+}

@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] Access removed for {{ recipient_email|default:\"a user\" }}",
+  "fr": "[Shellui] Accès retiré pour {{ recipient_email|default:\"un utilisateur\" }}"
+}

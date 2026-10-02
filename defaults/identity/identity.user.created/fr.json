@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] Compte créé pour {{ recipient_email|default:\"un utilisateur\" }}",
+  "preheader": "Un compte utilisateur a été créé.",
+  "document": {
+    "preview": "Un compte utilisateur a été créé.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Nouveau compte"
+      },
+      {
+        "type": "text",
+        "text": "Un compte pour {{ recipient_email|default:\"un utilisateur\" }} a été créé dans {{ company_name|default:\"votre entreprise\" }} (source : {{ source|default:\"oauth\" }})."
+      },
+      {
+        "type": "footer",
+        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
+      }
+    ]
+  }
+}

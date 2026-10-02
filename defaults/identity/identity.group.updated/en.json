@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] Group {{ display_name|default:\"updated\" }} was updated",
+  "preheader": "Group details changed.",
+  "document": {
+    "preview": "Group details changed.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Group updated"
+      },
+      {
+        "type": "text",
+        "text": "{{ display_name|default:\"A group\" }} in {{ company_name|default:\"your company\" }} was updated. Fields: {{ changed_fields|default:\"metadata\" }}."
+      },
+      {
+        "type": "footer",
+        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+      }
+    ]
+  }
+}

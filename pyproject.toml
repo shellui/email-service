@@ -1,0 +1,29 @@
+[project]
+name = "email-service"
+version = "0.1.0"
+description = "Email templates and delivery for Shellui services"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "django==6.0.8",
+    "djangorestframework==3.17.2",
+    "drf-spectacular==0.29.0",
+    "django-cors-headers==4.9.0",
+    "python-dotenv==1.2.2",
+    "dj-database-url==3.1.2",
+    "psycopg[binary]==3.3.4",
+    "gunicorn==26.0.0",
+    "whitenoise==6.12.0",
+    "sentry-sdk==2.63.0",
+    "cryptography==50.0.0",
+    "pyjwt==2.15.1",
+    "requests==2.33.0",
+    "prometheus-client==0.21.1",
+    "redis==8.1.0",
+]
+
+[dependency-groups]
+dev = []
+
+[tool.uv]
+package = false

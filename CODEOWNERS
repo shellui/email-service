@@ -1,0 +1,4 @@
+# Suggested templates follow the owning service. Reviews are advisory.
+defaults/identity/ @shellui/identity
+defaults/storage/ @shellui/storage
+defaults/hosting/ @shellui/hosting

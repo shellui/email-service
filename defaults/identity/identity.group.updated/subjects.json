@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] Group {{ display_name|default:\"updated\" }} was updated",
+  "fr": "[Shellui] Le groupe {{ display_name|default:\"mis à jour\" }} a été mis à jour"
+}

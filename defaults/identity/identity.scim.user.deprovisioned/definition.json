@@ -1,0 +1,27 @@
+{
+  "key": "identity.scim.user.deprovisioned",
+  "owner_service": "identity",
+  "lane_class": "transactional",
+  "default_lane": "transactional",
+  "category": "transactional",
+  "default_enabled": false,
+  "default_ttl_seconds": null,
+  "variables": [
+    {
+      "token": "company_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.company_name",
+      "example": "Acme",
+      "is_url": false
+    },
+    {
+      "token": "recipient_email",
+      "type": "string",
+      "required": false,
+      "description": "email.var.recipient_email",
+      "example": "ada@acme.com",
+      "is_url": false
+    }
+  ]
+}

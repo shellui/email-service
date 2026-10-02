@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] Group {{ display_name|default:\"created\" }} was added",
+  "fr": "[Shellui] Le groupe {{ display_name|default:\"nouveau\" }} a été ajouté"
+}

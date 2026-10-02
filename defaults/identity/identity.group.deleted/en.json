@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] Group {{ display_name|default:\"removed\" }} was removed",
+  "preheader": "A group was deleted.",
+  "document": {
+    "preview": "A group was deleted.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Group removed"
+      },
+      {
+        "type": "text",
+        "text": "The group {{ display_name|default:\"(unnamed)\" }} was removed from {{ company_name|default:\"your company\" }}."
+      },
+      {
+        "type": "footer",
+        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+      }
+    ]
+  }
+}

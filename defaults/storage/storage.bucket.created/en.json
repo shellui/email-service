@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] Storage is ready for {{ company_name|default:\"your company\" }}",
+  "preheader": "The company bucket was created.",
+  "document": {
+    "preview": "The company bucket was created.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Storage bucket ready"
+      },
+      {
+        "type": "text",
+        "text": "The bucket {{ bucket_name|default:\"company\" }} was created for {{ company_name|default:\"your company\" }}. Files uploaded for this company will live there."
+      },
+      {
+        "type": "footer",
+        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+      }
+    ]
+  }
+}

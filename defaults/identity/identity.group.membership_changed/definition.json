@@ -1,0 +1,35 @@
+{
+  "key": "identity.group.membership_changed",
+  "owner_service": "identity",
+  "lane_class": "transactional",
+  "default_lane": "transactional",
+  "category": "transactional",
+  "default_enabled": false,
+  "default_ttl_seconds": null,
+  "variables": [
+    {
+      "token": "company_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.company_name",
+      "example": "Acme",
+      "is_url": false
+    },
+    {
+      "token": "display_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.display_name",
+      "example": "Engineering",
+      "is_url": false
+    },
+    {
+      "token": "change",
+      "type": "string",
+      "required": false,
+      "description": "email.var.change",
+      "example": "members_replaced",
+      "is_url": false
+    }
+  ]
+}

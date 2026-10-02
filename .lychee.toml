@@ -1,0 +1,42 @@
+# Lychee markdown and docs link checker (CI: .github/workflows/ci.yml)
+# https://github.com/lycheeverse/lychee
+
+#############################  Cache  ##############################
+
+cache = true
+max_cache_age = "2d"
+# Never cache server errors, so a transient 5xx is re-checked next time.
+cache_exclude_status = "500.."
+
+#############################  Runtime  ############################
+
+max_concurrency = 8
+timeout = 20
+# Retry transient failures (5xx, 408, 429, timeouts) with exponential backoff:
+# waits 3s, 6s, 12s, 24s, 48s. Other 4xx such as 404 are not retried and still fail.
+max_retries = 5
+retry_wait_time = 3
+# Remotes sometimes rate-limit CI; treat as soft-ok when still reachable.
+accept = ["200", "204", "206", "429"]
+
+#############################  Excludes  ###########################
+
+# Local / placeholder hosts used in docs and README examples
+exclude = [
+  '^https?://localhost(:[0-9]+)?(/|$)',
+  '^https?://127\.0\.0\.1(:[0-9]+)?(/|$)',
+  '^https?://\[::1\](:[0-9]+)?(/|$)',
+  '^https?://([^/]*\.)?example\.com(/|$)',
+  '^https?://id\.example(/|$)',
+  # Angle-bracket placeholders in docs tables
+  '^https?://<',
+]
+
+exclude_path = [
+  'tools/docusaurus/build',
+  'tools/docusaurus/node_modules',
+  '\.venv',
+]
+
+scheme = ['https', 'http']
+include_verbatim = false

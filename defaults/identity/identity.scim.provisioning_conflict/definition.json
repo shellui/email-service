@@ -1,0 +1,35 @@
+{
+  "key": "identity.scim.provisioning_conflict",
+  "owner_service": "identity",
+  "lane_class": "transactional",
+  "default_lane": "transactional",
+  "category": "transactional",
+  "default_enabled": true,
+  "default_ttl_seconds": null,
+  "variables": [
+    {
+      "token": "company_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.company_name",
+      "example": "Acme",
+      "is_url": false
+    },
+    {
+      "token": "display_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.display_name",
+      "example": "Engineering",
+      "is_url": false
+    },
+    {
+      "token": "operation",
+      "type": "string",
+      "required": false,
+      "description": "email.var.operation",
+      "example": "create",
+      "is_url": false
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "key": "storage.object.uploaded",
+  "owner_service": "storage",
+  "lane_class": "transactional",
+  "default_lane": "transactional",
+  "category": "transactional",
+  "default_enabled": false,
+  "default_ttl_seconds": null,
+  "variables": [
+    {
+      "token": "company_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.company_name",
+      "example": "Acme",
+      "is_url": false
+    },
+    {
+      "token": "bucket_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.bucket_name",
+      "example": "company",
+      "is_url": false
+    },
+    {
+      "token": "path",
+      "type": "string",
+      "required": false,
+      "description": "email.var.path",
+      "example": "docs/report.pdf",
+      "is_url": false
+    },
+    {
+      "token": "mime_type",
+      "type": "string",
+      "required": false,
+      "description": "email.var.mime_type",
+      "example": "application/pdf",
+      "is_url": false
+    }
+  ]
+}

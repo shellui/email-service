@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] Account created for {{ recipient_email|default:\"a user\" }}",
+  "fr": "[Shellui] Compte créé pour {{ recipient_email|default:\"un utilisateur\" }}"
+}

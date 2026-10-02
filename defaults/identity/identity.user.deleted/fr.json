@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] Compte supprimé",
+  "preheader": "Un compte utilisateur a été supprimé.",
+  "document": {
+    "preview": "Un compte utilisateur a été supprimé.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Compte supprimé"
+      },
+      {
+        "type": "text",
+        "text": "Le compte {{ recipient_email|default:\"un utilisateur\" }} a été supprimé définitivement de {{ company_name|default:\"votre entreprise\" }}."
+      },
+      {
+        "type": "footer",
+        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
+      }
+    ]
+  }
+}

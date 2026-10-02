@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] Membership changed in {{ display_name|default:\"a group\" }}",
+  "fr": "[Shellui] Membres modifiés dans {{ display_name|default:\"un groupe\" }}"
+}

@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] Group {{ display_name|default:\"removed\" }} was removed",
+  "fr": "[Shellui] Le groupe {{ display_name|default:\"retiré\" }} a été retiré"
+}

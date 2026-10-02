@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] Access enabled for {{ recipient_email|default:\"a user\" }}",
+  "preheader": "Company access was enabled from the directory.",
+  "document": {
+    "preview": "Company access was enabled from the directory.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Company access enabled"
+      },
+      {
+        "type": "text",
+        "text": "{{ recipient_email|default:\"A user\" }} now has access to {{ company_name|default:\"your company\" }} (source: {{ source|default:\"scim\" }})."
+      },
+      {
+        "type": "footer",
+        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+      }
+    ]
+  }
+}

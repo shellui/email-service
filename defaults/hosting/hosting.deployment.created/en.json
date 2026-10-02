@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] Deployment started for {{ display_name|default:\"your app\" }}",
+  "preheader": "A deployment is waiting for its artifact.",
+  "document": {
+    "preview": "A deployment is waiting for its artifact.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Deployment created"
+      },
+      {
+        "type": "text",
+        "text": "A deployment of {{ display_name|default:\"your app\" }} ({{ app_version|default:\"unversioned\" }}) was created for {{ company_name|default:\"your company\" }}. It is not serving traffic yet."
+      },
+      {
+        "type": "footer",
+        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+      }
+    ]
+  }
+}

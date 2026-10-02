@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] SCIM token created for {{ company_name|default:\"your company\" }}",
+  "fr": "[Shellui] Jeton SCIM créé pour {{ company_name|default:\"votre entreprise\" }}"
+}

@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] {{ path|default:\"Un fichier\" }} a été déposé",
+  "preheader": "Un fichier a été enregistré.",
+  "document": {
+    "preview": "Un fichier a été enregistré.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Fichier déposé"
+      },
+      {
+        "type": "text",
+        "text": "{{ path|default:\"Un fichier\" }} ({{ mime_type|default:\"fichier\" }}) a été enregistré dans le compartiment {{ bucket_name|default:\"company\" }} pour {{ company_name|default:\"votre entreprise\" }}."
+      },
+      {
+        "type": "footer",
+        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
+      }
+    ]
+  }
+}

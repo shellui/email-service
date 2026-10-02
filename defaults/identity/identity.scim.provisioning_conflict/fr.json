@@ -1,0 +1,25 @@
+{
+  "subject": "[Shellui] Conflit d'annuaire pour {{ display_name|default:\"un groupe\" }}",
+  "preheader": "SCIM n'a pas pu appliquer une modification.",
+  "document": {
+    "preview": "SCIM n'a pas pu appliquer une modification.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Le provisionnement d'annuaire demande une vérification"
+      },
+      {
+        "type": "text",
+        "text": "SCIM n'a pas pu effectuer l'opération {{ operation|default:\"apply\" }} pour {{ display_name|default:\"une entrée\" }} dans {{ company_name|default:\"votre entreprise\" }} à cause d'un conflit."
+      },
+      {
+        "type": "text",
+        "text": "Vérifiez le groupe dans l'admin Shellui et chez votre fournisseur d'identité, puis relancez la modification depuis le fournisseur."
+      },
+      {
+        "type": "footer",
+        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] {{ path|default:\"Un fichier\" }} a été supprimé",
+  "preheader": "Un fichier stocké a été retiré.",
+  "document": {
+    "preview": "Un fichier stocké a été retiré.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Fichier supprimé"
+      },
+      {
+        "type": "text",
+        "text": "{{ path|default:\"Un fichier\" }} a été supprimé du compartiment {{ bucket_name|default:\"company\" }} dans {{ company_name|default:\"votre entreprise\" }}."
+      },
+      {
+        "type": "footer",
+        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
+      }
+    ]
+  }
+}

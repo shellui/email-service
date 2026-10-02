@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] {{ inviter_name|default:\"Someone\" }} invited you to {{ company_name }}",
+  "fr": "[Shellui] {{ inviter_name|default:\"Quelqu'un\" }} vous invite dans {{ company_name }}"
+}

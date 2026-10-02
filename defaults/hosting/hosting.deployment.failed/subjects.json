@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] Deployment failed for {{ display_name|default:\"your app\" }}",
+  "fr": "[Shellui] Échec du déploiement de {{ display_name|default:\"votre application\" }}"
+}

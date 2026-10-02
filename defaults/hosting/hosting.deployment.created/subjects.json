@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] Deployment started for {{ display_name|default:\"your app\" }}",
+  "fr": "[Shellui] Déploiement commencé pour {{ display_name|default:\"votre application\" }}"
+}

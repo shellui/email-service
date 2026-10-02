@@ -1,0 +1,30 @@
+{
+  "subject": "[Shellui] Sign in to {{ company_name }}",
+  "preheader": "Your sign-in link for {{ company_name }}.",
+  "document": {
+    "preview": "Your sign-in link for {{ company_name }}.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Sign in to {{ company_name }}"
+      },
+      {
+        "type": "text",
+        "text": "Hello {{ recipient_name|default:\"there\" }},"
+      },
+      {
+        "type": "text",
+        "text": "Use the button below to sign in to {{ company_name }}. The link works once and expires soon. If you did not ask for it, you can ignore this message."
+      },
+      {
+        "type": "button",
+        "text": "Sign in",
+        "href": "{{ magic_link_url }}"
+      },
+      {
+        "type": "footer",
+        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+      }
+    ]
+  }
+}

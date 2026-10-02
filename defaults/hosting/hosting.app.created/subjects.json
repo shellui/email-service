@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] {{ display_name|default:\"Your app\" }} is ready to host",
+  "fr": "[Shellui] {{ display_name|default:\"Votre application\" }} est prête à être hébergée"
+}

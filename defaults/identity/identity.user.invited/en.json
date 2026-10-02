@@ -1,0 +1,30 @@
+{
+  "subject": "[Shellui] {{ inviter_name|default:\"Someone\" }} invited you to {{ company_name }}",
+  "preheader": "You have an invitation to {{ company_name }}.",
+  "document": {
+    "preview": "You have an invitation to {{ company_name }}.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "You are invited to {{ company_name }}"
+      },
+      {
+        "type": "text",
+        "text": "{{ inviter_name|default:\"A teammate\" }} invited {{ recipient_email|default:\"you\" }} to {{ company_name }}."
+      },
+      {
+        "type": "text",
+        "text": "Open the invitation to continue. Access starts when you sign in with this email address."
+      },
+      {
+        "type": "button",
+        "text": "Open invitation",
+        "href": "{{ invitation_url }}"
+      },
+      {
+        "type": "footer",
+        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+      }
+    ]
+  }
+}

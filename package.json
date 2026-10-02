@@ -1,0 +1,20 @@
+{
+  "name": "email-service-frontend",
+  "private": true,
+  "description": "Tailwind CSS build for email-service landing templates",
+  "scripts": {
+    "build:css": "tailwindcss -i ./assets/css/input.css -o ./static/css/site.css --minify",
+    "watch:css": "tailwindcss -i ./assets/css/input.css -o ./static/css/site.css --watch",
+    "dev:css": "npm run watch:css"
+  },
+  "dependencies": {
+    "@react-email/components": "1.0.12",
+    "@react-email/render": "2.1.0",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "tailwindcss": "^4.3.3"
+  }
+}

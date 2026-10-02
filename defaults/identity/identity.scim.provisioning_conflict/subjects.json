@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] Directory conflict for {{ display_name|default:\"a group\" }}",
+  "fr": "[Shellui] Conflit d'annuaire pour {{ display_name|default:\"un groupe\" }}"
+}

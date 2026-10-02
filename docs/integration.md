@@ -1,0 +1,623 @@
+# Integration contract
+
+This page is the contract for identity-service, storage-service, hosting-service, and the Shellui admin app. Implement against these paths, fields, and error codes. Do not infer a second shape from another service.
+
+Base URL: `https://email.shellui.com`
+
+OpenAPI (generated from the running service): `GET /api/schema/`, Swagger at `/api/docs/`, ReDoc at `/api/docs/redoc/`. When this document and the schema disagree, this document is the one sibling repos should follow until both are updated together.
+
+## Environment variables (callers)
+
+| Variable | Default | Use |
+| --- | --- | --- |
+| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. Callers append paths such as `/api/v1/send`. No trailing slash required. |
+| `EMAIL_SERVICE_API_KEY` | none | Service key issued by email-service. Prefix `esk_`. Send as `Authorization: Bearer <key>`. |
+
+Store the key in the caller's secret store. email-service stores only a SHA-256 hash and a 12-character prefix. The plaintext is returned once, from `POST /api/v1/service-clients` or `manage.py create_service_key`.
+
+## Two ways to send
+
+Sibling services do not share an email client today. This service therefore exposes two entry points.
+
+**Direct send** (`POST /api/v1/send`) is for mail the caller has already decided to send. Use it for identity magic links and invitations. Those templates are on the `auth` lane, with a TTL and idempotency. A company email rule does not suppress a direct send. If identity posted those events only to `/events`, a company that turned the rule off would stop sign-in mail.
+
+**Event ingest** (`POST /api/v1/events`) is for every other catalog event. The caller posts `service`, `event_type`, `company_id`, a payload, and recipient hints. email-service looks up the company's email rule and either queues the suggested template or returns `skipped_reason: rule_disabled`.
+
+Recommended key scopes:
+
+| Service | `allowed_lanes` | `allowed_template_prefixes` |
+| --- | --- | --- |
+| identity | `auth`, `transactional` | `identity.` |
+| storage | `transactional` | `storage.` |
+| hosting | `transactional` | `hosting.` |
+
+A key that is not allowed to use a lane receives `403 lane_not_allowed`. A key whose prefixes do not match the template key receives `403 forbidden`.
+
+## Authentication
+
+`Authorization: Bearer <credential>`
+
+| Credential | Who | What they can call |
+| --- | --- | --- |
+| `esk_` service key | A Shellui service | `/send`, `/send/batch`, `/events`, `/messages/{id}`, `/catalog`, `/render`, and identity-only `/privacy/erase` |
+| Identity JWT (RS256, JWKS) | Staff, or a company owner | Admin routes below. `company_id` on the token must match the requested company unless the caller is staff. |
+
+Health is public. Provider webhooks use Svix signatures, not a Bearer token. Metrics require a JWT (same pattern as storage-service). Service keys cannot read metrics.
+
+See [authentication.md](authentication.md).
+
+## Errors
+
+JSON errors never contain translated sentences. Shape:
+
+```json
+{
+  "error_code": "validation_failed",
+  "field_errors": {
+    "to": ["required"]
+  },
+  "request_id": "optional"
+}
+```
+
+`field_errors` and `request_id` are omitted when empty.
+
+| `error_code` | HTTP | Meaning |
+| --- | --- | --- |
+| `unauthorized` | 401 | Missing or invalid credential, or a bad provider webhook signature |
+| `forbidden` | 403 | Authenticated, but not allowed for this company, template, or recipient |
+| `company_mismatch` | 403 | Token or key `company_id` does not match the request |
+| `lane_not_allowed` | 403 | Service key cannot use this lane |
+| `validation_failed` | 400 | See `field_errors` |
+| `template_not_found` | 404 | Unknown `template_key` |
+| `language_not_available` | 400 | Language is not `en` or `fr` for that template |
+| `unknown_event` | 400 | `event_type` is not in the catalog |
+| `template_lane_mismatch` | 400 | Requested lane does not match the template's lane class |
+| `lane_requires_campaign` | 400 | `bulk` is not accepted on `/send`. Campaigns are not in this version. |
+| `lane_paused` | 409 | Staff or a provider 401/403 paused the lane. Retry later. |
+| `idempotency_conflict` | 409 | Same `idempotency_key`, different body |
+| `recipient_invalid` | 400 | Address failed the format check |
+| `recipient_suppressed` | 422 | Auth lane, hard bounce. Do not retry. |
+| `recipient_rate_limited` | 429 | Auth lane, 5 messages per recipient per company per 10 minutes |
+| `company_rate_limited` | 429 | Transactional lane, 1000 messages per company per hour |
+| `variable_url_not_allowed` | 400 | URL variable is not `https`, `mailto`, or `tel`, or the host is not on `EMAIL_AUTH_LINK_HOSTS` |
+| `unsubscribe_link_missing` | 400 | A bulk template publish omitted `{{ system.unsubscribe_url }}` |
+| `provider_not_configured` | 409 | No company provider and no platform fallback |
+| `provider_not_available` | 400 | Provider name is not `resend` or `smtp` |
+| `provider_test_failed` | 502 | The test send was refused by the provider |
+| `message_not_found` | 404 | Unknown message id |
+| `message_not_cancellable` | 409 | Status is not `queued` or `retrying` |
+| `not_found` | 404 | Other missing rows |
+| `method_not_allowed` | 405 | Wrong HTTP method |
+| `conflict` | 409 | Generic DRF conflict mapped by the exception handler |
+| `rate_limited` | 429 | Generic DRF throttle mapped by the exception handler |
+| `request_failed` | other | Unmapped handler error |
+
+The design names `template_not_published` and `campaign_state_invalid` are not emitted. Unpublished company templates fall back to the suggested catalog document. Campaigns are not implemented, so bulk sends return `lane_requires_campaign`.
+
+## Idempotency
+
+Optional string field `idempotency_key` on `/send`, `/send/batch`, and `/events`.
+
+- Unique per service key's service name, `company_id`, and key.
+- The service stores a hash of the JSON body. The same key and the same body within 24 hours (`EMAIL_IDEMPOTENCY_HOURS`) returns the stored response with `idempotent_replay: true`.
+- The same key and a different body returns `409 idempotency_conflict`.
+- Keys are not shared across services.
+
+Callers that retry network failures must send the same key and the same body.
+
+## Retries (callers)
+
+| Result | Caller behavior |
+| --- | --- |
+| `202` | Accepted. Read `messages[].status`. Do not send again unless you intend a new message. |
+| `409 lane_paused` | Retry with the same idempotency key after a delay. |
+| `429` | Retry with the same idempotency key. Honor any wait you already use for your own webhooks. |
+| `502 provider_test_failed` | Test send only. Safe to retry. |
+| `422 recipient_suppressed` | Do not retry. Tell the user the address cannot receive auth mail. |
+| `400`, `401`, `403`, `404` | Do not retry unchanged. |
+
+Workers inside email-service retry provider failures on their own. Callers should not poll `/send` to force a retry.
+
+## Direct send
+
+`POST /api/v1/send`
+
+Auth: service key.
+
+```json
+{
+  "company_id": 42,
+  "template_key": "identity.auth.magic_link.requested",
+  "language": "en",
+  "idempotency_key": "magic-link-42-user-7-token-id",
+  "ttl_seconds": 120,
+  "to": [
+    {"email": "ada@acme.com", "user_id": 7}
+  ],
+  "variables": {
+    "company_name": "Acme",
+    "magic_link_url": "https://id.shellui.com/api/v1/magic-link/verify?token=example",
+    "recipient_name": "Ada"
+  }
+}
+```
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `company_id` | yes | Integer. Must be allowed by the key. |
+| `template_key` | yes | Catalog key. See [events.md](events.md). |
+| `language` | no | `en` (default) or `fr`. Unknown language: `language_not_available`. |
+| `lane` | no | Must match the template lane class. Omit it. |
+| `ttl_seconds` | no | Auth lane only in practice. Default 120 for magic links, 300 for invitations. Capped at `EMAIL_AUTH_MAX_TTL_SECONDS` (300). |
+| `idempotency_key` | recommended | See above. |
+| `to` | yes | 1 to 50 recipients. `user_id` is optional. |
+| `variables` | yes for required tokens | Max 8192 bytes of JSON. Unknown tokens are dropped. `system.*` is reserved. |
+
+`202` response:
+
+```json
+{
+  "idempotent_replay": false,
+  "messages": [
+    {
+      "id": "msg_<32 hex chars>",
+      "to": "ada@acme.com",
+      "status": "queued",
+      "lane": "auth",
+      "template_version": null,
+      "language": "en",
+      "expires_at": "2026-10-02T12:02:00Z"
+    }
+  ]
+}
+```
+
+`to` on this response is the address you submitted. Admin list endpoints mask it. `template_version` is `null` when the suggested catalog document is used, or the published version number when a company override is active.
+
+With `EMAIL_DELIVER_SYNC=true` (tests and local only), `status` may already be `sent`, `failed`, or `expired`. Production workers deliver asynchronously. Poll `GET /api/v1/messages/{id}` or subscribe to Shellui Actions.
+
+Identity must call this endpoint for:
+
+- `identity.auth.magic_link.requested` (`ttl_seconds` 120 unless the product needs a shorter life)
+- `identity.user.invited` (`ttl_seconds` up to 300)
+
+Do not put magic-link tokens in logs. The service encrypts variables until the provider accepts the message, then deletes them. Rendered HTML is not stored on the message row.
+
+### Batch
+
+`POST /api/v1/send/batch`
+
+Same auth and lane rules. Up to 500 items. One bad item does not fail the batch.
+
+```json
+{
+  "company_id": 42,
+  "template_key": "identity.user.invitation_revoked",
+  "language": "en",
+  "idempotency_key": "batch-example",
+  "items": [
+    {
+      "to": {"email": "ada@acme.com"},
+      "variables": {"company_name": "Acme", "recipient_email": "ada@acme.com"}
+    }
+  ]
+}
+```
+
+`202`:
+
+```json
+{
+  "idempotent_replay": false,
+  "accepted": [{"index": 0, "id": "msg_<hex>", "status": "queued"}],
+  "rejected": [{"index": 1, "error_code": "recipient_invalid"}]
+}
+```
+
+Auth-lane suppression on `/send` (not batch) fails the whole request with `422`. On batch, a suppressed recipient is a row in `rejected`.
+
+## Event ingest
+
+`POST /api/v1/events`
+
+Auth: service key. `service` must equal the key's service name.
+
+```json
+{
+  "service": "hosting",
+  "event_type": "hosting.deployment.failed",
+  "company_id": 42,
+  "language": "en",
+  "idempotency_key": "hosting-deployment-99-failed",
+  "payload": {
+    "company_name": "Acme",
+    "display_name": "My App",
+    "app_version": "1.2.0",
+    "error_summary": "Build exited 1"
+  },
+  "recipients": [
+    {"email": "ada@acme.com", "user_id": 7}
+  ]
+}
+```
+
+Rule resolution order:
+
+1. Company `EmailRule` for that `event_type`, if present.
+2. Platform rule (`company_id` null), if staff created one.
+3. Catalog default (`default_enabled` in [events.md](events.md)).
+
+When the rule is disabled, `202`:
+
+```json
+{
+  "idempotent_replay": false,
+  "rule_enabled": false,
+  "skipped_reason": "rule_disabled",
+  "messages": []
+}
+```
+
+When the rule is enabled, `202`:
+
+```json
+{
+  "idempotent_replay": false,
+  "rule_enabled": true,
+  "messages": []
+}
+```
+
+`messages` uses the same object as `/send`.
+
+Recipient selection:
+
+| `recipient_mode` | Behavior |
+| --- | --- |
+| `hints` (default) | Use the `recipients` array on the request. |
+| `static` | Ignore request recipients. Use `static_recipients` on the rule (strings or `{email, user_id}` objects). |
+
+`language` on the request wins. If omitted, the rule language is used, then `en`.
+
+`payload` keys must match the template variables. Required variables with an empty value return `validation_failed` and `field_errors` such as `payload.company_name: ["required"]`.
+
+URL variables must be `https`, `mailto`, or `tel`. `http://localhost` and `http://127.0.0.1` are allowed only when `DEBUG=true`. Auth URL variables (`magic_link_url`) must use a host in `EMAIL_AUTH_LINK_HOSTS`.
+
+## Message status
+
+`GET /api/v1/messages/{id}`
+
+Auth: the service that created it, staff, or the company owner.
+
+```json
+{
+  "id": "msg_<hex>",
+  "company_id": 42,
+  "service": "identity",
+  "template_key": "identity.auth.magic_link.requested",
+  "lane": "auth",
+  "status": "sent",
+  "provider": "resend",
+  "accepted_at": "2026-10-02T12:00:00Z",
+  "expires_at": "2026-10-02T12:02:00Z",
+  "events": [{"type": "queued", "at": "2026-10-02T12:00:00Z"}]
+}
+```
+
+Statuses: `queued`, `sending`, `retrying`, `sent`, `delivered`, `delivery_delayed`, `bounced`, `complained`, `failed`, `expired`, `suppressed`, `cancelled`.
+
+`POST /api/v1/messages/{id}/cancel` moves `queued` or `retrying` to `cancelled` and deletes stored variables. Other statuses: `409 message_not_cancellable`.
+
+`GET /api/v1/messages?company_id=42&status=&lane=&template_key=&limit=50`
+
+Auth: staff or company owner. `limit` max 200. Addresses are masked (`a***@acme.com`).
+
+## Catalog
+
+`GET /api/v1/catalog`
+
+Auth: service key, staff, or company owner.
+
+```json
+{
+  "events": [
+    {
+      "service": "identity",
+      "event_type": "identity.auth.magic_link.requested",
+      "template_key": "identity.auth.magic_link.requested",
+      "label": "Magic link requested",
+      "lane_class": "auth",
+      "default_lane": "auth",
+      "default_enabled": true,
+      "category": "auth",
+      "default_ttl_seconds": 120,
+      "variables": [],
+      "suggested": {
+        "en": {"subject": "[Shellui] Sign in to {{ company_name }}", "preheader": "Your sign-in link."},
+        "fr": {"subject": "[Shellui] Connexion à {{ company_name }}", "preheader": "Votre lien de connexion."}
+      }
+    }
+  ]
+}
+```
+
+`variables[]` items: `token`, `type` (`string` or `url`), `required`, `description` (an i18n key `email.var.<token>`), `example`, `is_url`, and optionally `sensitive` and `allowed_hosts_setting`.
+
+Full documents (blocks, not only subject) are on `GET /api/v1/templates/defaults?template_key=&languages=en,fr` (admin JWT).
+
+## Render
+
+`POST /api/v1/render`
+
+Auth: service key, staff, or company owner. Does not send mail.
+
+```json
+{
+  "template_key": "hosting.deployment.failed",
+  "language": "en",
+  "variables": {"company_name": "Acme", "display_name": "My App"}
+}
+```
+
+Or send your own `document` and `subject`. Response: `subject`, `html`, `text`, `missing_variables` (tokens left unsubstituted).
+
+## Admin: provider
+
+Auth: staff or company owner. `company_id` query parameter, or the token's company.
+
+`GET /api/v1/provider?company_id=42`
+
+```json
+{
+  "company_id": 42,
+  "configured": true,
+  "provider": "resend",
+  "from_email": "no-reply@acme.com",
+  "from_name": "Acme",
+  "sending_domain": "acme.com",
+  "bulk_from_email": "",
+  "credentials_hint": "••••abcd",
+  "webhook_configured": false,
+  "webhook_hint": "",
+  "fallback_provider": "resend",
+  "fallback_configured": true
+}
+```
+
+The API key is never returned. `configured: false` means the platform fallback is used when `fallback_configured` is true.
+
+`PUT /api/v1/provider?company_id=42`
+
+```json
+{
+  "provider": "resend",
+  "from_email": "no-reply@acme.com",
+  "from_name": "Acme",
+  "sending_domain": "acme.com",
+  "bulk_from_email": "",
+  "credentials": {"api_key": "re_company_key"},
+  "webhook_secret": "whsec_company_secret"
+}
+```
+
+SMTP `credentials`: `host`, `port`, `username`, `password`, `use_tls`, `use_ssl`.
+
+If `provider` is unchanged and `credentials` is omitted, the stored secret is kept. A provider change requires `credentials`.
+
+`POST /api/v1/provider/test-send?company_id=42`
+
+```json
+{"to": "ada@acme.com"}
+```
+
+Staff may choose `to`. A company owner may only send to the email on their JWT. Response: `{"status": "sent", "provider": "resend", "provider_message_id": "re_example"}`.
+
+Platform fallback (no company row): `EMAIL_FALLBACK_PROVIDER` (`resend` or `smtp`) plus `RESEND_API_KEY` or `EMAIL_HOST` and related SMTP variables. Used for Shellui's own companies that have no provider row, and for any company with `configured: false`. Set `EMAIL_FALLBACK_PROVIDER=none` to require a company provider (no matching adapter, so sends fail with `provider_not_configured`).
+
+Default from address when the company has none: `no-reply@shellui.com`. Bulk from address: `news@news.shellui.com`. The HTTP host is `email.shellui.com` and is not a sending domain.
+
+## Admin: rules
+
+`GET /api/v1/rules?company_id=42` returns every catalog event, including ones the company has not customized (`customized: false` uses the catalog default).
+
+`POST` or `PATCH /api/v1/rules?company_id=42`
+
+```json
+{
+  "event_type": "hosting.deployment.failed",
+  "enabled": true,
+  "template_key": "hosting.deployment.failed",
+  "language": "fr",
+  "recipient_mode": "hints",
+  "static_recipients": []
+}
+```
+
+`DELETE /api/v1/rules/{event_type}?company_id=42` removes the company override and restores the catalog default. `204`.
+
+## Admin: templates
+
+Suggested copy is used until a company publishes a version.
+
+| Method | Path | Result |
+| --- | --- | --- |
+| `GET` | `/api/v1/templates?company_id=` | Company template rows |
+| `POST` | `/api/v1/templates?company_id=` | Body `template_key`, `language`. Creates a draft from the suggested document. `201` `{id, template_key, language, draft_version}` |
+| `GET` | `/api/v1/templates/{id}` | Metadata |
+| `PATCH` | `/api/v1/templates/{id}` | `400` with `field_errors.template: ["use_versions"]` |
+| `DELETE` | `/api/v1/templates/{id}` | `204`. Later sends use the suggested document again. |
+| `GET` | `/api/v1/templates/{id}/versions` | `{versions: [{number, state, subject, published_at}]}` |
+| `POST` | `/api/v1/templates/{id}/versions` | Body `subject`, `preheader`, `document`. `201` `{number, state: "draft"}` |
+| `POST` | `/api/v1/templates/{id}/versions/{number}/publish` | Renders HTML, sets `active_version`. `{number, state, checksum}` |
+| `POST` | `/api/v1/templates/{id}/send-test` | Sends a plain test to the admin's own JWT email. Does not render the draft. |
+| `GET` | `/api/v1/templates/defaults?template_key=&languages=en,fr` | Suggested subject, preheader, document, variables |
+
+`document` shape:
+
+```json
+{
+  "preview": "Short inbox preview",
+  "blocks": [
+    {"type": "heading", "text": "Title"},
+    {"type": "text", "text": "Hello {{ company_name }}."},
+    {"type": "button", "text": "Open", "href": "{{ magic_link_url }}"},
+    {"type": "footer", "text": "Reference {{ system.message_id }}."}
+  ]
+}
+```
+
+Placeholders are `{{ token }}` or `{{ token|default:"fallback" }}`. `{%` is rejected (`template_tags_forbidden`).
+
+## Admin: stats
+
+`GET /api/v1/stats?company_id=42&from=2026-09-01T00:00:00Z&to=2026-10-02T00:00:00Z&lane=&event_type=`
+
+Default window: the last 30 days.
+
+```json
+{
+  "company_id": 42,
+  "from": "2026-09-02T00:00:00Z",
+  "to": "2026-10-02T00:00:00Z",
+  "totals": {
+    "sent": 0,
+    "delivered": 0,
+    "bounced": 0,
+    "complained": 0,
+    "expired": 0,
+    "failed": 0,
+    "queued": 0,
+    "suppressed": 0,
+    "cancelled": 0
+  },
+  "by_lane": {},
+  "by_event": {},
+  "by_day": [{"day": "2026-10-01", "sent": 1, "delivered": 0, "bounced": 0, "complained": 0, "expired": 0, "failed": 0, "queued": 0, "suppressed": 0, "cancelled": 0}]
+}
+```
+
+`sent` counts provider-accepted messages. A `delivered` or `bounced` row is also included in `sent`, so `sent` is a superset of the later provider statuses. `by_event` keys are `event_type` (the catalog id).
+
+## Admin: suppressions, lanes, privacy, clients
+
+`GET /api/v1/suppressions?company_id=42`
+
+`POST /api/v1/suppressions?company_id=42` body `email`, optional `reason` (`hard_bounce`, `complaint`, `manual`, `provider`), optional `lanes` (empty means all non-auth lanes). `201` returns `id`, `email_masked`, `reason`. The address is stored as an HMAC.
+
+`DELETE /api/v1/suppressions/{id}` `204`.
+
+Auth lane suppression honors `hard_bounce` only, for 30 days when the worker creates the row. Complaints and unsubscribes do not block magic links.
+
+`POST /api/v1/lanes/{lane}/pause` and `POST /api/v1/lanes/{lane}/resume`
+
+Auth: staff only. `lane` is `auth`, `transactional`, or `bulk`. Response: `{lane, paused}`.
+
+`POST /api/v1/privacy/erase`
+
+Auth: identity service key or staff.
+
+```json
+{"company_id": 42, "email": "ada@acme.com"}
+```
+
+Response: `{deleted_messages, email_masked}`. Deletes message rows and their events for that company and address. It does not delete suppressions.
+
+`GET /api/v1/service-clients` staff only. Lists prefix, lanes, and prefixes. Never the key.
+
+`POST /api/v1/service-clients` staff only.
+
+```json
+{
+  "service": "identity",
+  "name": "identity-production",
+  "allowed_lanes": ["auth", "transactional"],
+  "allowed_template_prefixes": ["identity."]
+}
+```
+
+`201` includes `key` once.
+
+## Health and metrics
+
+`GET /api/v1/health` is public.
+
+```json
+{"status": "ok", "version": "0.1.0"}
+```
+
+`GET /api/v1/metrics` requires an identity JWT. Staff, or a token with the `pat_agm` claim (`access_global_metrics`), receives every company. Owners receive their company. `?company_id=` is allowed for staff and for the matching owner.
+
+Prometheus text. See [metrics.md](metrics.md).
+
+## Provider webhooks (Resend)
+
+`POST /api/v1/provider-webhooks/resend/{stream}`
+
+No Bearer token. Svix headers `svix-id`, `svix-timestamp`, `svix-signature` are verified with `RESEND_WEBHOOK_SECRET`, or with the company webhook secret when `?company_id=` is set and that company stored one.
+
+Opens and clicks are ignored. Delivery, bounce, complaint, and delay update message status and emit Shellui Actions events. Point the Resend webhook at this URL. `stream` is recorded on the event and is not used to choose a lane.
+
+## Unsubscribe
+
+`GET /u/{token}` shows a confirmation page and does not unsubscribe.
+
+`POST /u/{token}` records the unsubscribe (one-click, including an empty body). Token form: `{company_id}.{category}.{hmac}`.
+
+This is for later bulk mail. Transactional and auth templates do not include a one-click unsubscribe control.
+
+## Shellui Actions (outbound)
+
+Companies can subscribe to email-service events. Paths match storage-service and hosting-service under `/api/v1/actions/`. Auth: staff or company owner.
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/api/v1/actions/events` |
+| `GET` | `/api/v1/actions/event-log` |
+| `GET` | `/api/v1/actions/event-log/types` |
+| `GET` | `/api/v1/actions/event-log/retention` |
+| `GET` | `/api/v1/actions/event-log/{id}` |
+| `GET`, `POST` | `/api/v1/actions/rules?company_id=` |
+| `GET`, `PATCH`, `DELETE` | `/api/v1/actions/rules/{id}` |
+| `POST` | `/api/v1/actions/rules/{id}/send-test` |
+| `POST` | `/api/v1/actions/rules/{id}/rotate-secret` |
+| `GET` | `/api/v1/actions/deliveries?company_id=` |
+| `GET` | `/api/v1/actions/deliveries/{uuid}` |
+| `POST` | `/api/v1/actions/deliveries/{uuid}/requeue` |
+
+Create body: `name`, `event_type`, `url`, optional `secret`, optional `description`, optional `enabled` (default true). The plaintext secret is returned only on create and rotate. Other responses expose `config.has_secret` and `config.secret_hint`.
+
+Event types: `email.message.sent`, `email.message.delivered`, `email.message.delivery_delayed`, `email.message.bounced`, `email.message.complained`, `email.message.failed`, `email.message.expired`, `email.message.suppressed`, `email.unsubscribe.created`.
+
+Envelope:
+
+```json
+{
+  "id": "<uuid>",
+  "type": "email.message.delivered",
+  "time": "2026-10-02T12:00:01+00:00",
+  "company": {"id": 42},
+  "data": {
+    "message_id": "msg_<hex>",
+    "template_key": "hosting.deployment.failed",
+    "lane": "transactional",
+    "service": "hosting",
+    "to_email": "ada@acme.com",
+    "to_user_id": 7
+  }
+}
+```
+
+`data.to_email` is the recipient address. Treat the webhook body as personal data.
+
+Signing matches the other Shellui services: Standard Webhooks HMAC, headers `webhook-id`, `webhook-timestamp`, `webhook-signature`, plus `X-Shellui-Event`, `X-Shellui-Delivery-Attempt`, and `User-Agent: shellui-email-webhooks/1.0`. The body is compact sorted JSON. Verify the raw bytes.
+
+Retries: 30s times 2^(attempt-1), capped at 1 hour, 8 attempts, then `dead`. `404`, `408`, `409`, `425`, `429`, other retryable 4xx, 5xx, and connection errors retry. `400`, `401`, `403`, `405`, `410`, `413`, `422` are dead. `429` and `503` honor `Retry-After` up to 1 hour.
+
+Delivery is at-least-once. Dedupe on `webhook-id`. A provider event and the local accept path can both emit `email.message.sent`.
+
+If the service client has `callback_url`, the same envelope is also POSTed there, signed with that client's callback secret. The admin create endpoint does not set the callback. Set it in Django admin or when calling `issue_service_key` from a management command.
+
+n8n notes: [n8n.md](n8n.md).
+
+Run `python manage.py retry_webhooks` every minute and `python manage.py run_email_worker` as a resident process (or a frequent cron calling `sweep_email_queue`). `python manage.py purge_expired_data` hourly. Message rows are kept `EMAIL_MESSAGE_RETENTION_DAYS` (30). Event log rows and finished deliveries are kept `EVENT_LOG_RETENTION_DAYS` (7). Idempotency rows expire after 24 hours.

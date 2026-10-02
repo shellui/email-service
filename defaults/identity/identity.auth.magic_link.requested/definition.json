@@ -1,0 +1,37 @@
+{
+  "key": "identity.auth.magic_link.requested",
+  "owner_service": "identity",
+  "lane_class": "auth",
+  "default_lane": "auth",
+  "category": "auth",
+  "default_enabled": true,
+  "default_ttl_seconds": 120,
+  "variables": [
+    {
+      "token": "company_name",
+      "type": "string",
+      "required": true,
+      "description": "email.var.company_name",
+      "example": "Acme",
+      "is_url": false
+    },
+    {
+      "token": "magic_link_url",
+      "type": "url",
+      "required": true,
+      "description": "email.var.magic_link_url",
+      "example": "https://id.shellui.com/api/v1/magic-link/verify?token=example",
+      "is_url": true,
+      "sensitive": true,
+      "allowed_hosts_setting": "EMAIL_AUTH_LINK_HOSTS"
+    },
+    {
+      "token": "recipient_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.recipient_name",
+      "example": "Ada",
+      "is_url": false
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "subject": "[Shellui] Profile updated",
+  "preheader": "Account details changed.",
+  "document": {
+    "preview": "Account details changed.",
+    "blocks": [
+      {
+        "type": "heading",
+        "text": "Profile updated"
+      },
+      {
+        "type": "text",
+        "text": "The profile for {{ recipient_email|default:\"a user\" }} in {{ company_name|default:\"your company\" }} was updated. Fields: {{ changed_fields|default:\"profile\" }}."
+      },
+      {
+        "type": "footer",
+        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+      }
+    ]
+  }
+}

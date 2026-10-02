@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] Access enabled for {{ recipient_email|default:\"a user\" }}",
+  "fr": "[Shellui] Accès activé pour {{ recipient_email|default:\"un utilisateur\" }}"
+}

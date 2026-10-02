@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] {{ path|default:\"A file\" }} was deleted",
+  "fr": "[Shellui] {{ path|default:\"Un fichier\" }} a été supprimé"
+}

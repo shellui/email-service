@@ -1,0 +1,4 @@
+{
+  "en": "[Shellui] {{ display_name|default:\"An app\" }} was removed",
+  "fr": "[Shellui] {{ display_name|default:\"Une application\" }} a été retirée"
+}
