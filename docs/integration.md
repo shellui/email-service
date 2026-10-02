@@ -450,9 +450,9 @@ When the company has no provider row the same keys are present: `configured` is 
 
 SMTP `credentials`: `host`, `port`, `username`, `password`, `use_tls`, `use_ssl`. Company SMTP is rejected with `company_smtp_disabled` unless `EMAIL_ALLOW_COMPANY_SMTP=true`. When it is on, `host` must resolve to a public address (`provider_host_not_public` otherwise). The platform `EMAIL_HOST` relay is separate and is not gated by that flag.
 
-Omitted fields keep the stored value. A present empty string clears that field. This applies to `from_name`, `sending_domain`, and `bulk_from_email`. Admin sends `bulk_from_email` on every save, including `""` when the company has no bulk From.
+`from_email` is required on every PUT. Omitted `from_name`, `sending_domain`, and `bulk_from_email` keep the stored value. A present empty string clears that field.
 
-If `provider` is unchanged and `credentials` is omitted, the stored secret is kept. A provider change requires `credentials`. An omitted `webhook_secret` keeps the stored webhook secret.
+Send `credentials` only when they change. If `provider` is unchanged and `credentials` is omitted, the stored secret is kept. A provider change requires `credentials`. Send `webhook_secret` only when it changes. An omitted `webhook_secret` keeps the stored webhook secret.
 
 `POST /api/v1/provider/test-send?company_id=42`
 
