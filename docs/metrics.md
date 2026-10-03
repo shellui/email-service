@@ -18,6 +18,8 @@ Grouped by `by_lane`, `by_event` (catalog `event_type`), and `by_day`. Query `fr
 
 Auth: identity JWT, same scope as storage-service metrics (not public). Optional `company_id`.
 
+The body is Prometheus text (`text/plain; version=0.0.4`). `Accept: text/plain` is accepted, including when it is listed with `application/json`. A missing `Accept` header is also accepted. `401` and `403` still return the JSON `error_code` body.
+
 Gauges, computed from the database at scrape time:
 
 | Name | Labels | Meaning |

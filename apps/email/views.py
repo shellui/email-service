@@ -31,6 +31,7 @@ from apps.email.models import (
     parse_message_id,
 )
 from apps.email.palette import PaletteError, stored_palette
+from apps.email.renderers import PrometheusTextRenderer
 from apps.email.schema import (
     COMPANY_QUERY,
     BatchRequestSerializer,
@@ -1277,7 +1278,7 @@ class PrivacyEraseView(APIView):
         responses={
             (200, 'text/plain'): OpenApiResponse(
                 response=OpenApiTypes.STR,
-                description='Prometheus text exposition',
+                description='text/plain Prometheus exposition',
             ),
             401: ErrorSerializer,
             403: ErrorSerializer,
@@ -1285,6 +1286,8 @@ class PrivacyEraseView(APIView):
     ),
 )
 class MetricsView(APIView):
+    renderer_classes = [PrometheusTextRenderer]
+
     def get(self, request):
         from apps.email.metrics import METRICS_CONTENT_TYPE, metrics_http_body
 

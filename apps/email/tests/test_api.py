@@ -301,3 +301,47 @@ class EmailApiTests(TestCase):
         self.assertEqual(metrics.status_code, 200)
         self.assertIn(b'shellui_email_auth_ttl_expiries', metrics.content)
         self.assertIn(b'shellui_email_queue_depth', metrics.content)
+
+    def test_metrics_accepts_text_plain_and_keeps_error_codes(self):
+        from apps.authapi.principal import EmailPrincipal
+        from apps.email.metrics import METRICS_CONTENT_TYPE
+
+        owner = APIClient()
+        owner.force_authenticate(
+            user=EmailPrincipal(user_id=1, company_id=1, email='owner@acme.com', is_company_owner=True)
+        )
+        accepts = (
+            {'HTTP_ACCEPT': 'text/plain'},
+            {'HTTP_ACCEPT': 'application/json, text/plain, */*'},
+            {},
+        )
+        for extra in accepts:
+            response = owner.get('/api/v1/metrics?company_id=1', **extra)
+            self.assertEqual(response.status_code, 200, response.content)
+            self.assertEqual(response['Content-Type'], METRICS_CONTENT_TYPE)
+            self.assertIn(b'shellui_email_queue_depth', response.content)
+
+        anonymous = APIClient().get('/api/v1/metrics?company_id=1', HTTP_ACCEPT='text/plain')
+        self.assertEqual(anonymous.status_code, 401)
+        self.assertEqual(json.loads(anonymous.content)['error_code'], 'unauthorized')
+
+        self._auth(self.hosting_key)
+        service = self.client.get('/api/v1/metrics?company_id=1', HTTP_ACCEPT='text/plain')
+        self.assertEqual(service.status_code, 401)
+        self.assertEqual(json.loads(service.content)['error_code'], 'unauthorized')
+
+        other = APIClient()
+        other.force_authenticate(
+            user=EmailPrincipal(user_id=9, company_id=9, email='x@acme.com', is_company_owner=True)
+        )
+        mismatch = other.get('/api/v1/metrics?company_id=1', HTTP_ACCEPT='text/plain')
+        self.assertEqual(mismatch.status_code, 403)
+        self.assertEqual(json.loads(mismatch.content)['error_code'], 'company_mismatch')
+
+        member = APIClient()
+        member.force_authenticate(
+            user=EmailPrincipal(user_id=2, company_id=1, email='member@acme.com', is_company_owner=False)
+        )
+        forbidden = member.get('/api/v1/metrics?company_id=1', HTTP_ACCEPT='text/plain')
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(json.loads(forbidden.content)['error_code'], 'forbidden')
