@@ -6,7 +6,7 @@ Sample copy from those demos is not used. Community templates from that reposito
 
 ## License
 
-Layout, palette, typography, and fonts are adapted from the MIT-licensed demos in [resend/react-email](https://github.com/resend/react-email/tree/canary/apps/demo/emails) (`01-Barebone`, `02-Matte`, `03-Protocol`, `04-Arcane`, `05-Studio`). Copyright 2024 Plus Five Five, Inc. The notice is in [renderer/themes/LICENSE](../renderer/themes/LICENSE).
+Layout, palette, typography, and fonts are adapted from the MIT-licensed demos in [resend/react-email](https://github.com/resend/react-email/tree/canary/apps/demo/emails) (`01-Barebone`, `02-Matte`, `03-Protocol`, `04-Arcane`, `05-Studio`). Copyright 2024 Plus Five Five, Inc. The notice is in [renderer/themes/LICENSE](https://github.com/shellui/email-service/blob/main/renderer/themes/LICENSE).
 
 ## Keys
 
