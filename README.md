@@ -60,7 +60,7 @@ uv run python manage.py runserver 8003
 
 The landing page (`templates/home.html`) uses Tailwind compiled into `static/css/site.css`. With `DEBUG=true`, `runserver` runs `npm run build:css` once at startup (and runs `npm ci` if `node_modules` is missing). For live CSS edits, use a second terminal: `npm run watch:css`.
 
-Open `http://localhost:8003/`.
+Open `http://localhost:8003/`. With `DEBUG=true` (local default), an empty database shows a one-time web form there to create the first superuser. In production (`DEBUG=false`), leave `SETUP_TOKEN` empty and create that user with `uv run python manage.py createsuperuser`.
 
 Dependencies live in `pyproject.toml` and are locked in `uv.lock`.
 

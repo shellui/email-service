@@ -17,6 +17,16 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 When `DEBUG=true`, those three keys are derived from `SECRET_KEY` so local runs need no extra secrets. Do not use that derivation in production.
 
+## First superuser
+
+With `DEBUG=true`, an empty database shows a one-time form on `/`. In production, leave `SETUP_TOKEN` empty and create the first superuser with:
+
+```bash
+uv run python manage.py createsuperuser
+```
+
+The web form stays closed when `DEBUG=false` and `SETUP_TOKEN` is empty. Set `SETUP_TOKEN` only when you need that form once, then open `/?setup_token=<token>`.
+
 ## Addresses
 
 | Variable | Default | Role |

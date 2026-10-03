@@ -38,6 +38,10 @@ Outbound Shellui Actions URLs are resolved and checked for private addresses (`a
 
 Resend retries use `Idempotency-Key` set to the message id, so a second handoff of the same message does not send another copy. SMTP has no equivalent. `Message-ID` is stable (`<{message_id}@email.shellui.com>`), and a row that already has `provider_message_id` is marked sent instead of resent. If the worker stops after the relay has accepted the message and before that id is saved, the next attempt can deliver a second copy. That window is a property of SMTP.
 
+## First superuser
+
+Leave `SETUP_TOKEN` empty in production. Create the first administrator with `uv run python manage.py createsuperuser`. The home-page form is open only when `DEBUG=true`, or when `DEBUG=false` and the request carries that token.
+
 ## Privacy erase
 
 `POST /api/v1/privacy/erase` is limited to the identity service key and to staff. It deletes message rows for one company and one address.
