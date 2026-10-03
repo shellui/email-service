@@ -184,6 +184,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'lanes', 'description': 'Priority lane pause switches.'},
         {'name': 'privacy', 'description': 'Erasure of stored addresses.'},
         {'name': 'actions', 'description': 'Outbound Shellui Actions webhooks.'},
+        {'name': 'service-clients', 'description': 'Service API keys issued to other Shellui services.'},
         {'name': 'platform-metrics', 'description': 'Prometheus metrics.'},
         {'name': 'health', 'description': 'Service health checks.'},
     ],

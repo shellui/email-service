@@ -3,16 +3,40 @@
 from __future__ import annotations
 
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.actions.emit import store_rule_secret
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt, EventLog
 from apps.actions.registry import all_event_types
+from apps.actions.serializers import (
+    ActionEventListSerializer,
+    ActionRuleCreateSerializer,
+    ActionRuleListSerializer,
+    ActionRuleSerializer,
+    ActionRuleUpdateSerializer,
+    ActionTestQueuedSerializer,
+    DeliveryDetailSerializer,
+    DeliveryListSerializer,
+    DeliverySerializer,
+    EventLogDetailSerializer,
+    EventLogListSerializer,
+    EventLogRetentionSerializer,
+    EventLogTypesSerializer,
+)
 from apps.email.access import company_from_request, require_admin
 from apps.email.crypto import decrypt_text
+from apps.email.schema import COMPANY_QUERY, ErrorSerializer
 from apps.email.service import SendError
 from apps.email.views import error_response
+
+_API_ERRORS = {
+    400: ErrorSerializer,
+    401: ErrorSerializer,
+    403: ErrorSerializer,
+    404: ErrorSerializer,
+}
 
 
 def _public_webhook_url(url: str) -> str:
@@ -60,6 +84,14 @@ def _rule_payload(rule: ActionRule, *, reveal_secret: bool = False) -> dict:
     return data
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_events_list',
+        parameters=[COMPANY_QUERY],
+        responses={200: ActionEventListSerializer, **_API_ERRORS},
+    ),
+)
 class ActionEventsView(APIView):
     def get(self, request):
         try:
@@ -77,6 +109,21 @@ class ActionEventsView(APIView):
         )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_rules_list',
+        parameters=[COMPANY_QUERY],
+        responses={200: ActionRuleListSerializer, **_API_ERRORS},
+    ),
+    post=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_rules_create',
+        parameters=[COMPANY_QUERY],
+        request=ActionRuleCreateSerializer,
+        responses={201: ActionRuleSerializer, **_API_ERRORS},
+    ),
+)
 class ActionRuleListCreateView(APIView):
     def get(self, request):
         try:
@@ -119,6 +166,24 @@ class ActionRuleListCreateView(APIView):
         return Response(_rule_payload(rule, reveal_secret=True), status=201)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_rules_retrieve',
+        responses={200: ActionRuleSerializer, **_API_ERRORS},
+    ),
+    patch=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_rules_partial_update',
+        request=ActionRuleUpdateSerializer,
+        responses={200: ActionRuleSerializer, **_API_ERRORS},
+    ),
+    delete=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_rules_destroy',
+        responses={204: None, **_API_ERRORS},
+    ),
+)
 class ActionRuleDetailView(APIView):
     def get(self, request, pk):
         rule = ActionRule.objects.filter(pk=pk).first()
@@ -163,6 +228,14 @@ class ActionRuleDetailView(APIView):
         return Response(status=204)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_rules_rotate_secret',
+        request=None,
+        responses={200: ActionRuleSerializer, **_API_ERRORS},
+    ),
+)
 class ActionRuleRotateSecretView(APIView):
     def post(self, request, pk):
         rule = ActionRule.objects.filter(pk=pk).first()
@@ -179,6 +252,14 @@ class ActionRuleRotateSecretView(APIView):
         return Response(_rule_payload(rule, reveal_secret=True))
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_rules_send_test',
+        request=None,
+        responses={200: ActionTestQueuedSerializer, **_API_ERRORS},
+    ),
+)
 class ActionRuleSendTestView(APIView):
     def post(self, request, pk):
         rule = ActionRule.objects.filter(pk=pk).first()
@@ -198,6 +279,14 @@ class ActionRuleSendTestView(APIView):
         return Response({'status': 'queued'})
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_deliveries_list',
+        parameters=[COMPANY_QUERY],
+        responses={200: DeliveryListSerializer, **_API_ERRORS},
+    ),
+)
 class ActionDeliveryListView(APIView):
     def get(self, request):
         try:
@@ -209,6 +298,13 @@ class ActionDeliveryListView(APIView):
         return Response({'deliveries': [_delivery_payload(row) for row in rows]})
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_deliveries_retrieve',
+        responses={200: DeliveryDetailSerializer, **_API_ERRORS},
+    ),
+)
 class ActionDeliveryDetailView(APIView):
     def get(self, request, delivery_id):
         row = ActionOutbox.objects.filter(pk=delivery_id).first()
@@ -221,6 +317,14 @@ class ActionDeliveryDetailView(APIView):
         return Response(_delivery_payload(row, include_attempts=True))
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_deliveries_requeue',
+        request=None,
+        responses={200: DeliverySerializer, **_API_ERRORS},
+    ),
+)
 class ActionDeliveryRequeueView(APIView):
     def post(self, request, delivery_id):
         row = ActionOutbox.objects.filter(pk=delivery_id).first()
@@ -262,6 +366,14 @@ def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False) -> d
     return data
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_event_log_list',
+        parameters=[COMPANY_QUERY],
+        responses={200: EventLogListSerializer, **_API_ERRORS},
+    ),
+)
 class EventLogListView(APIView):
     def get(self, request):
         try:
@@ -285,6 +397,13 @@ class EventLogListView(APIView):
         )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_event_log_retrieve',
+        responses={200: EventLogDetailSerializer, **_API_ERRORS},
+    ),
+)
 class EventLogDetailView(APIView):
     def get(self, request, pk):
         row = EventLog.objects.filter(pk=pk).first()
@@ -305,6 +424,14 @@ class EventLogDetailView(APIView):
         )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_event_log_types_list',
+        parameters=[COMPANY_QUERY],
+        responses={200: EventLogTypesSerializer, **_API_ERRORS},
+    ),
+)
 class EventLogTypesView(APIView):
     def get(self, request):
         try:
@@ -315,6 +442,14 @@ class EventLogTypesView(APIView):
         return Response({'types': [event.id for event in all_event_types()]})
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['actions'],
+        operation_id='api_v1_actions_event_log_retention_retrieve',
+        parameters=[COMPANY_QUERY],
+        responses={200: EventLogRetentionSerializer, **_API_ERRORS},
+    ),
+)
 class EventLogRetentionView(APIView):
     def get(self, request):
         try:

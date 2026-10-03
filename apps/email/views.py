@@ -8,6 +8,8 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -29,6 +31,53 @@ from apps.email.models import (
     parse_message_id,
 )
 from apps.email.palette import PaletteError, stored_palette
+from apps.email.schema import (
+    COMPANY_QUERY,
+    BatchRequestSerializer,
+    BatchResponseSerializer,
+    CatalogSerializer,
+    EmailRuleListSerializer,
+    EmailRuleSaveResponseSerializer,
+    EmailRuleWriteSerializer,
+    ErrorSerializer,
+    EventRequestSerializer,
+    EventResponseSerializer,
+    HealthSerializer,
+    LaneStateSerializer,
+    MessageCancelSerializer,
+    MessageDetailSerializer,
+    MessageListSerializer,
+    PrivacyEraseRequestSerializer,
+    PrivacyEraseResponseSerializer,
+    ProviderSerializer,
+    ProviderTestSendRequestSerializer,
+    ProviderWriteSerializer,
+    RenderRequestSerializer,
+    RenderResponseSerializer,
+    SendRequestSerializer,
+    SendResponseSerializer,
+    ServiceClientCreateSerializer,
+    ServiceClientCreatedSerializer,
+    ServiceClientListSerializer,
+    StatsSerializer,
+    SuppressionCreateSerializer,
+    SuppressionCreatedSerializer,
+    SuppressionListSerializer,
+    TemplateCreateRequestSerializer,
+    TemplateCreateResponseSerializer,
+    TemplateDefaultsSerializer,
+    TemplateListSerializer,
+    TemplatePublishResponseSerializer,
+    TemplateSummarySerializer,
+    TemplateTestSendRequestSerializer,
+    TemplateVersionCreateRequestSerializer,
+    TemplateVersionCreateResponseSerializer,
+    TemplateVersionListSerializer,
+    TemplateVersionSerializer,
+    TestSendResponseSerializer,
+    WebhookAckSerializer,
+    WebhookEventSerializer,
+)
 from apps.email.unsubscribe import parse_unsubscribe_token, unsubscribe_token, unsubscribe_url
 from apps.providers.credentials import strip_internal_credentials
 from apps.email.rendering import checksum, document_tokens, render_document
@@ -62,6 +111,24 @@ def _request_id(request) -> dict:
     return {'request_id': request_id} if request_id else {}
 
 
+_API_ERRORS = {
+    400: ErrorSerializer,
+    401: ErrorSerializer,
+    403: ErrorSerializer,
+    404: ErrorSerializer,
+    409: ErrorSerializer,
+    422: ErrorSerializer,
+}
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['health'],
+        operation_id='api_v1_health_retrieve',
+        auth=[],
+        responses={200: HealthSerializer},
+    ),
+)
 class HealthView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -71,6 +138,14 @@ class HealthView(APIView):
         return Response(payload)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['send'],
+        operation_id='api_v1_send_create',
+        request=SendRequestSerializer,
+        responses={202: SendResponseSerializer, **_API_ERRORS},
+    ),
+)
 class SendView(APIView):
     def post(self, request):
         if not isinstance(request.user, ServicePrincipal):
@@ -83,6 +158,14 @@ class SendView(APIView):
         return Response(body, status=status)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['send'],
+        operation_id='api_v1_send_batch_create',
+        request=BatchRequestSerializer,
+        responses={202: BatchResponseSerializer, **_API_ERRORS},
+    ),
+)
 class SendBatchView(APIView):
     def post(self, request):
         if not isinstance(request.user, ServicePrincipal):
@@ -95,6 +178,14 @@ class SendBatchView(APIView):
         return Response(body, status=status)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['send'],
+        operation_id='api_v1_events_create',
+        request=EventRequestSerializer,
+        responses={202: EventResponseSerializer, **_API_ERRORS},
+    ),
+)
 class EventIngestView(APIView):
     def post(self, request):
         if not isinstance(request.user, ServicePrincipal):
@@ -117,6 +208,13 @@ def _can_read_message(user, message: Message) -> bool:
     return False
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['messages'],
+        operation_id='api_v1_messages_retrieve',
+        responses={200: MessageDetailSerializer, **_API_ERRORS},
+    ),
+)
 class MessageDetailView(APIView):
     def get(self, request, message_id):
         try:
@@ -147,6 +245,14 @@ class MessageDetailView(APIView):
         )
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['messages'],
+        operation_id='api_v1_messages_cancel',
+        request=None,
+        responses={200: MessageCancelSerializer, **_API_ERRORS},
+    ),
+)
 class MessageCancelView(APIView):
     def post(self, request, message_id):
         try:
@@ -163,6 +269,20 @@ class MessageCancelView(APIView):
         return Response({'id': message.public_id, 'status': message.status})
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['messages'],
+        operation_id='api_v1_messages_list',
+        parameters=[
+            COMPANY_QUERY,
+            OpenApiParameter('status', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('lane', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('template_key', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('limit', int, OpenApiParameter.QUERY, required=False),
+        ],
+        responses={200: MessageListSerializer, **_API_ERRORS},
+    ),
+)
 class MessageListView(APIView):
     def get(self, request):
         try:
@@ -194,6 +314,13 @@ class MessageListView(APIView):
         return Response({'company_id': company_id, 'messages': rows})
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['catalog'],
+        operation_id='api_v1_catalog_retrieve',
+        responses={200: CatalogSerializer, **_API_ERRORS},
+    ),
+)
 class CatalogView(APIView):
     def get(self, request):
         user = request.user
@@ -225,6 +352,18 @@ class CatalogView(APIView):
         return error_response(SendError(401, 'unauthorized'), request)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_templates_defaults_retrieve',
+        parameters=[
+            COMPANY_QUERY,
+            OpenApiParameter('template_key', str, OpenApiParameter.QUERY, required=True),
+            OpenApiParameter('languages', str, OpenApiParameter.QUERY, required=False),
+        ],
+        responses={200: TemplateDefaultsSerializer, **_API_ERRORS},
+    ),
+)
 class TemplateDefaultsView(APIView):
     def get(self, request):
         try:
@@ -245,6 +384,21 @@ class TemplateDefaultsView(APIView):
         return Response({'template_key': key, 'languages': packs, 'variables': definition['variables']})
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_templates_list',
+        parameters=[COMPANY_QUERY],
+        responses={200: TemplateListSerializer, **_API_ERRORS},
+    ),
+    post=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_templates_create',
+        parameters=[COMPANY_QUERY],
+        request=TemplateCreateRequestSerializer,
+        responses={201: TemplateCreateResponseSerializer, **_API_ERRORS},
+    ),
+)
 class TemplateListView(APIView):
     def get(self, request):
         try:
@@ -300,6 +454,24 @@ class TemplateListView(APIView):
         return Response({'id': template.pk, 'template_key': key, 'language': language, 'draft_version': number}, status=201)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_templates_retrieve',
+        responses={200: TemplateSummarySerializer, **_API_ERRORS},
+    ),
+    patch=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_templates_partial_update',
+        request=None,
+        responses={400: ErrorSerializer},
+    ),
+    delete=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_templates_destroy',
+        responses={204: None, **_API_ERRORS},
+    ),
+)
 class TemplateDetailView(APIView):
     def get(self, request, template_id):
         template = EmailTemplate.objects.filter(pk=template_id).first()
@@ -375,6 +547,19 @@ def _rendered(document: dict, palette) -> tuple[str, str, str]:
         raise SendError(400, 'validation_failed', {'theme_palette': ['invalid_color']}) from exc
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_template_versions_list',
+        responses={200: TemplateVersionListSerializer, **_API_ERRORS},
+    ),
+    post=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_template_versions_create',
+        request=TemplateVersionCreateRequestSerializer,
+        responses={201: TemplateVersionCreateResponseSerializer, **_API_ERRORS},
+    ),
+)
 class TemplateVersionListView(APIView):
     def get(self, request, template_id):
         template = EmailTemplate.objects.filter(pk=template_id).first()
@@ -417,6 +602,14 @@ class TemplateVersionListView(APIView):
         return Response({'number': number, 'state': 'draft'}, status=201)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_template_versions_publish',
+        request=None,
+        responses={200: TemplatePublishResponseSerializer, **_API_ERRORS},
+    ),
+)
 class TemplatePublishView(APIView):
     def post(self, request, template_id, number):
         template = EmailTemplate.objects.filter(pk=template_id).first()
@@ -455,6 +648,13 @@ class TemplatePublishView(APIView):
         return Response({'number': version.number, 'state': version.state, 'checksum': version.checksum})
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_template_versions_retrieve',
+        responses={200: TemplateVersionSerializer, **_API_ERRORS},
+    ),
+)
 class TemplateVersionDetailView(APIView):
     def get(self, request, template_id, number):
         template = EmailTemplate.objects.filter(pk=template_id).first()
@@ -470,6 +670,14 @@ class TemplateVersionDetailView(APIView):
         return Response(_version_payload(version))
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_render_create',
+        request=RenderRequestSerializer,
+        responses={200: RenderResponseSerializer, **_API_ERRORS},
+    ),
+)
 class RenderView(APIView):
     def post(self, request):
         user = request.user
@@ -531,6 +739,14 @@ def _example_variables(definition: dict | None) -> dict:
     return variables
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_templates_send_test',
+        request=TemplateTestSendRequestSerializer,
+        responses={200: TestSendResponseSerializer, **_API_ERRORS},
+    ),
+)
 class TemplateTestSendView(APIView):
     def post(self, request, template_id):
         template = EmailTemplate.objects.filter(pk=template_id).first()
@@ -591,6 +807,28 @@ class TemplateTestSendView(APIView):
         return Response(result)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['rules'],
+        operation_id='api_v1_rules_list',
+        parameters=[COMPANY_QUERY],
+        responses={200: EmailRuleListSerializer, **_API_ERRORS},
+    ),
+    post=extend_schema(
+        tags=['rules'],
+        operation_id='api_v1_rules_create',
+        parameters=[COMPANY_QUERY],
+        request=EmailRuleWriteSerializer,
+        responses={200: EmailRuleSaveResponseSerializer, **_API_ERRORS},
+    ),
+    patch=extend_schema(
+        tags=['rules'],
+        operation_id='api_v1_rules_partial_update',
+        parameters=[COMPANY_QUERY],
+        request=EmailRuleWriteSerializer,
+        responses={200: EmailRuleSaveResponseSerializer, **_API_ERRORS},
+    ),
+)
 class RuleListView(APIView):
     def get(self, request):
         try:
@@ -659,6 +897,14 @@ class RuleListView(APIView):
         )
 
 
+@extend_schema_view(
+    delete=extend_schema(
+        tags=['rules'],
+        operation_id='api_v1_rules_destroy',
+        parameters=[COMPANY_QUERY],
+        responses={204: None, **_API_ERRORS},
+    ),
+)
 class RuleDetailView(APIView):
     def delete(self, request, event_type):
         try:
@@ -720,6 +966,21 @@ def _kept_text(request, key: str, existing: CompanyProvider | None, default: str
     return str(value)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['provider'],
+        operation_id='api_v1_provider_retrieve',
+        parameters=[COMPANY_QUERY],
+        responses={200: ProviderSerializer, **_API_ERRORS},
+    ),
+    put=extend_schema(
+        tags=['provider'],
+        operation_id='api_v1_provider_update',
+        parameters=[COMPANY_QUERY],
+        request=ProviderWriteSerializer,
+        responses={200: ProviderSerializer, **_API_ERRORS},
+    ),
+)
 class ProviderView(APIView):
     def get(self, request):
         try:
@@ -809,6 +1070,15 @@ class ProviderView(APIView):
         return Response(payload)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['provider'],
+        operation_id='api_v1_provider_test_send',
+        parameters=[COMPANY_QUERY],
+        request=ProviderTestSendRequestSerializer,
+        responses={200: TestSendResponseSerializer, **_API_ERRORS},
+    ),
+)
 class ProviderTestSendView(APIView):
     def post(self, request):
         try:
@@ -825,6 +1095,20 @@ class ProviderTestSendView(APIView):
         return Response(result)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['stats'],
+        operation_id='api_v1_stats_retrieve',
+        parameters=[
+            COMPANY_QUERY,
+            OpenApiParameter('from', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('to', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('lane', str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('event_type', str, OpenApiParameter.QUERY, required=False),
+        ],
+        responses={200: StatsSerializer, **_API_ERRORS},
+    ),
+)
 class StatsView(APIView):
     def get(self, request):
         try:
@@ -842,6 +1126,21 @@ class StatsView(APIView):
         return Response(payload)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['suppressions'],
+        operation_id='api_v1_suppressions_list',
+        parameters=[COMPANY_QUERY],
+        responses={200: SuppressionListSerializer, **_API_ERRORS},
+    ),
+    post=extend_schema(
+        tags=['suppressions'],
+        operation_id='api_v1_suppressions_create',
+        parameters=[COMPANY_QUERY],
+        request=SuppressionCreateSerializer,
+        responses={201: SuppressionCreatedSerializer, **_API_ERRORS},
+    ),
+)
 class SuppressionListView(APIView):
     def get(self, request):
         try:
@@ -885,6 +1184,13 @@ class SuppressionListView(APIView):
         return Response({'id': row.pk, 'email_masked': row.email_masked, 'reason': row.reason}, status=201)
 
 
+@extend_schema_view(
+    delete=extend_schema(
+        tags=['suppressions'],
+        operation_id='api_v1_suppressions_destroy',
+        responses={204: None, **_API_ERRORS},
+    ),
+)
 class SuppressionDetailView(APIView):
     def delete(self, request, suppression_id):
         row = Suppression.objects.filter(pk=suppression_id).first()
@@ -898,6 +1204,14 @@ class SuppressionDetailView(APIView):
         return Response(status=204)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['lanes'],
+        operation_id='api_v1_lanes_switch',
+        request=None,
+        responses={200: LaneStateSerializer, **_API_ERRORS},
+    ),
+)
 class LanePauseView(APIView):
     def post(self, request, lane, action):
         try:
@@ -924,6 +1238,14 @@ class LanePauseView(APIView):
         return Response({'lane': state.lane, 'paused': state.paused})
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['privacy'],
+        operation_id='api_v1_privacy_erase',
+        request=PrivacyEraseRequestSerializer,
+        responses={200: PrivacyEraseResponseSerializer, **_API_ERRORS},
+    ),
+)
 class PrivacyEraseView(APIView):
     def post(self, request):
         user = request.user
@@ -947,6 +1269,21 @@ class PrivacyEraseView(APIView):
         return Response({'deleted_messages': deleted, 'email_masked': mask_email(email)})
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['platform-metrics'],
+        operation_id='api_v1_metrics_retrieve',
+        parameters=[COMPANY_QUERY],
+        responses={
+            (200, 'text/plain'): OpenApiResponse(
+                response=OpenApiTypes.STR,
+                description='Prometheus text exposition',
+            ),
+            401: ErrorSerializer,
+            403: ErrorSerializer,
+        },
+    ),
+)
 class MetricsView(APIView):
     def get(self, request):
         from apps.email.metrics import METRICS_CONTENT_TYPE, metrics_http_body
@@ -971,6 +1308,16 @@ class MetricsView(APIView):
         return HttpResponse(body, content_type=METRICS_CONTENT_TYPE)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['provider'],
+        operation_id='api_v1_provider_webhooks_resend_create',
+        auth=[],
+        parameters=[OpenApiParameter('company_id', int, OpenApiParameter.QUERY, required=False)],
+        request=WebhookEventSerializer,
+        responses={200: WebhookAckSerializer, 400: ErrorSerializer, 401: ErrorSerializer},
+    ),
+)
 class ProviderWebhookView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -1047,6 +1394,19 @@ def unsubscribe_page(request, token):
     return HttpResponse(status=200)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['service-clients'],
+        operation_id='api_v1_service_clients_list',
+        responses={200: ServiceClientListSerializer, **_API_ERRORS},
+    ),
+    post=extend_schema(
+        tags=['service-clients'],
+        operation_id='api_v1_service_clients_create',
+        request=ServiceClientCreateSerializer,
+        responses={201: ServiceClientCreatedSerializer, **_API_ERRORS},
+    ),
+)
 class ServiceClientListView(APIView):
     def get(self, request):
         try:
