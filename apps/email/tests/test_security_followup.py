@@ -78,6 +78,9 @@ class SecurityFollowupTests(TestCase):
         self.api.credentials(HTTP_AUTHORIZATION=f'Bearer {key}')
 
     def test_unscoped_hosting_key_does_not_store_company_name(self):
+        from apps.email.rules import create_rule
+
+        create_rule(42, {'event_type': 'hosting.deployment.failed', 'content': {'mode': 'suggested'}})
         self._auth(self.hosting_key)
         poisoned = self.api.post(
             '/api/v1/events',
@@ -133,6 +136,9 @@ class SecurityFollowupTests(TestCase):
             allowed_company_ids=[42],
         )
         self._auth(raw)
+        from apps.email.rules import create_rule
+
+        create_rule(42, {'event_type': 'hosting.deployment.failed', 'content': {'mode': 'suggested'}})
         scoped = self.api.post(
             '/api/v1/events',
             {

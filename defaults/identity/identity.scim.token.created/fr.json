@@ -10,15 +10,7 @@
       },
       {
         "type": "text",
-        "text": "Un jeton SCIM nommé {{ token_name|default:\"(sans nom)\" }} (préfixe {{ token_prefix|default:\"masqué\" }}) a été créé pour {{ company_name|default:\"votre entreprise\" }}."
-      },
-      {
-        "type": "text",
-        "text": "Si vous ne reconnaissez pas ce changement, révoquez le jeton dans l'admin Shellui."
-      },
-      {
-        "type": "footer",
-        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
+        "text": "Un jeton SCIM nommé {{ token_name|default:\"(sans nom)\" }} (préfixe {{ token_prefix|default:\"masqué\" }}) a été créé pour {{ company_name|default:\"votre entreprise\" }}. Si vous ne reconnaissez pas ce changement, révoquez le jeton dans l'admin Shellui."
       }
     ]
   }

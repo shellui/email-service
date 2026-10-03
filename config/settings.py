@@ -177,6 +177,8 @@ SPECTACULAR_SETTINGS = {
         {'name': 'messages', 'description': 'Message status and cancellation.'},
         {'name': 'catalog', 'description': 'Suggested templates for service events.'},
         {'name': 'templates', 'description': 'Company template overrides.'},
+        {'name': 'themes', 'description': 'Official email themes and previews.'},
+        {'name': 'settings', 'description': 'Company email theme.'},
         {'name': 'rules', 'description': 'Per-company email rules.'},
         {'name': 'provider', 'description': 'Company sending provider credentials.'},
         {'name': 'stats', 'description': 'Per-company delivery statistics.'},

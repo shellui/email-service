@@ -21,6 +21,7 @@ class ErrorSerializer(serializers.Serializer):
         child=serializers.ListField(child=serializers.CharField()),
         required=False,
     )
+    missing_variables = serializers.ListField(child=serializers.CharField(), required=False)
     request_id = serializers.CharField(required=False)
 
 
@@ -203,9 +204,13 @@ class TemplateDefaultsSerializer(serializers.Serializer):
 class TemplateSummarySerializer(serializers.Serializer):
     id = serializers.IntegerField()
     template_key = serializers.CharField()
+    name = serializers.CharField(allow_blank=True)
+    event_type = serializers.CharField(allow_blank=True)
     language = serializers.CharField()
     company_id = serializers.IntegerField(allow_null=True)
     active_version = serializers.IntegerField(allow_null=True)
+    theme = serializers.CharField()
+    uses_company_theme = serializers.BooleanField()
 
 
 class TemplateListSerializer(serializers.Serializer):
@@ -298,16 +303,23 @@ class TestSendResponseSerializer(serializers.Serializer):
     provider_message_id = serializers.CharField(allow_blank=True, required=False)
 
 
+class EmailRuleContentSerializer(serializers.Serializer):
+    mode = serializers.ChoiceField(choices=['suggested', 'existing'])
+    template_id = serializers.IntegerField(required=False)
+
+
 class EmailRuleSerializer(serializers.Serializer):
-    event_type = serializers.CharField()
+    id = serializers.IntegerField()
     service = serializers.CharField()
-    template_key = serializers.CharField()
+    event_type = serializers.CharField()
     enabled = serializers.BooleanField()
-    language = serializers.CharField(allow_blank=True)
     recipient_mode = serializers.CharField()
-    static_recipients = serializers.ListField(child=serializers.JSONField())
-    customized = serializers.BooleanField()
-    default_enabled = serializers.BooleanField()
+    static_recipients = serializers.ListField(child=serializers.CharField())
+    language = serializers.CharField(allow_blank=True)
+    template_id = serializers.IntegerField()
+    built_in = serializers.BooleanField()
+    created_at = serializers.CharField()
+    updated_at = serializers.CharField()
 
 
 class EmailRuleListSerializer(serializers.Serializer):
@@ -316,19 +328,38 @@ class EmailRuleListSerializer(serializers.Serializer):
 
 
 class EmailRuleWriteSerializer(serializers.Serializer):
+    service = serializers.CharField(required=False)
     event_type = serializers.CharField()
     enabled = serializers.BooleanField(required=False)
-    template_key = serializers.CharField(required=False)
-    language = serializers.CharField(required=False, allow_blank=True)
     recipient_mode = serializers.CharField(required=False)
-    static_recipients = serializers.ListField(child=serializers.JSONField(), required=False)
+    static_recipients = serializers.ListField(child=serializers.CharField(), required=False)
+    language = serializers.CharField(required=False, allow_blank=True)
+    content = EmailRuleContentSerializer()
 
 
-class EmailRuleSaveResponseSerializer(serializers.Serializer):
-    event_type = serializers.CharField()
-    enabled = serializers.BooleanField()
-    template_key = serializers.CharField()
-    recipient_mode = serializers.CharField()
+class EmailRulePatchSerializer(serializers.Serializer):
+    enabled = serializers.BooleanField(required=False)
+    recipient_mode = serializers.CharField(required=False)
+    static_recipients = serializers.ListField(child=serializers.CharField(), required=False)
+    language = serializers.CharField(required=False, allow_blank=True)
+    template_id = serializers.IntegerField(required=False)
+
+
+class ThemeItemSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    name = serializers.CharField()
+    preview_url = serializers.CharField()
+
+
+class SettingsSerializer(serializers.Serializer):
+    theme = serializers.CharField()
+    templates_using_other_theme = serializers.IntegerField(required=False)
+    updated_templates = serializers.IntegerField(required=False)
+
+
+class SettingsWriteSerializer(serializers.Serializer):
+    theme = serializers.CharField()
+    apply_to_existing = serializers.BooleanField()
 
 
 class ProviderCredentialsSerializer(serializers.Serializer):
@@ -388,6 +419,7 @@ class SkippedSerializer(serializers.Serializer):
     total = serializers.IntegerField()
     no_recipients = serializers.IntegerField()
     rule_disabled = serializers.IntegerField()
+    no_rule = serializers.IntegerField()
 
 
 class StatsDaySerializer(CountSerializer):

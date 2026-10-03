@@ -43,10 +43,11 @@ AUTH_RETRY_DELAYS = (2, 6)
 
 
 class SendError(Exception):
-    def __init__(self, status: int, code: str, field_errors: dict | None = None):
+    def __init__(self, status: int, code: str, field_errors: dict | None = None, extra: dict | None = None):
         self.status = status
         self.code = code
         self.field_errors = field_errors or {}
+        self.extra = extra or {}
         super().__init__(code)
 
 
@@ -244,14 +245,15 @@ def resolve_content(company_id: int, template_key: str, language: str) -> tuple[
             number=override.active_version,
             state=TemplateVersion.STATE_PUBLISHED,
         ).first()
-        if version and version.html:
-            html = version.html
-            text = version.text
-            if version.theme_palette:
-                try:
-                    html, text, _renderer = render_document(version.document, version.theme_palette)
-                except PaletteError as exc:
-                    raise SendError(400, 'validation_failed', {'theme_palette': ['invalid_color']}) from exc
+        if version and (version.html or version.document):
+            try:
+                html, text, _renderer = render_document(
+                    version.document,
+                    version.theme_palette or None,
+                    version.theme_name,
+                )
+            except PaletteError as exc:
+                raise SendError(400, 'validation_failed', {'theme_palette': ['invalid_color']}) from exc
             return definition, {
                 'subject': version.subject,
                 'preheader': version.preheader,
@@ -657,30 +659,13 @@ def accept_batch(principal, body: dict) -> tuple[int, dict]:
     return 202, response
 
 
-def rule_for(company_id: int, event_type: str) -> tuple[bool, str, str, str, list]:
-    """Return enabled, template_key, language, recipient_mode, static_recipients."""
-    company_rule = EmailRule.objects.filter(company_id=company_id, event_type=event_type).first()
-    if company_rule:
-        return (
-            company_rule.enabled,
-            company_rule.template_key,
-            company_rule.language,
-            company_rule.recipient_mode,
-            list(company_rule.static_recipients or []),
-        )
-    platform_rule = EmailRule.objects.filter(company_id__isnull=True, event_type=event_type).first()
-    if platform_rule:
-        return (
-            platform_rule.enabled,
-            platform_rule.template_key,
-            platform_rule.language,
-            platform_rule.recipient_mode,
-            list(platform_rule.static_recipients or []),
-        )
-    definition = get_definition(event_type)
-    if definition is None:
-        raise SendError(400, 'unknown_event')
-    return definition['default_enabled'], definition['key'], '', EmailRule.MODE_HINTS, []
+def _rule_recipients(rule: EmailRule, body: dict) -> list:
+    if rule.recipient_mode == EmailRule.MODE_STATIC:
+        return [{'email': item} if isinstance(item, str) else item for item in (rule.static_recipients or [])]
+    raw = body.get('recipients') if body.get('recipients') is not None else []
+    if not isinstance(raw, list):
+        raise SendError(400, 'validation_failed', {'recipients': ['invalid']})
+    return raw
 
 
 def accept_event(principal, body: dict) -> tuple[int, dict]:
@@ -691,32 +676,50 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
     if service != principal.service:
         raise SendError(403, 'forbidden')
     event_type = str(body.get('event_type') or '')
-    if get_definition(event_type) is None:
+    definition = get_definition(event_type)
+    if definition is None:
         raise SendError(400, 'unknown_event')
     if not principal.allows_template(event_type):
         raise SendError(403, 'forbidden')
+    from apps.email.rules import content_for_rule, ensure_builtin_rules
+
+    ensure_builtin_rules(company_id)
     idem = str(body.get('idempotency_key') or '')
     replay = _idempotent(principal.service, company_id, idem, body)
     if replay:
         return replay
-    enabled, template_key, rule_language, mode, static_recipients = rule_for(company_id, event_type)
-    if not enabled:
+    rules = list(
+        EmailRule.objects.filter(
+            company_id=company_id,
+            service=service,
+            event_type=event_type,
+            enabled=True,
+        )
+        .select_related('template')
+        .order_by('created_at', 'id')
+    )
+    if not rules:
         return _skip_event(
             principal,
             company_id,
             event_type,
             idem,
             body,
-            reason=EventSkip.REASON_RULE_DISABLED,
+            reason=EventSkip.REASON_NO_RULE,
             rule_enabled=False,
         )
-    if mode == EmailRule.MODE_STATIC:
-        recipients_raw = [{'email': item} if isinstance(item, str) else item for item in static_recipients]
-    else:
-        recipients_raw = body.get('recipients') if body.get('recipients') is not None else []
-    if not isinstance(recipients_raw, list):
-        raise SendError(400, 'validation_failed', {'recipients': ['invalid']})
-    if not recipients_raw:
+    lane = _check_lane(principal, definition, None, company_id)
+    payload = body.get('payload') or {}
+    if not isinstance(payload, dict):
+        raise SendError(400, 'validation_failed', {'payload': ['invalid']})
+    planned = []
+    for rule in rules:
+        recipients_raw = _rule_recipients(rule, body)
+        if len(recipients_raw) > settings.EMAIL_MAX_RECIPIENTS:
+            raise SendError(400, 'validation_failed', {'recipients': ['too_many']})
+        for index, raw in enumerate(recipients_raw):
+            planned.append((rule, index, raw))
+    if not planned:
         return _skip_event(
             principal,
             company_id,
@@ -726,19 +729,10 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
             reason=EventSkip.REASON_NO_RECIPIENTS,
             rule_enabled=True,
         )
-    language = str(body.get('language') or rule_language or 'en')
-    definition = get_definition(template_key)
-    lane = _check_lane(principal, definition, None, company_id)
     _require_sender(company_id, lane)
-    payload = body.get('payload') or {}
-    if not isinstance(payload, dict):
-        raise SendError(400, 'validation_failed', {'payload': ['invalid']})
-    if len(recipients_raw) > settings.EMAIL_MAX_RECIPIENTS:
-        raise SendError(400, 'validation_failed', {'recipients': ['too_many']})
-    definition, content = resolve_content(company_id, template_key, language)
     messages = []
     with transaction.atomic():
-        for index, raw in enumerate(recipients_raw):
+        for rule, index, raw in planned:
             recipient = _normalize_recipient(raw, index)
             hmac_value = email_hmac(recipient['email'])
             if suppressed(company_id, hmac_value, lane):
@@ -746,6 +740,8 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
                     raise SendError(422, 'recipient_suppressed')
                 continue
             _check_rates(company_id=company_id, lane=lane, hmac_value=hmac_value)
+            language = str(rule.language or recipient.get('language') or body.get('language') or 'en')
+            content = content_for_rule(rule, language)
             merged = {key: _coerce(value) for key, value in payload.items()}
             merged.setdefault('recipient_email', recipient['email'])
             apply_company_name(company_id, merged, store=company_name_may_be_stored(principal, company_id))
@@ -754,7 +750,7 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
                 company_id=company_id,
                 service=principal.service,
                 send_request=None,
-                template_key=template_key,
+                template_key=rule.template.template_key,
                 version=content.get('version'),
                 language=content['language'],
                 lane=lane,
@@ -786,6 +782,12 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
         transaction.on_commit(lambda: _notify(lane))
     fresh = [_message_payload(Message.objects.get(pk=item.pk)) for item in messages]
     response = {'idempotent_replay': False, 'rule_enabled': True, 'messages': fresh}
+    if idem:
+        SendRequest.objects.filter(
+            service=principal.service,
+            company_id=company_id,
+            idempotency_key=idem,
+        ).update(response_body=response)
     return 202, response
 
 
@@ -928,11 +930,30 @@ def deliver_message(message_id) -> None:
             'expires_at': message.expires_at,
         }
     definition = get_definition(snapshot['template_key'])
+    template = None
     if definition is None:
+        template = EmailTemplate.objects.filter(
+            company_id=snapshot['company_id'],
+            template_key=snapshot['template_key'],
+        ).first()
+        if template is not None:
+            definition = get_definition(template.event_type or '') or get_definition(template.template_key)
+    if definition is None and template is None:
         _finish_failed(message_id, 'template_not_found')
         return
+    if definition is None:
+        definition = {'variables': [], 'lane_class': snapshot['lane'], 'key': snapshot['template_key']}
     try:
-        _definition, content = resolve_content(snapshot['company_id'], snapshot['template_key'], snapshot['language'])
+        if template is not None:
+            from apps.email.rules import content_for_template
+
+            content = content_for_template(template, snapshot['language'])
+        else:
+            _definition, content = resolve_content(
+                snapshot['company_id'],
+                snapshot['template_key'],
+                snapshot['language'],
+            )
     except SendError as exc:
         _finish_failed(message_id, exc.code)
         return

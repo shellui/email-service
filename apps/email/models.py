@@ -55,6 +55,8 @@ class EmailTemplate(models.Model):
     template_key = models.CharField(max_length=128)
     company_id = models.PositiveIntegerField(null=True, blank=True)
     language = models.CharField(max_length=8)
+    name = models.CharField(max_length=120, blank=True)
+    event_type = models.CharField(max_length=128, blank=True)
     active_version = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -89,7 +91,7 @@ class TemplateVersion(models.Model):
     document = models.JSONField(default=dict)
     html = models.TextField(blank=True)
     text = models.TextField(blank=True)
-    theme_name = models.CharField(max_length=64, default='shellui')
+    theme_name = models.CharField(max_length=64, default='barebone')
     theme_palette = models.JSONField(default=dict, blank=True)
     renderer_version = models.CharField(max_length=32, blank=True)
     checksum = models.CharField(max_length=64, blank=True)
@@ -104,33 +106,46 @@ class TemplateVersion(models.Model):
         ordering = ['template_id', 'number']
 
 
+class CompanyEmailSettings(models.Model):
+    """The theme new company templates start from. Missing row means barebone."""
+
+    company_id = models.PositiveIntegerField(unique=True)
+    theme = models.CharField(max_length=32, default='barebone')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f'{self.company_id}:{self.theme}'
+
+
 class EmailRule(models.Model):
-    """Company override of a suggested event rule. Null company_id is the platform default."""
+    """One send instruction. A company may keep several rules on the same event."""
 
     MODE_HINTS = 'hints'
     MODE_STATIC = 'static'
 
-    company_id = models.PositiveIntegerField(null=True, blank=True)
+    company_id = models.PositiveIntegerField(db_index=True)
     service = models.CharField(max_length=64)
     event_type = models.CharField(max_length=128)
-    enabled = models.BooleanField(default=False)
-    template_key = models.CharField(max_length=128)
+    enabled = models.BooleanField(default=True)
+    template = models.ForeignKey(EmailTemplate, related_name='rules', on_delete=models.PROTECT)
     language = models.CharField(max_length=8, blank=True)
     recipient_mode = models.CharField(max_length=16, default=MODE_HINTS)
     static_recipients = models.JSONField(default=list, blank=True)
+    built_in = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        ordering = ['event_type', 'created_at', 'id']
         constraints = [
             models.UniqueConstraint(
                 fields=['company_id', 'event_type'],
-                name='uniq_company_email_rule',
+                condition=Q(built_in=True),
+                name='uniq_builtin_email_rule',
             ),
-            models.UniqueConstraint(
-                fields=['event_type'],
-                condition=Q(company_id__isnull=True),
-                name='uniq_platform_email_rule',
-            ),
+        ]
+        indexes = [
+            models.Index(fields=['company_id', 'service', 'event_type'], name='email_rule_lookup_idx'),
         ]
 
 
@@ -147,6 +162,7 @@ class EventSkip(models.Model):
 
     REASON_RULE_DISABLED = 'rule_disabled'
     REASON_NO_RECIPIENTS = 'no_recipients'
+    REASON_NO_RULE = 'no_rule'
 
     company_id = models.PositiveIntegerField(db_index=True)
     service = models.CharField(max_length=64)

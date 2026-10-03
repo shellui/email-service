@@ -10,15 +10,7 @@
       },
       {
         "type": "text",
-        "text": "{{ display_name|default:\"Votre application\" }} {{ app_version|default:\"\" }} est maintenant le déploiement actif pour {{ company_name|default:\"votre entreprise\" }}."
-      },
-      {
-        "type": "text",
-        "text": "Slug public : {{ slug|default:\"votre slug\" }}."
-      },
-      {
-        "type": "footer",
-        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
+        "text": "{{ display_name|default:\"Votre application\" }} {{ app_version|default:\"\" }} est maintenant le déploiement actif pour {{ company_name|default:\"votre entreprise\" }}. Slug public : {{ slug|default:\"votre slug\" }}."
       }
     ]
   }

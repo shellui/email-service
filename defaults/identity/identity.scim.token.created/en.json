@@ -10,15 +10,7 @@
       },
       {
         "type": "text",
-        "text": "A SCIM token named {{ token_name|default:\"(unnamed)\" }} (prefix {{ token_prefix|default:\"hidden\" }}) was created for {{ company_name|default:\"your company\" }}."
-      },
-      {
-        "type": "text",
-        "text": "If you do not recognize this change, revoke the token in Shellui admin."
-      },
-      {
-        "type": "footer",
-        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+        "text": "A SCIM token named {{ token_name|default:\"(unnamed)\" }} (prefix {{ token_prefix|default:\"hidden\" }}) was created for {{ company_name|default:\"your company\" }}. If you do not recognize this change, revoke the token in Shellui admin."
       }
     ]
   }

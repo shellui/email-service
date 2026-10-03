@@ -56,6 +56,14 @@ class HostingContractTests(TestCase):
             configured=True,
         )
 
+    def _enable_failed(self, company_id):
+        from apps.email.rules import create_rule
+
+        create_rule(
+            company_id,
+            {'event_type': 'hosting.deployment.failed', 'content': {'mode': 'suggested'}},
+        )
+
     def _failed(self, company_id, **extra):
         body = {
             'company_id': company_id,
@@ -114,6 +122,7 @@ class HostingContractTests(TestCase):
 
     def test_company_name_is_remembered_and_filled(self):
         self._provider(21)
+        self._enable_failed(21)
         self._auth(self.identity_key)
         first = self.client.post(
             '/api/v1/send',
@@ -152,6 +161,7 @@ class HostingContractTests(TestCase):
 
     def test_unknown_company_uses_the_template_language_default(self):
         self._provider(22, from_name='Shellui')
+        self._enable_failed(22)
         self._auth(self.hosting_key)
         english = self.client.post('/api/v1/events', self._failed(22, language='en'), format='json')
         self.assertEqual(english.status_code, 202, english.content)
@@ -162,12 +172,14 @@ class HostingContractTests(TestCase):
 
     def test_provider_from_name_fills_company_name(self):
         self._provider(23, from_name='Northwind')
+        self._enable_failed(23)
         self._auth(self.hosting_key)
         response = self.client.post('/api/v1/events', self._failed(23), format='json')
         self.assertEqual(response.status_code, 202, response.content)
         self.assertIn('Northwind', fake_provider().sent[-1].html)
 
     def test_empty_recipients_are_skipped_and_counted(self):
+        self._enable_failed(40)
         self._auth(self.hosting_key)
         body = self._failed(40, recipients=[], idempotency_key='deploy-empty')
         first = self.client.post('/api/v1/events', body, format='json')

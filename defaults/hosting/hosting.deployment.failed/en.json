@@ -10,15 +10,7 @@
       },
       {
         "type": "text",
-        "text": "The deployment of {{ display_name|default:\"your app\" }} ({{ app_version|default:\"unversioned\" }}) for {{ company_name|default:\"your company\" }} failed."
-      },
-      {
-        "type": "text",
-        "text": "Reason: {{ error|default:\"unknown_error\" }}. The previous active deployment, if any, is still the one serving traffic."
-      },
-      {
-        "type": "footer",
-        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+        "text": "The deployment of {{ display_name|default:\"your app\" }} ({{ app_version|default:\"unversioned\" }}) for {{ company_name|default:\"your company\" }} failed. Reason: {{ error|default:\"unknown_error\" }}. The previous active deployment, if any, is still the one serving traffic."
       }
     ]
   }

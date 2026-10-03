@@ -11,10 +11,6 @@
       {
         "type": "text",
         "text": "The account {{ recipient_email|default:\"a user\" }} was permanently deleted from {{ company_name|default:\"your company\" }}."
-      },
-      {
-        "type": "footer",
-        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
       }
     ]
   }

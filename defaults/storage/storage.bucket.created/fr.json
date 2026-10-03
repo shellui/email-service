@@ -11,10 +11,6 @@
       {
         "type": "text",
         "text": "Le compartiment {{ bucket_name|default:\"company\" }} a été créé pour {{ company_name|default:\"votre entreprise\" }}. Les fichiers déposés pour cette entreprise y seront conservés."
-      },
-      {
-        "type": "footer",
-        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
       }
     ]
   }

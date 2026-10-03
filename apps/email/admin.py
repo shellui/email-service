@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.email.models import CompanyProvider, EmailRule, LaneState, Message, ServiceClient
+from apps.email.models import CompanyEmailSettings, CompanyProvider, EmailRule, LaneState, Message, ServiceClient
 
 
 @admin.register(ServiceClient)
@@ -22,9 +22,14 @@ class MessageAdmin(admin.ModelAdmin):
     search_fields = ('to_email', 'template_key', 'provider_message_id')
 
 
+@admin.register(CompanyEmailSettings)
+class CompanyEmailSettingsAdmin(admin.ModelAdmin):
+    list_display = ('company_id', 'theme', 'updated_at')
+
+
 @admin.register(EmailRule)
 class EmailRuleAdmin(admin.ModelAdmin):
-    list_display = ('company_id', 'event_type', 'enabled', 'template_key')
+    list_display = ('company_id', 'event_type', 'enabled', 'built_in', 'template')
 
 
 @admin.register(LaneState)

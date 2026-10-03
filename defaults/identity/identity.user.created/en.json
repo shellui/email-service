@@ -11,10 +11,6 @@
       {
         "type": "text",
         "text": "An account for {{ recipient_email|default:\"a user\" }} was created in {{ company_name|default:\"your company\" }} (source: {{ source|default:\"oauth\" }})."
-      },
-      {
-        "type": "footer",
-        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
       }
     ]
   }

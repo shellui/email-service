@@ -11,10 +11,6 @@
       {
         "type": "text",
         "text": "{{ path|default:\"A file\" }} was deleted from bucket {{ bucket_name|default:\"company\" }} in {{ company_name|default:\"your company\" }}."
-      },
-      {
-        "type": "footer",
-        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
       }
     ]
   }

@@ -10,20 +10,12 @@
       },
       {
         "type": "text",
-        "text": "{{ inviter_name|default:\"Un membre de l'équipe\" }} a invité {{ recipient_email|default:\"vous\" }} dans {{ company_name }}."
-      },
-      {
-        "type": "text",
-        "text": "Ouvrez l'invitation pour continuer. L'accès commence lorsque vous vous connectez avec cette adresse e-mail."
+        "text": "{{ inviter_name|default:\"Un membre de l'équipe\" }} a invité {{ recipient_email|default:\"vous\" }} dans {{ company_name }}. Ouvrez l'invitation pour continuer. L'accès commence lorsque vous vous connectez avec cette adresse e-mail."
       },
       {
         "type": "button",
         "text": "Ouvrir l'invitation",
         "href": "{{ invitation_url }}"
-      },
-      {
-        "type": "footer",
-        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
       }
     ]
   }

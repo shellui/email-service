@@ -12,6 +12,8 @@ Grouped by `by_lane`, `by_event` (catalog `event_type`), and `by_day`. Query `fr
 
 `sent` includes every status the provider accepted. A later `delivered` or `bounced` row still counts as `sent`.
 
+`skipped` counts accepted events that queued no message: `no_recipients`, `no_rule`, and `rule_disabled` (older rows only; new skips use `no_rule`).
+
 ## Prometheus
 
 `GET /api/v1/metrics`

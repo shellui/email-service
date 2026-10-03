@@ -41,13 +41,15 @@ def _var(
     return item
 
 
-def _document(preheader: str, heading: str, paragraphs: list[str], button: tuple[str, str] | None, footer: str) -> dict:
-    blocks: list[dict[str, str]] = [{'type': 'heading', 'text': heading}]
-    for paragraph in paragraphs:
-        blocks.append({'type': 'text', 'text': paragraph})
+def _document(preheader: str, heading: str, paragraphs: list[str], button: tuple[str, str] | None) -> dict:
+    """Heading, one paragraph, and a button only when the event has an action URL."""
+    paragraph = ' '.join(part.strip() for part in paragraphs if part and part.strip())
+    blocks: list[dict[str, str]] = [
+        {'type': 'heading', 'text': heading},
+        {'type': 'text', 'text': paragraph},
+    ]
     if button:
         blocks.append({'type': 'button', 'text': button[0], 'href': button[1]})
-    blocks.append({'type': 'footer', 'text': footer})
     return {'preview': preheader, 'blocks': blocks}
 
 
@@ -64,24 +66,16 @@ def _localized(
     button_en: tuple[str, str] | None = None,
     button_fr: tuple[str, str] | None = None,
 ) -> dict[str, dict]:
-    footer_en = (
-        'Sent by Shellui for {{ company_name|default:"your company" }}. '
-        'Reference {{ system.message_id }}.'
-    )
-    footer_fr = (
-        'Envoyé par Shellui pour {{ company_name|default:"votre entreprise" }}. '
-        'Référence {{ system.message_id }}.'
-    )
     return {
         'en': {
             'subject': subject_en,
             'preheader': pre_en,
-            'document': _document(pre_en, heading_en, body_en, button_en, footer_en),
+            'document': _document(pre_en, heading_en, body_en, button_en),
         },
         'fr': {
             'subject': subject_fr,
             'preheader': pre_fr,
-            'document': _document(pre_fr, heading_fr, body_fr, button_fr, footer_fr),
+            'document': _document(pre_fr, heading_fr, body_fr, button_fr),
         },
     }
 

@@ -10,20 +10,12 @@
       },
       {
         "type": "text",
-        "text": "Bonjour {{ recipient_name|default:\"\" }},"
-      },
-      {
-        "type": "text",
-        "text": "Utilisez le bouton ci-dessous pour vous connecter à {{ company_name }}. Le lien ne fonctionne qu'une fois et expire bientôt. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message."
+        "text": "Bonjour {{ recipient_name|default:\"\" }}, Utilisez le bouton ci-dessous pour vous connecter à {{ company_name }}. Le lien ne fonctionne qu'une fois et expire bientôt. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message."
       },
       {
         "type": "button",
         "text": "Se connecter",
         "href": "{{ magic_link_url }}"
-      },
-      {
-        "type": "footer",
-        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
       }
     ]
   }

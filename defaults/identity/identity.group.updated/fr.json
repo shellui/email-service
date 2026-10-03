@@ -11,10 +11,6 @@
       {
         "type": "text",
         "text": "{{ display_name|default:\"Un groupe\" }} dans {{ company_name|default:\"votre entreprise\" }} a été mis à jour. Champs : {{ changed_fields|default:\"métadonnées\" }}."
-      },
-      {
-        "type": "footer",
-        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
       }
     ]
   }

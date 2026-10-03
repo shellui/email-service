@@ -11,10 +11,6 @@
       {
         "type": "text",
         "text": "Le groupe {{ display_name|default:\"(sans nom)\" }} a été créé dans {{ company_name|default:\"votre entreprise\" }} (source : {{ source|default:\"manual\" }})."
-      },
-      {
-        "type": "footer",
-        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
       }
     ]
   }

@@ -10,15 +10,7 @@
       },
       {
         "type": "text",
-        "text": "Le déploiement de {{ display_name|default:\"votre application\" }} ({{ app_version|default:\"sans version\" }}) pour {{ company_name|default:\"votre entreprise\" }} a échoué."
-      },
-      {
-        "type": "text",
-        "text": "Motif : {{ error|default:\"unknown_error\" }}. Le déploiement actif précédent, s'il existe, continue de servir le trafic."
-      },
-      {
-        "type": "footer",
-        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
+        "text": "Le déploiement de {{ display_name|default:\"votre application\" }} ({{ app_version|default:\"sans version\" }}) pour {{ company_name|default:\"votre entreprise\" }} a échoué. Motif : {{ error|default:\"unknown_error\" }}. Le déploiement actif précédent, s'il existe, continue de servir le trafic."
       }
     ]
   }

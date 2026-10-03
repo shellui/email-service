@@ -7,8 +7,9 @@ The integration contract is [docs/integration.md](docs/integration.md).
 ## Features
 
 - Direct send (`POST /api/v1/send`) for auth mail: magic links and invitations, with TTL and idempotency
-- Event ingest (`POST /api/v1/events`): a company email rule chooses the template, the language, and whether to send
-- Suggested English and French templates for identity, storage, and hosting webhook events
+- Event ingest (`POST /api/v1/events`): every enabled email rule for that company, service, and event queues a message. Auth-lane events have a built-in rule.
+- Suggested English and French templates for identity, storage, and hosting webhook events (a heading, one paragraph, and a button only when the event has an action URL)
+- Five themes (Barebone, Matte, Protocol, Arcane, Studio). Layout and type are adapted from the React Email demos. See `renderer/themes/LICENSE`.
 - Provider adapters: Resend (default) and SMTP. Mailjet is the next adapter. See [docs/providers.md](docs/providers.md).
 - Per-company credentials encrypted at rest. API responses return a masked hint and `configured`.
 - Admin API for rules, templates, stats, test sends, and suppressions
@@ -25,7 +26,7 @@ The integration contract is [docs/integration.md](docs/integration.md).
 - `apps/actions/` Shellui Actions outbox
 - `defaults/` exported suggested templates
 - `docs/` guides, including the integration contract
-- `renderer/` React Email renderer used when `EMAIL_RENDERER=node`
+- `renderer/` React Email renderer used when `EMAIL_RENDERER=node`, including `renderer/themes/LICENSE`
 
 ## Main endpoints
 
@@ -37,7 +38,9 @@ The integration contract is [docs/integration.md](docs/integration.md).
 | Messages | `GET /api/v1/messages`, `GET /api/v1/messages/{id}`, `POST /api/v1/messages/{id}/cancel` |
 | Catalog | `GET /api/v1/catalog` |
 | Provider | `GET/PUT /api/v1/provider`, `POST /api/v1/provider/test-send` |
-| Rules | `GET/POST/PATCH /api/v1/rules` |
+| Themes | `GET /api/v1/themes`, `GET /api/v1/themes/{key}/preview` |
+| Settings | `GET/PUT /api/v1/settings` |
+| Rules | `GET/POST /api/v1/rules`, `GET/PATCH/DELETE /api/v1/rules/{id}` |
 | Templates | `/api/v1/templates` |
 | Stats | `GET /api/v1/stats` |
 | Metrics | `GET /api/v1/metrics` |

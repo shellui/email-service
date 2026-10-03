@@ -144,7 +144,7 @@ class AdminContractTests(TestCase):
                 'subject': 'Edited subject',
                 'preheader': 'Edited preheader',
                 'document': {'preview': 'Edited', 'blocks': [{'type': 'heading', 'text': 'Edited heading'}]},
-                'theme_name': 'harbor',
+                'theme_name': 'matte',
                 'theme_palette': PALETTE,
             },
             format='json',
@@ -155,7 +155,7 @@ class AdminContractTests(TestCase):
         row = next(item for item in listed if item['number'] == number)
         self.assertEqual(row['preheader'], 'Edited preheader')
         self.assertEqual(row['document']['blocks'][0]['text'], 'Edited heading')
-        self.assertEqual(row['theme_name'], 'harbor')
+        self.assertEqual(row['theme_name'], 'matte')
         self.assertEqual(row['theme_palette']['primary'], '#112233')
         one = owner.get(f'/api/v1/templates/{template_id}/versions/{number}')
         self.assertEqual(one.status_code, 200, one.content)
@@ -193,13 +193,22 @@ class AdminContractTests(TestCase):
                         {'type': 'button', 'text': 'Open', 'href': 'https://example.com'},
                     ],
                 },
-                'theme_name': 'harbor',
+                'theme_name': 'matte',
                 'theme_palette': PALETTE,
             },
             format='json',
         )
         published = owner.post(f'/api/v1/templates/{template_id}/versions/{draft.json()["number"]}/publish')
         self.assertEqual(published.status_code, 200, published.content)
+        rule = owner.post(
+            '/api/v1/rules?company_id=40',
+            {
+                'event_type': 'hosting.deployment.failed',
+                'content': {'mode': 'existing', 'template_id': template_id},
+            },
+            format='json',
+        )
+        self.assertEqual(rule.status_code, 201, rule.content)
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.hosting_key}')
         sent = client.post(
@@ -254,7 +263,7 @@ class AdminContractTests(TestCase):
         latest = owner.post(f'/api/v1/templates/{template_id}/send-test', {}, format='json')
         self.assertEqual(latest.status_code, 200, latest.content)
         self.assertIn('Edited heading', fake_provider().sent[-1].html)
-        self.assertIn('#112233', fake_provider().sent[-1].html)
+        self.assertIn('#111111', fake_provider().sent[-1].html)
         self.assertIn('My App', fake_provider().sent[-1].subject)
         unsaved = owner.post(
             f'/api/v1/templates/{template_id}/send-test',
@@ -286,21 +295,24 @@ class AdminContractTests(TestCase):
         self.assertEqual(rules.status_code, 200, rules.content)
         body = rules.json()
         self.assertEqual(body['company_id'], 40)
-        row = next(item for item in body['rules'] if item['event_type'] == 'hosting.deployment.failed')
+        row = next(item for item in body['rules'] if item['event_type'] == 'identity.auth.magic_link.requested')
         self.assertEqual(
             set(row),
             {
-                'event_type',
+                'id',
                 'service',
-                'template_key',
+                'event_type',
                 'enabled',
-                'language',
                 'recipient_mode',
                 'static_recipients',
-                'customized',
-                'default_enabled',
+                'language',
+                'template_id',
+                'built_in',
+                'created_at',
+                'updated_at',
             },
         )
+        self.assertTrue(row['built_in'])
         text = (ROOT / 'docs' / 'integration.md').read_text(encoding='utf-8')
         self.assertIn('"error": "artifact_extract_failed"', text)
         self.assertNotIn('error_summary', text)

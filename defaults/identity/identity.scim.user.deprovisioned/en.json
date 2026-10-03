@@ -11,10 +11,6 @@
       {
         "type": "text",
         "text": "Directory sync disabled company access for {{ recipient_email|default:\"a user\" }} in {{ company_name|default:\"your company\" }}. The user account was not deleted."
-      },
-      {
-        "type": "footer",
-        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
       }
     ]
   }

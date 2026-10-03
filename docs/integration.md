@@ -19,9 +19,9 @@ Store the key in the caller's secret store. email-service stores only a SHA-256 
 
 Sibling services do not share an email client today. This service therefore exposes two entry points.
 
-**Direct send** (`POST /api/v1/send`) is for mail the caller has already decided to send. Use it for identity magic links and invitations. Those templates are on the `auth` lane, with a TTL and idempotency. A company email rule does not suppress a direct send. If identity posted those events only to `/events`, a company that turned the rule off would stop sign-in mail.
+**Direct send** (`POST /api/v1/send`) is for mail the caller has already decided to send. Identity uses it for magic links and invitations. Those templates are on the `auth` lane, with a TTL and idempotency. A company email rule does not suppress a direct send.
 
-**Event ingest** (`POST /api/v1/events`) is for every other catalog event. The caller posts `service`, `event_type`, `company_id`, a payload, and recipient hints. email-service looks up the company's email rule and either queues the suggested template or returns `skipped_reason: rule_disabled`.
+**Event ingest** (`POST /api/v1/events`) is for catalog events. The caller posts `service`, `event_type`, `company_id`, a payload, and recipient hints. email-service queues one message for every enabled email rule on that company, service, and event. Auth-lane events have a built-in rule that cannot be turned off, so sign-in mail still sends when the event is posted. If no enabled rule matches, the response is `202` with `skipped_reason: no_rule`. `default_enabled` on the catalog is metadata only. It does not send mail.
 
 Recommended key scopes:
 
@@ -60,7 +60,7 @@ JSON errors never contain translated sentences. Shape:
 }
 ```
 
-`field_errors` and `request_id` are omitted when empty.
+`field_errors` and `request_id` are omitted when empty. `template_variables_mismatch` also includes `missing_variables`, a list of token names.
 
 | `error_code` | HTTP | Meaning |
 | --- | --- | --- |
@@ -71,7 +71,12 @@ JSON errors never contain translated sentences. Shape:
 | `validation_failed` | 400 | See `field_errors` |
 | `template_not_found` | 404 | Unknown `template_key` |
 | `language_not_available` | 400 | Language is not `en` or `fr` for that template |
-| `unknown_event` | 400 | `event_type` is not in the catalog |
+| `unknown_event` | 400 | `event_type` on `POST /api/v1/events` is not in the catalog |
+| `event_unknown` | 400 | `event_type` on the rules API or `GET /api/v1/templates` is not in the catalog, or `service` does not own that event |
+| `theme_unknown` | 400 | `theme` or `theme_name` is not `barebone`, `matte`, `protocol`, `arcane`, or `studio` |
+| `template_variables_mismatch` | 400 | A rule's template uses `{{ token }}` values the event does not declare. `missing_variables` lists them. |
+| `rule_built_in` | 409 | A built-in auth rule cannot be deleted or disabled |
+| `template_in_use` | 409 | `DELETE /api/v1/templates/{id}` while an email rule still points at that template |
 | `template_lane_mismatch` | 400 | Requested lane does not match the template's lane class |
 | `lane_requires_campaign` | 400 | `bulk` is not accepted on `/send`. Campaigns are not in this version. |
 | `lane_paused` | 409 | Staff paused the lane for every company, or this company's provider returned 401/403. Retry later. |
@@ -118,7 +123,7 @@ Retry with the same `idempotency_key` and the same JSON body. Backoff matches Sh
 
 | Result | What the caller does |
 | --- | --- |
-| 2xx | Done. `202` with `skipped_reason` (`rule_disabled` or `no_recipients`) is finished. Do not retry it. |
+| 2xx | Done. `202` with `skipped_reason` (`no_rule` or `no_recipients`) is finished. Do not retry it. |
 | 404, 408, 409, 425, 429, any other 4xx not in the next row, 5xx, timeouts, connection errors | Retry |
 | 400, 401, 403, 405, 410, 413, 422 | Permanent. Do not retry that body. |
 
@@ -254,24 +259,22 @@ Auth: service key. `service` must equal the key's service name.
 }
 ```
 
-Rule resolution order:
+On accept, email-service creates any missing built-in auth rules for that company, then loads every enabled rule for the company, service, and `event_type`. Each rule queues one message per resolved recipient. A company can have several rules on one event (the event recipient and a static ops address, for example). There is no platform rule and no catalog on/off fallback.
 
-1. Company `EmailRule` for that `event_type`, if present.
-2. Platform rule (`company_id` null), if staff created one.
-3. Catalog default (`default_enabled` in [events.md](events.md)).
-
-When the rule is disabled, `202`:
+When no enabled rule matches, `202`:
 
 ```json
 {
   "idempotent_replay": false,
   "rule_enabled": false,
-  "skipped_reason": "rule_disabled",
+  "skipped_reason": "no_rule",
   "messages": []
 }
 ```
 
-When the rule is enabled and at least one recipient resolves, `202`:
+`skipped.no_rule` counts that row. Catalog `default_enabled` is not consulted. Events that used to send with no company row (`hosting.deployment.failed`, `identity.user.invitation_revoked`, `identity.scim.provisioning_conflict`) now return `no_rule` until the company creates a rule. Auth-lane events send because their built-in rules exist. See [rules.md](rules.md) and [events.md](events.md).
+
+When at least one enabled rule has a recipient, `202`:
 
 ```json
 {
@@ -281,9 +284,9 @@ When the rule is enabled and at least one recipient resolves, `202`:
 }
 ```
 
-`messages` uses the same object as `/send`. An empty `messages` array here means every recipient was suppressed on a non-auth lane.
+`messages` uses the same object as `/send`. One entry per queued message. An empty `messages` array with `rule_enabled: true` and no `skipped_reason` means every recipient was suppressed on a non-auth lane.
 
-When the rule is enabled but no recipient resolves, `202` (not `400`):
+When enabled rules exist but no address resolves, `202` (not `400`). This check happens before the provider check, so a company with no provider still gets this response:
 
 ```json
 {
@@ -294,16 +297,18 @@ When the rule is enabled but no recipient resolves, `202` (not `400`):
 }
 ```
 
-That covers `recipients: []`, a missing `recipients` field, and a `static` rule whose `static_recipients` list is empty. The event is counted in `GET /api/v1/stats` under `skipped.no_recipients`. Callers should treat this `202` as finished. Do not retry it. A non-list `recipients` value is still `400 validation_failed`.
+That covers `recipients: []`, a missing `recipients` field, and a `static` rule whose `static_recipients` list is empty, when those are the only enabled rules. The event is counted under `skipped.no_recipients`. Callers should treat this `202` as finished. Do not retry it. A non-list `recipients` value is still `400 validation_failed`.
 
-Recipient selection:
+One `idempotency_key` covers the whole event, including every rule's messages. A retry with the same key and body returns the stored response and does not send again, even if a rule was added later.
+
+Recipient selection, per rule:
 
 | `recipient_mode` | Behavior |
 | --- | --- |
-| `hints` (default) | Use the `recipients` array on the request. An empty list is `skipped_reason: no_recipients`. |
-| `static` | Ignore request recipients. Use `static_recipients` on the rule (strings or `{email, user_id}` objects). An empty list is `skipped_reason: no_recipients`. |
+| `hints` (default) | Use the `recipients` array on the request. |
+| `static` | Ignore request recipients. Use `static_recipients` on the rule. Stored values are email strings. Input may be a string or `{email}`. |
 
-`language` on the request wins. If omitted, the rule language is used, then `en`.
+Language, per message: the rule `language` when it is set, otherwise the recipient `language`, then the request `language`, then `en`. An unedited suggested document still follows that language. Once the company edits the subject, preheader, or document, that stored document is what sends.
 
 `payload` keys match the template variables. Extra keys are ignored. For `hosting.deployment.failed` the failure text is `error` (for example `artifact_extract_failed`), the same field hosting stores on its webhook payload.
 
@@ -320,7 +325,7 @@ email-service does not call identity's company API. That API is limited to membe
 
 URL variables must be `https`, `mailto`, or `tel`. `http://localhost` and `http://127.0.0.1` are allowed only when `DEBUG=true`. Auth URL variables (`magic_link_url`) must use a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false`, `localhost`, `127.0.0.1`, and `::1` are removed from that list even if the environment includes them.
 
-Non-auth mail (`POST /api/v1/send` on a transactional template, and `POST /api/v1/events` when the rule is enabled) requires a company provider, unless `company_id` is in `EMAIL_PLATFORM_COMPANY_IDS`. Otherwise the response is `409 platform_sender_not_allowed`. Identity auth templates (`identity.auth.magic_link.requested`, `identity.user.invited`) still send through the platform fallback when the company has no provider, from `no-reply@shellui.com`.
+Non-auth mail (`POST /api/v1/send` on a transactional template, and `POST /api/v1/events` when an enabled rule matches and a recipient resolves) requires a company provider, unless `company_id` is in `EMAIL_PLATFORM_COMPANY_IDS`. Otherwise the response is `409 platform_sender_not_allowed`. Identity auth templates (`identity.auth.magic_link.requested`, `identity.user.invited`) still send through the platform fallback when the company has no provider, from `no-reply@shellui.com`. That includes event ingest of those auth events through the built-in rule.
 
 A company that is not in `EMAIL_PLATFORM_COMPANY_IDS` cannot set `from_email` or `bulk_from_email` to `DEFAULT_FROM_EMAIL` or `BULK_FROM_EMAIL` (`403 platform_sender_not_allowed`).
 
@@ -403,7 +408,7 @@ Auth: service key, staff, or company owner. Does not send mail.
 }
 ```
 
-Or send your own `document` and `subject`. Optional `theme_palette` is applied to that HTML. Omit it, or send `{}`, for the Shellui palette. Response: `subject`, `html`, `text`, `missing_variables` (tokens left unsubstituted).
+Or send your own `document` and `subject`. Optional `theme_name` is one of the five theme keys. Omit it for `barebone`. An unknown key returns `400 theme_unknown`. Optional `theme_palette` replaces that theme's colors. Omit it, or send `{}`, to keep the theme palette. Response: `subject`, `html`, `text`, `missing_variables` (tokens left unsubstituted).
 
 ## Admin: provider
 
@@ -478,45 +483,105 @@ Auth rate limits: 5 messages per recipient per company per 10 minutes (`recipien
 
 Default from address when the company has none: `no-reply@shellui.com`. Bulk from address: `news@news.shellui.com`. The HTTP host is `email.shellui.com` and is not a sending domain.
 
+## Admin: themes and settings
+
+Auth: staff or company owner, same as the other admin routes. Theme names are proper nouns and are not translated. Full layout notes and the MIT attribution are in [themes.md](themes.md).
+
+`GET /api/v1/themes?company_id=42` returns a JSON array, not a wrapper:
+
+```json
+[
+  {"key": "barebone", "name": "Barebone", "preview_url": "/api/v1/themes/barebone/preview?language=en"},
+  {"key": "matte", "name": "Matte", "preview_url": "/api/v1/themes/matte/preview?language=en"},
+  {"key": "protocol", "name": "Protocol", "preview_url": "/api/v1/themes/protocol/preview?language=en"},
+  {"key": "arcane", "name": "Arcane", "preview_url": "/api/v1/themes/arcane/preview?language=en"},
+  {"key": "studio", "name": "Studio", "preview_url": "/api/v1/themes/studio/preview?language=en"}
+]
+```
+
+`GET /api/v1/themes/{key}/preview?company_id=42&language=en` returns `text/html` (a heading, one paragraph, and a button) for a sandboxed iframe. `language` is `en` (default) or `fr`. Unknown key: `400 theme_unknown`. Unknown language: `400 language_not_available`. Load it with the same Bearer token. The admin can place the HTML in an iframe `srcdoc`.
+
+`GET /api/v1/settings?company_id=42`
+
+```json
+{"theme": "barebone", "templates_using_other_theme": 0}
+```
+
+A company with no settings row has theme `barebone`. `templates_using_other_theme` counts company templates whose representative theme differs. The representative theme is the active published version, otherwise the latest version, otherwise the company theme.
+
+`PUT /api/v1/settings?company_id=42`
+
+```json
+{"theme": "protocol", "apply_to_existing": false}
+```
+
+`apply_to_existing` is required and must be a boolean (`400 validation_failed` otherwise). Unknown `theme` is `400 theme_unknown`.
+
+With `apply_to_existing: false` the setting changes and existing templates stay as they are. The response is `{"theme": "protocol", "updated_templates": 0}`.
+
+With `apply_to_existing: true`, every company template on another theme gets a new version with the same content in the new theme. A published template stays published: it is re-rendered, the previous published version is archived, and `active_version` moves. A latest draft on another theme becomes a new draft. The template is counted once. Response: `{"theme": "protocol", "updated_templates": 2}`.
+
 ## Admin: rules
 
-`GET /api/v1/rules?company_id=42` returns every catalog event, including ones the company has not customized (`customized: false` uses the catalog default).
+Email rules are a list, like Shellui Actions webhook rules. The old per-event toggle (`template_key`, `customized`, `default_enabled`, `DELETE /api/v1/rules/{event_type}`) is gone. Detail is in [rules.md](rules.md).
+
+`GET /api/v1/rules?company_id=42&service=identity` creates missing built-in auth rules, then returns company rules ordered by `event_type`, then `created_at`. `service` is optional.
 
 ```json
 {
   "company_id": 42,
   "rules": [
     {
-      "event_type": "hosting.deployment.failed",
-      "service": "hosting",
-      "template_key": "hosting.deployment.failed",
+      "id": 9,
+      "service": "identity",
+      "event_type": "identity.auth.magic_link.requested",
       "enabled": true,
-      "language": "",
       "recipient_mode": "hints",
       "static_recipients": [],
-      "customized": false,
-      "default_enabled": true
+      "language": "",
+      "template_id": 15,
+      "built_in": true,
+      "created_at": "2026-10-03T12:00:00Z",
+      "updated_at": "2026-10-03T12:00:00Z"
     }
   ]
 }
 ```
 
-`language` is empty until the company sets one. `recipient_mode` is `hints` or `static`. `static_recipients` is a list of address strings or `{email, user_id}` objects.
+`language` blank means recipient language, then the event language, then `en`. `recipient_mode` is `hints` or `static`. `static_recipients` in responses is a list of email strings. `built_in` is read-only.
 
-`POST` or `PATCH /api/v1/rules?company_id=42`
+`POST /api/v1/rules?company_id=42` returns the rule at `201`, including `template_id`.
 
 ```json
 {
   "event_type": "hosting.deployment.failed",
+  "service": "hosting",
   "enabled": true,
-  "template_key": "hosting.deployment.failed",
-  "language": "fr",
+  "language": "",
   "recipient_mode": "hints",
-  "static_recipients": []
+  "static_recipients": [],
+  "content": {"mode": "suggested"}
 }
 ```
 
-`DELETE /api/v1/rules/{event_type}?company_id=42` removes the company override and restores the catalog default. `204`.
+`content.mode` is `suggested` or `existing`. `suggested` creates a published company template from the event's minimal default, in the company's current theme, named after the event label, with a key such as `company.a1b2c3d4e5f6`, and links it. `existing` requires `content.template_id`. Optional `service` must match the event's owner service. Several rules on one event are allowed.
+
+`GET /api/v1/rules/{id}?company_id=42` returns one rule. Unknown id: `404 not_found`.
+
+`PATCH /api/v1/rules/{id}?company_id=42` accepts any of `enabled`, `recipient_mode`, `static_recipients`, `language`, `template_id`.
+
+`DELETE /api/v1/rules/{id}?company_id=42` returns `204`.
+
+| `error_code` | When |
+| --- | --- |
+| `event_unknown` | Unknown `event_type`, or `service` does not own it |
+| `template_not_found` | `content.template_id` or `template_id` is missing or not this company's template |
+| `template_variables_mismatch` | The template's `{{ token }}` values are not all available on the event. Body includes `missing_variables`. `system.*` tokens are ignored. `recipient_email` is always available. |
+| `rule_built_in` | Delete, or `enabled: false`, on a built-in rule |
+| `language_not_available` | `language` is not `en` or `fr` for that event |
+| `validation_failed` | `content` missing or invalid, `recipient_mode` not `hints` or `static`, or `static_recipients` is not a list of addresses |
+
+Built-in rules exist for every catalog event with `lane_class: auth` (`identity.auth.magic_link.requested` and `identity.user.invited` today). They are created on the first rules list or the first event for that company, and a second create is a no-op. They cannot be deleted or disabled. Their template content can be edited, and `template_id` can move to another compatible company template. `enabled: true` on a built-in rule is accepted. Other patch fields (`language`, `recipient_mode`, `static_recipients`) still apply.
 
 ## Admin: templates
 
@@ -524,19 +589,39 @@ Suggested copy is used until a company publishes a version.
 
 | Method | Path | Result |
 | --- | --- | --- |
-| `GET` | `/api/v1/templates?company_id=` | Company template rows |
-| `POST` | `/api/v1/templates?company_id=` | Body `template_key`, `language`. Creates a draft from the suggested document. `201` `{id, template_key, language, draft_version}` |
-| `GET` | `/api/v1/templates/{id}` | Metadata |
+| `GET` | `/api/v1/templates?company_id=` | Company template rows. Optional `event_type` keeps only templates whose `{{ token }}` values fit that event. Unknown event: `400 event_unknown`. |
+| `POST` | `/api/v1/templates?company_id=` | Body `template_key` (a catalog id), `language`. Creates a draft from the suggested document, named after the event, `event_type` set, theme set to the company theme. `201` `{id, template_key, language, draft_version}` |
+| `GET` | `/api/v1/templates/{id}` | Metadata, including `name`, `event_type`, `theme`, `uses_company_theme` |
 | `PATCH` | `/api/v1/templates/{id}` | `400` with `field_errors.template: ["use_versions"]` |
-| `DELETE` | `/api/v1/templates/{id}` | `204`. Later sends use the suggested document again. |
+| `DELETE` | `/api/v1/templates/{id}` | `204`. `409 template_in_use` when a rule points at it. Deleting a catalog-key override that no rule uses lets later direct sends use the suggested document again. |
 | `GET` | `/api/v1/templates/{id}/versions` | `{versions: [{number, state, subject, preheader, document, theme_name, theme_palette, published_at}]}` |
 | `GET` | `/api/v1/templates/{id}/versions/{number}` | One version, same fields |
-| `POST` | `/api/v1/templates/{id}/versions` | Body `subject`, `preheader`, `document`, optional `theme_name` (default `shellui`) and `theme_palette`. `201` `{number, state: "draft"}` |
-| `POST` | `/api/v1/templates/{id}/versions/{number}/publish` | Renders HTML with the stored palette, sets `active_version`. `{number, state, checksum}` |
+| `POST` | `/api/v1/templates/{id}/versions` | Body `subject`, `preheader`, `document`, optional `theme_name` and `theme_palette`. Omitted `theme_name` uses the company theme (`barebone` for a platform template). `201` `{number, state: "draft"}` |
+| `POST` | `/api/v1/templates/{id}/versions/{number}/publish` | Renders HTML in the stored theme, sets `active_version`. `{number, state, checksum}` |
 | `POST` | `/api/v1/templates/{id}/send-test` | Renders the draft in the body, or the latest unpublished version, and sends it to the admin's own JWT email |
 | `GET` | `/api/v1/templates/defaults?template_key=&languages=en,fr` | Suggested subject, preheader, document, variables |
 
-`theme_palette` is either `{}` or all of these keys, each a `#RRGGBB` color: `background`, `foreground`, `muted`, `mutedForeground`, `primary`, `primaryForeground`, `border`. `{}` uses the Shellui palette (`primary` `#e3a512`). Any other shape is `400 validation_failed` with `theme_palette: ["invalid_color"]`. Publish and later sends apply the stored palette, so the message matches the admin preview. An omitted `theme_name` is stored as `shellui`.
+List and detail items:
+
+```json
+{
+  "id": 15,
+  "template_key": "company.a1b2c3d4e5f6",
+  "name": "Deployment failed",
+  "event_type": "hosting.deployment.failed",
+  "language": "en",
+  "company_id": 42,
+  "active_version": 1,
+  "theme": "barebone",
+  "uses_company_theme": true
+}
+```
+
+`name` is plain text, max 120. Company templates created from a rule use a generated `company.<12 hex>` key. Catalog keys still work for `POST /api/v1/send` and for `POST /api/v1/templates`.
+
+`theme_name` is one of `barebone`, `matte`, `protocol`, `arcane`, `studio`. Anything else, including the old string `shellui`, is `400 theme_unknown`.
+
+`theme_palette` is either `{}` or all of these keys, each a `#RRGGBB` color: `background`, `foreground`, `muted`, `mutedForeground`, `primary`, `primaryForeground`, `border`. `{}` keeps the theme's own colors. A full palette replaces those color slots on top of the theme's fonts, spacing, and button shape. `primary` is the button accent. Any other shape is `400 validation_failed` with `theme_palette: ["invalid_color"]`. Publish and later sends apply the stored theme and palette, so the message matches the admin preview.
 
 `POST /api/v1/templates/{id}/send-test` body, all optional:
 
@@ -545,7 +630,8 @@ Suggested copy is used until a company publishes a version.
   "document": {"preview": "Short inbox preview", "blocks": []},
   "subject": "Hello",
   "preheader": "",
-  "theme_palette": {}
+  "theme_palette": {},
+  "theme_name": "barebone"
 }
 ```
 
@@ -589,7 +675,7 @@ Default window: the last 30 days.
     "suppressed": 0,
     "cancelled": 0
   },
-  "skipped": {"total": 0, "no_recipients": 0, "rule_disabled": 0},
+  "skipped": {"total": 0, "no_recipients": 0, "rule_disabled": 0, "no_rule": 0},
   "by_lane": {},
   "by_event": {},
   "by_day": [{"day": "2026-10-01", "sent": 1, "delivered": 0, "bounced": 0, "complained": 0, "expired": 0, "failed": 0, "queued": 0, "suppressed": 0, "cancelled": 0}]
@@ -598,7 +684,7 @@ Default window: the last 30 days.
 
 `sent` counts provider-accepted messages. A `delivered` or `bounced` row is also included in `sent`, so `sent` is a superset of the later provider statuses. `by_event` keys are `event_type` (the catalog id).
 
-`skipped` counts accepted `POST /api/v1/events` calls that queued no message. `no_recipients` is an enabled rule with no resolvable address. `rule_disabled` is a catalog or company rule that is off. `from`, `to`, `event_type`, and `lane` filter these rows the same way they filter messages. `lane` uses the catalog lane of the event.
+`skipped` counts accepted `POST /api/v1/events` calls that queued no message. `no_recipients` is an enabled rule with no resolvable address. `no_rule` is an event with no enabled rule. `rule_disabled` stays in the object for older rows and is no longer written. `from`, `to`, `event_type`, and `lane` filter these rows the same way they filter messages. `lane` uses the catalog lane of the event.
 
 ## Admin: suppressions, lanes, privacy, clients
 

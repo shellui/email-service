@@ -100,7 +100,7 @@ def company_stats(
     skips = EventSkip.objects.filter(company_id=company_id, created_at__gte=start, created_at__lte=end)
     if event_type:
         skips = skips.filter(event_type=event_type)
-    skipped = {'total': 0, 'no_recipients': 0, 'rule_disabled': 0}
+    skipped = {'total': 0, 'no_recipients': 0, 'rule_disabled': 0, 'no_rule': 0}
     for row in skips.values('reason', 'event_type').annotate(n=Count('id')):
         if lane:
             definition = get_definition(row['event_type'])

@@ -194,7 +194,7 @@ class EmailApiTests(TestCase):
         )
         self.assertEqual(skipped.status_code, 202, skipped.content)
         self.assertFalse(skipped.json()['rule_enabled'])
-        self.assertEqual(skipped.json()['skipped_reason'], 'rule_disabled')
+        self.assertEqual(skipped.json()['skipped_reason'], 'no_rule')
         failed = self.client.post(
             '/api/v1/events',
             {
@@ -209,8 +209,8 @@ class EmailApiTests(TestCase):
             format='json',
         )
         self.assertEqual(failed.status_code, 202, failed.content)
-        self.assertTrue(failed.json()['rule_enabled'])
-        self.assertEqual(failed.json()['messages'][0]['status'], 'sent')
+        self.assertFalse(failed.json()['rule_enabled'])
+        self.assertEqual(failed.json()['skipped_reason'], 'no_rule')
 
     def test_expired_auth_message_is_not_sent(self):
         self._auth(self.identity_key)
@@ -276,6 +276,9 @@ class EmailApiTests(TestCase):
         self.assertEqual(denied.json()['error_code'], 'company_mismatch')
 
     def test_stats_and_metrics(self):
+        from apps.email.rules import create_rule
+
+        create_rule(7, {'event_type': 'hosting.deployment.failed', 'content': {'mode': 'suggested'}})
         self._auth(self.hosting_key)
         self.client.post(
             '/api/v1/events',

@@ -311,6 +311,9 @@ class SecurityRegressionTests(TestCase):
         self.assertEqual(impersonate.status_code, 403, impersonate.content)
         self.assertEqual(impersonate.json()['error_code'], 'platform_sender_not_allowed')
 
+        from apps.email.rules import create_rule
+
+        create_rule(8, {'event_type': 'hosting.deployment.failed', 'content': {'mode': 'suggested'}})
         self._service(self.hosting_key)
         denied = self.client.post(
             '/api/v1/events',

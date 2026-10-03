@@ -11,10 +11,6 @@
       {
         "type": "text",
         "text": "Le jeton SCIM {{ token_name|default:\"(sans nom)\" }} (préfixe {{ token_prefix|default:\"masqué\" }}) a été révoqué pour {{ company_name|default:\"votre entreprise\" }}. La synchronisation d'annuaire qui l'utilise va s'arrêter."
-      },
-      {
-        "type": "footer",
-        "text": "Envoyé par Shellui pour {{ company_name|default:\"votre entreprise\" }}. Référence {{ system.message_id }}."
       }
     ]
   }

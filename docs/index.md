@@ -11,6 +11,8 @@ Other Shellui services and the admin app implement against [integration.md](inte
 - [Authentication](authentication.md): service keys and identity JWTs
 - [Providers](providers.md): Resend, SMTP, and how to add Mailjet
 - [Templates](templates.md): suggested documents, versions, and variables
+- [Themes](themes.md): Barebone, Matte, Protocol, Arcane, and Studio
+- [Rules](rules.md): company email rules and built-in auth mail
 - [Lanes](lanes.md): auth, transactional, and bulk
 - [Events](events.md): suggested mail for identity, storage, and hosting
 - [Metrics](metrics.md): admin stats and Prometheus

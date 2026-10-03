@@ -10,15 +10,7 @@
       },
       {
         "type": "text",
-        "text": "{{ display_name|default:\"A new app\" }} ({{ name|default:\"app\" }}) was created for {{ company_name|default:\"your company\" }}."
-      },
-      {
-        "type": "text",
-        "text": "The public slug is {{ slug|default:\"pending\" }}. You can upload a deployment when the artifact is ready."
-      },
-      {
-        "type": "footer",
-        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+        "text": "{{ display_name|default:\"A new app\" }} ({{ name|default:\"app\" }}) was created for {{ company_name|default:\"your company\" }}. The public slug is {{ slug|default:\"pending\" }}. You can upload a deployment when the artifact is ready."
       }
     ]
   }

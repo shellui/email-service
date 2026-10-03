@@ -1,9 +1,11 @@
 /**
- * Render a Shellui email document with React Email.
+ * Render a Shellui block document in one of the five official themes.
  * Placeholders such as {{ company_name }} are left as text.
  *
- * stdin: JSON { document: { preview, blocks }, palette } or a bare document.
- * palette colors are #RRGGBB. Anything else falls back to the Shellui palette.
+ * Theme layout, palette, type, and fonts are adapted from the MIT-licensed
+ * React Email demos (see renderer/themes/LICENSE). Sample copy is not used.
+ *
+ * stdin: JSON { document, palette, theme, spec }
  * stdout: JSON { html, text }
  */
 import React from 'react';
@@ -12,6 +14,7 @@ import {
   Body,
   Button,
   Container,
+  Font,
   Head,
   Heading,
   Html,
@@ -20,110 +23,140 @@ import {
   Text,
 } from '@react-email/components';
 
-const DEFAULT_PALETTE = {
-  background: '#ffffff',
-  foreground: '#1a1408',
-  muted: '#f6f4ef',
-  mutedForeground: '#6b645b',
-  primary: '#e3a512',
-  primaryForeground: '#1a1408',
-  border: '#e7e0d4',
-};
-
-function color(value, fallback) {
-  return typeof value === 'string' && /^#[0-9A-Fa-f]{6}$/.test(value) ? value : fallback;
-}
-
-function paletteColors(raw) {
-  const source = raw && typeof raw === 'object' ? raw : {};
-  const colors = {};
-  for (const key of Object.keys(DEFAULT_PALETTE)) {
-    colors[key] = color(source[key], DEFAULT_PALETTE[key]);
-  }
-  return colors;
-}
-
-function Email({ document, palette }) {
-  const colors = paletteColors(palette);
+function Email({ document, spec, colors }) {
   const blocks = document.blocks || [];
+  const align = spec.align || 'left';
+  const layout = spec.layout || 'card';
+  const outline = spec.button_style === 'outline';
+  const buttonBg = outline && layout === 'serif' ? 'transparent' : colors.primary;
+  const buttonFg = outline && layout === 'serif' ? colors.foreground : colors.primaryForeground;
+  const buttonBorder =
+    outline && layout === 'serif'
+      ? `1px solid ${colors.foreground}`
+      : outline
+        ? `1px solid ${colors.border}`
+        : '0';
+  const cardBorder = layout === 'card' || layout === 'inset' ? `1px solid ${colors.border}` : '0';
+  const innerBg = layout === 'inset' ? colors.inner : colors.background;
+  const fonts = spec.fonts || [];
   return React.createElement(
     Html,
     null,
-    React.createElement(Head, null),
+    React.createElement(
+      Head,
+      null,
+      ...fonts.map((font, index) =>
+        React.createElement(Font, {
+          key: index,
+          fontFamily: font.family,
+          fallbackFontFamily: String(font.fallback || 'Arial, sans-serif')
+            .split(',')
+            .map((part) => part.trim().replace(/^'|'$/g, '')),
+          webFont: { url: font.url, format: font.format || 'woff2' },
+          fontWeight: font.weight || 400,
+          fontStyle: 'normal',
+        }),
+      ),
+    ),
     React.createElement(
       Body,
-      { style: { backgroundColor: colors.muted, margin: 0, fontFamily: 'Georgia, serif', color: colors.foreground } },
+      {
+        style: {
+          backgroundColor: colors.muted,
+          margin: 0,
+          fontFamily: spec.font,
+          color: colors.foreground,
+        },
+      },
       React.createElement(Preview, null, document.preview || ''),
       React.createElement(
         Container,
         {
           style: {
-            maxWidth: '560px',
+            maxWidth: spec.max_width || '640px',
             margin: '32px auto',
             backgroundColor: colors.background,
-            border: `1px solid ${colors.border}`,
-            borderRadius: '12px',
-            padding: '8px 0 12px',
+            border: cardBorder,
+            borderRadius: spec.card_radius || '0',
+            boxShadow: spec.shadow && spec.shadow !== 'none' ? spec.shadow : undefined,
           },
         },
+        layout === 'studio'
+          ? React.createElement(Section, {
+              style: { backgroundColor: colors.foreground, height: '8px', fontSize: '0', lineHeight: '0' },
+            })
+          : null,
         React.createElement(
-          Text,
+          Section,
           {
             style: {
-              color: colors.primary,
-              fontSize: '14px',
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              padding: '20px 32px 0',
+              backgroundColor: innerBg,
+              padding: layout === 'inset' ? '28px 24px' : '40px 32px',
+              textAlign: align,
+              borderRadius: spec.card_radius || '0',
             },
           },
-          'Shellui',
-        ),
-        ...blocks.map((block, index) => {
-          if (block.type === 'heading') {
-            return React.createElement(
-              Heading,
-              {
-                key: index,
-                style: { color: colors.foreground, fontSize: '26px', padding: '8px 32px', fontWeight: 700 },
-              },
-              block.text || '',
-            );
-          }
-          if (block.type === 'button') {
-            return React.createElement(
-              Section,
-              { key: index, style: { padding: '8px 32px 20px' } },
-              React.createElement(
-                Button,
+          ...blocks.map((block, index) => {
+            if (block.type === 'heading') {
+              return React.createElement(
+                Heading,
                 {
-                  href: block.href || '',
+                  key: index,
+                  as: 'h1',
                   style: {
-                    backgroundColor: colors.primary,
-                    color: colors.primaryForeground,
-                    borderRadius: '8px',
-                    padding: '12px 22px',
-                    fontWeight: 700,
+                    fontFamily: spec.heading_font,
+                    fontSize: spec.heading_size,
+                    fontWeight: spec.heading_weight,
+                    lineHeight: '1.2',
+                    letterSpacing: '-0.02em',
+                    textTransform: spec.heading_transform || 'none',
+                    color: colors.foreground,
+                    margin: '0 0 16px',
                   },
                 },
                 block.text || '',
-              ),
-            );
-          }
-          return React.createElement(
-            Text,
-            {
-              key: index,
-              style: {
-                color: block.type === 'footer' ? colors.mutedForeground : colors.foreground,
-                fontSize: block.type === 'footer' ? '12px' : '16px',
-                lineHeight: '1.55',
-                padding: '0 32px',
+              );
+            }
+            if (block.type === 'button') {
+              return React.createElement(
+                Section,
+                { key: index, style: { margin: '8px 0 4px', textAlign: align } },
+                React.createElement(
+                  Button,
+                  {
+                    href: block.href || '',
+                    style: {
+                      backgroundColor: buttonBg,
+                      color: buttonFg,
+                      borderRadius: spec.button_radius || '0',
+                      padding: spec.button_pad || '12px 20px',
+                      fontFamily: spec.font,
+                      fontSize: '15px',
+                      fontWeight: 500,
+                      border: buttonBorder,
+                      boxShadow: outline && spec.shadow && spec.shadow !== 'none' ? spec.shadow : undefined,
+                    },
+                  },
+                  block.text || '',
+                ),
+              );
+            }
+            return React.createElement(
+              Text,
+              {
+                key: index,
+                style: {
+                  fontFamily: spec.font,
+                  color: block.type === 'footer' ? colors.mutedForeground : colors.body,
+                  fontSize: block.type === 'footer' ? '12px' : spec.text_size,
+                  lineHeight: '1.5',
+                  margin: '0 0 16px',
+                },
               },
-            },
-            block.text || '',
-          );
-        }),
+              block.text || '',
+            );
+          }),
+        ),
       ),
     ),
   );
@@ -135,7 +168,11 @@ for await (const chunk of process.stdin) {
 }
 const raw = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 const document = raw && Object.prototype.hasOwnProperty.call(raw, 'document') ? raw.document : raw;
-const element = React.createElement(Email, { document: document || {}, palette: raw.palette });
+const element = React.createElement(Email, {
+  document: document || {},
+  spec: raw.spec || {},
+  colors: raw.palette || {},
+});
 const html = await render(element);
 const text = await render(element, { plainText: true });
 process.stdout.write(JSON.stringify({ html, text }));

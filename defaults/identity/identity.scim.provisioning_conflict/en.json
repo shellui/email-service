@@ -10,15 +10,7 @@
       },
       {
         "type": "text",
-        "text": "SCIM could not {{ operation|default:\"apply\" }} {{ display_name|default:\"an entry\" }} for {{ company_name|default:\"your company\" }} because of a conflict."
-      },
-      {
-        "type": "text",
-        "text": "Review the group in Shellui admin and in your identity provider, then retry the change from the provider."
-      },
-      {
-        "type": "footer",
-        "text": "Sent by Shellui for {{ company_name|default:\"your company\" }}. Reference {{ system.message_id }}."
+        "text": "SCIM could not {{ operation|default:\"apply\" }} {{ display_name|default:\"an entry\" }} for {{ company_name|default:\"your company\" }} because of a conflict. Review the group in Shellui admin and in your identity provider, then retry the change from the provider."
       }
     ]
   }
