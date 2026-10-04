@@ -6,7 +6,7 @@ const sidebars = {
     "authentication",
     "providers",
     "templates",
-    "themes",
+    "library",
     "rules",
     "lanes",
     "events",
