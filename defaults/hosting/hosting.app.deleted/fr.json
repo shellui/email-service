@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] {{ display_name|default:\"Une application\" }} a été retirée",
-  "preheader": "Une application hébergée a été supprimée.",
-  "document": {
-    "preview": "Une application hébergée a été supprimée.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Application hébergée retirée"
-      },
-      {
-        "type": "text",
-        "text": "{{ display_name|default:\"Une application\" }} ({{ name|default:\"app\" }}) et ses déploiements ont été retirés de {{ company_name|default:\"votre entreprise\" }}."
-      }
-    ]
-  }
+  "preheader": "Une application hébergée a été supprimée."
 }

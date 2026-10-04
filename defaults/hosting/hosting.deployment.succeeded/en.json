@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] {{ display_name|default:\"Your app\" }} is live",
-  "preheader": "The deployment is serving traffic.",
-  "document": {
-    "preview": "The deployment is serving traffic.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Deployment is live"
-      },
-      {
-        "type": "text",
-        "text": "{{ display_name|default:\"Your app\" }} {{ app_version|default:\"\" }} is now the active deployment for {{ company_name|default:\"your company\" }}. Public slug: {{ slug|default:\"your slug\" }}."
-      }
-    ]
-  }
+  "preheader": "The deployment is serving traffic."
 }

@@ -39,5 +39,7 @@
       "example": "application/pdf",
       "is_url": false
     }
-  ]
+  ],
+  "link_token": "",
+  "default_template": "barebone.text-only"
 }

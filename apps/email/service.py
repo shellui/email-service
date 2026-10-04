@@ -29,10 +29,7 @@ from apps.email.models import (
     MessageEvent,
     SendRequest,
     Suppression,
-    TemplateVersion,
 )
-from apps.email.palette import PaletteError
-from apps.email.rendering import render_document
 from apps.email.substitution import SubstitutionError, substitute
 from apps.providers.registry import get_provider
 
@@ -162,8 +159,12 @@ def _url_tokens(definition: dict) -> dict[str, set[str] | None]:
     return tokens
 
 
+def assets_url() -> str:
+    return f'{settings.EMAIL_PUBLIC_URL}/static/library'
+
+
 def _system_variables(message: Message) -> dict:
-    values = {'system.message_id': message.public_id}
+    values = {'system.message_id': message.public_id, 'system.assets_url': assets_url()}
     if message.lane == LANE_AUTH:
         return values
     url = unsubscribe_url(message.company_id, message.to_email, message.lane)
@@ -185,85 +186,15 @@ def _list_unsubscribe_headers(lane: str, variables: dict) -> dict[str, str]:
     }
 
 
-def render_for_definition(definition: dict, language: str) -> dict:
-    languages = definition['languages']
-    pack = languages.get(language) or languages.get('en')
-    if pack is None:
-        raise SendError(400, 'language_not_available')
-    html, text, renderer = render_document(pack['document'])
-    return {
-        'subject': pack['subject'],
-        'preheader': pack.get('preheader') or '',
-        'html': html,
-        'text': text,
-        'version': None,
-        'renderer': renderer,
-        'language': language if language in languages else 'en',
-    }
-
-
 def resolve_content(company_id: int, template_key: str, language: str) -> tuple[dict, dict]:
+    from apps.email.rules import content_for_event
+
     definition = get_definition(template_key)
     if definition is None:
         raise SendError(404, 'template_not_found')
     if language not in definition['languages'] and language != 'en':
         raise SendError(400, 'language_not_available')
-    override = (
-        EmailTemplate.objects.filter(
-            template_key=template_key,
-            company_id=company_id,
-            language=language,
-            active_version__isnull=False,
-        )
-        .first()
-    )
-    if override is None and language != 'en':
-        override = EmailTemplate.objects.filter(
-            template_key=template_key,
-            company_id=company_id,
-            language='en',
-            active_version__isnull=False,
-        ).first()
-    if override is None:
-        platform = EmailTemplate.objects.filter(
-            template_key=template_key,
-            company_id__isnull=True,
-            language=language,
-            active_version__isnull=False,
-        ).first()
-        if platform is None and language != 'en':
-            platform = EmailTemplate.objects.filter(
-                template_key=template_key,
-                company_id__isnull=True,
-                language='en',
-                active_version__isnull=False,
-            ).first()
-        override = platform
-    if override and override.active_version:
-        version = TemplateVersion.objects.filter(
-            template=override,
-            number=override.active_version,
-            state=TemplateVersion.STATE_PUBLISHED,
-        ).first()
-        if version and (version.html or version.document):
-            try:
-                html, text, _renderer = render_document(
-                    version.document,
-                    version.theme_palette or None,
-                    version.theme_name,
-                )
-            except PaletteError as exc:
-                raise SendError(400, 'validation_failed', {'theme_palette': ['invalid_color']}) from exc
-            return definition, {
-                'subject': version.subject,
-                'preheader': version.preheader,
-                'html': html,
-                'text': text,
-                'version': version.number,
-                'language': override.language,
-            }
-    rendered = render_for_definition(definition, language if language in definition['languages'] else 'en')
-    return definition, rendered
+    return definition, content_for_event(company_id, definition, language)
 
 
 def _validate_variables(definition: dict, variables: dict, *, field_prefix: str) -> dict:

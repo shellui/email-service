@@ -28,7 +28,11 @@ When `DEBUG=false`, `SECURE_SSL_REDIRECT`, HSTS (one year), and secure session a
 
 ## Links in auth mail
 
-`magic_link_url` must use `https` and a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false` that list cannot include `localhost`, `127.0.0.1`, or `::1`. Other URL variables must be `https`, `mailto`, or `tel`. An auth-lane company override must keep the required link variable, and every button `href` and inline link `href` must be that variable or an allowlisted `https` host. Subject, preheader, preview, heading, text, footer, list items, and the button label cannot contain a literal URL (`auth_literal_link`). The check reads the inline runs that are rendered, not only the plain `text`. The required link variable is the only link allowed in that prose.
+`magic_link_url` must use `https` and a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false` that list cannot include `localhost`, `127.0.0.1`, or `::1`. Other URL variables must be `https`, `mailto`, or `tel`. An auth-lane copy must keep the required link variable, and every link in the document (link marks, button `href`, linked images) must be a declared URL variable, `{{ system.message_id }}`, or an allowlisted `https` host. Subject, preheader, and every text node in the document cannot contain a literal URL (`auth_literal_link`). The required link variable is the only link allowed in that prose. A copy made from the library for an auth event drops the links these checks would refuse, so it publishes as made.
+
+## Documents
+
+Documents are editor JSON, composed to HTML by email-service, never HTML from the caller. Every save checks the node and mark allowlist, rejects `javascript:`, `vbscript:`, `expression(`, and `data:text/html` in any attribute, accepts only `https`, `mailto`, `tel`, or `{{ token }}` links and `https` or `{{ system.assets_url }}` images, and caps the JSON at `EMAIL_MAX_DOCUMENT_BYTES`. Composing runs `renderer/compose.mjs` in a Node subprocess with a timeout. Details are in [templates.md](templates.md#document).
 
 ## Webhook targets
 

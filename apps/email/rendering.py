@@ -1,20 +1,21 @@
-"""Render a block document to HTML and text. Placeholders survive until send time."""
+"""Compose editor documents to HTML and text with renderer/compose.mjs. Placeholders survive until send time."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import subprocess
-from html import escape
 from pathlib import Path
 
 from django.conf import settings
 
-from apps.email.blocks import TEXT_BLOCKS, block_runs, list_items, runs_text, safe_href
-from apps.email.substitution import escape_keeping_tokens, find_tokens, reject_template_tags
-from apps.email.themes import DEFAULT_THEME, colors_for, is_theme
+from apps.email.service import SendError
+from apps.email.substitution import find_tokens, reject_template_tags
 
-RENDERER_VERSION = 'shellui-email-3'
+RENDERER_VERSION = 'react-email-editor-1'
+
+_cache: dict[str, tuple[str, str]] = {}
+_CACHE_LIMIT = 256
 
 
 def document_tokens(document: dict, subject: str = '', preheader: str = '') -> set[str]:
@@ -26,198 +27,44 @@ def document_tokens(document: dict, subject: str = '', preheader: str = '') -> s
     return tokens
 
 
-def _font_faces(spec: dict) -> str:
-    faces = []
-    for font in spec.get('fonts') or []:
-        family = escape(str(font.get('family') or ''))
-        url = escape(str(font.get('url') or ''))
-        fmt = escape(str(font.get('format') or 'woff2'))
-        weight = int(font.get('weight') or 400)
-        faces.append(
-            '@font-face{'
-            f"font-family:'{family}';font-style:normal;font-weight:{weight};"
-            f"src:url('{url}') format('{fmt}');"
-            '}'
+def _cache_key(item: dict) -> str:
+    raw = json.dumps(item, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def _run_node(items: list[dict]) -> list[tuple[str, str]]:
+    script = Path(settings.BASE_DIR) / 'renderer' / 'compose.mjs'
+    try:
+        completed = subprocess.run(
+            [settings.EMAIL_NODE_BINARY, str(script)],
+            input=json.dumps({'items': items}).encode('utf-8'),
+            capture_output=True,
+            check=False,
+            timeout=settings.EMAIL_COMPOSE_TIMEOUT_SECONDS,
         )
-    return ''.join(faces)
-
-
-def _python_html(document: dict, spec: dict, colors: dict[str, str]) -> str:
-    preview = escape(str(document.get('preview') or ''))
-    font = spec['font']
-    heading_font = spec['heading_font']
-    align = spec.get('align') or 'left'
-    radius = spec.get('card_radius') or '0'
-    button_radius = spec.get('button_radius') or '0'
-    shadow = spec.get('shadow') or 'none'
-    max_width = spec.get('max_width') or '640px'
-    layout = spec.get('layout') or 'card'
-    border = f'1px solid {colors["border"]}' if layout in {'card', 'inset'} else '0'
-    if layout == 'studio':
-        border = '0'
-    button_border = f'1px solid {colors["border"]}' if spec.get('button_style') == 'outline' else '0'
-    button_bg = colors['primary']
-    button_fg = colors['primaryForeground']
-    if spec.get('button_style') == 'outline' and layout == 'serif':
-        button_bg = 'transparent'
-        button_fg = colors['foreground']
-        button_border = f'1px solid {colors["foreground"]}'
-    pad = '40px 32px' if layout != 'inset' else '28px 24px'
-    inner_bg = colors['inner'] if layout == 'inset' else colors['background']
-    parts = [
-        '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">',
-        '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        f'<title>Shellui</title><style>{_font_faces(spec)}</style></head>',
-        f'<body style="margin:0;background:{colors["muted"]};color:{colors["foreground"]};font-family:{font};">',
-        '<div style="display:none;max-height:0;overflow:hidden;">' + preview + '</div>',
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{colors["muted"]};">',
-        '<tr><td align="center" style="padding:32px 16px;">',
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="max-width:{max_width};background:{colors["background"]};border:{border};'
-        f'border-radius:{radius};box-shadow:{shadow};">',
-    ]
-    if layout == 'studio':
-        parts.append(
-            f'<tr><td style="height:8px;background:{colors["foreground"]};font-size:0;line-height:0;">&nbsp;</td></tr>'
-        )
-    inner_radius = radius
-    if layout == 'inset':
-        inner_radius = '8px'
-        parts.append(
-            '<tr><td style="padding:16px;">'
-            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
-        )
-    parts.append(
-        f'<tr><td style="padding:{pad};background:{inner_bg};border-radius:{inner_radius};text-align:{align};">'
-    )
-    for block in document.get('blocks') or []:
-        if not isinstance(block, dict):
-            continue
-        kind = block.get('type')
-        text = escape_keeping_tokens(str(block.get('text') or ''))
-        if kind == 'heading':
-            parts.append(
-                f'<div style="font-family:{heading_font};font-size:{spec["heading_size"]};'
-                f'font-weight:{spec["heading_weight"]};line-height:1.2;letter-spacing:-0.02em;'
-                f'text-transform:{spec.get("heading_transform") or "none"};color:{colors["foreground"]};'
-                f'margin:0 0 16px;">{_runs_html(block_runs(block), colors["foreground"])}</div>'
-            )
-        elif kind == 'text':
-            parts.append(
-                f'<div style="font-family:{font};font-size:{spec["text_size"]};line-height:1.5;'
-                f'color:{colors["body"]};margin:0 0 16px;">{_runs_html(block_runs(block), colors["body"])}</div>'
-            )
-        elif kind == 'list':
-            tag = 'ol' if block.get('ordered') is True else 'ul'
-            items = ''.join(
-                f'<li style="margin:0 0 4px;">{_runs_html(runs, colors["body"])}</li>'
-                for runs in list_items(block)
-            )
-            parts.append(
-                f'<{tag} style="font-family:{font};font-size:{spec["text_size"]};line-height:1.5;'
-                f'color:{colors["body"]};margin:0 0 16px;padding-left:24px;text-align:left;">{items}</{tag}>'
-            )
-        elif kind == 'divider':
-            parts.append(f'<hr style="border:0;border-top:1px solid {colors["border"]};margin:24px 0;">')
-        elif kind == 'button':
-            href = escape_keeping_tokens(str(block.get('href') or ''))
-            parts.append(
-                f'<div style="margin:8px 0 4px;"><a href="{href}" '
-                f'style="display:inline-block;background:{button_bg};color:{button_fg};'
-                f'text-decoration:none;font-family:{font};font-size:15px;font-weight:500;'
-                f'padding:{spec.get("button_pad") or "12px 20px"};border-radius:{button_radius};'
-                f'border:{button_border};box-shadow:{shadow if spec.get("button_style") == "outline" else "none"};'
-                f'">{text}</a></div>'
-            )
-        elif kind == 'footer':
-            parts.append(
-                f'<div style="font-family:{font};font-size:12px;line-height:1.5;'
-                f'color:{colors["mutedForeground"]};margin:12px 0 0;">'
-                f'{_runs_html(block_runs(block), colors["mutedForeground"])}</div>'
-            )
-    if layout == 'inset':
-        parts.append('</td></tr></table>')
-    parts.append('</td></tr></table></td></tr></table></body></html>')
-    return ''.join(parts)
-
-
-def _runs_html(runs: list[dict], link_color: str) -> str:
-    parts = []
-    for run in runs:
-        piece = escape_keeping_tokens(str(run.get('text') or '')).replace('\n', '<br>')
-        if not piece:
-            continue
-        if run.get('bold') is True:
-            piece = f'<strong>{piece}</strong>'
-        if run.get('italic') is True:
-            piece = f'<em>{piece}</em>'
-        if run.get('underline') is True:
-            piece = f'<u>{piece}</u>'
-        href = safe_href(run.get('href'))
-        if href:
-            piece = (
-                f'<a href="{escape_keeping_tokens(href)}" '
-                f'style="color:{link_color};text-decoration:underline;">{piece}</a>'
-            )
-        parts.append(piece)
-    return ''.join(parts)
-
-
-def _python_text(document: dict) -> str:
-    lines = []
-    preview = str(document.get('preview') or '').strip()
-    if preview:
-        lines.append(preview)
-        lines.append('')
-    for block in document.get('blocks') or []:
-        if not isinstance(block, dict):
-            continue
-        kind = block.get('type')
-        text = str(block.get('text') or '').strip()
-        if kind in TEXT_BLOCKS:
-            lines.append(runs_text(block_runs(block)))
-            lines.append('')
-        elif kind == 'list':
-            ordered = block.get('ordered') is True
-            for index, runs in enumerate(list_items(block), start=1):
-                marker = f'{index}.' if ordered else '-'
-                lines.append(f'{marker} {runs_text(runs)}')
-            lines.append('')
-        elif kind == 'button':
-            href = str(block.get('href') or '').strip()
-            lines.append(f'{text}: {href}'.strip())
-            lines.append('')
-    return '\n'.join(lines).strip() + '\n'
-
-
-def _node_render(document: dict, spec: dict, colors: dict[str, str], theme: str) -> tuple[str, str]:
-    script = Path(settings.BASE_DIR) / 'renderer' / 'render.mjs'
-    completed = subprocess.run(
-        ['node', str(script)],
-        input=json.dumps({'document': document, 'palette': colors, 'theme': theme, 'spec': spec}).encode('utf-8'),
-        capture_output=True,
-        check=False,
-        timeout=30,
-    )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SendError(503, 'renderer_unavailable') from exc
     if completed.returncode != 0:
-        raise RuntimeError(completed.stderr.decode('utf-8', errors='replace')[:500])
+        raise SendError(400, 'validation_failed', {'document': ['render_failed']})
     payload = json.loads(completed.stdout.decode('utf-8'))
-    return payload['html'], payload['text']
+    return [(row['html'], row['text']) for row in payload['items']]
 
 
-def render_document(document: dict, palette: dict | None = None, theme: str | None = None) -> tuple[str, str, str]:
-    """Return html, text, renderer version. Placeholders are left intact.
+def compose_many(items: list[dict]) -> list[tuple[str, str]]:
+    """``items`` are ``{document, head, preheader}``. Returns ``(html, text)`` in the same order."""
+    keys = [_cache_key(item) for item in items]
+    pending = [index for index, key in enumerate(keys) if key not in _cache]
+    if pending:
+        rendered = _run_node([items[index] for index in pending])
+        if len(_cache) + len(rendered) > _CACHE_LIMIT:
+            _cache.clear()
+        for index, result in zip(pending, rendered):
+            _cache[keys[index]] = result
+    return [_cache[key] for key in keys]
 
-    ``theme`` selects one of the five official themes. ``palette`` is an optional
-    full accent override. None and {} keep the theme colors.
-    """
-    theme_key = theme if is_theme(theme) else DEFAULT_THEME
-    spec, colors = colors_for(theme_key, palette)
-    mode = getattr(settings, 'EMAIL_RENDERER', 'python')
-    if mode == 'node':
-        html, text = _node_render(document, spec, colors, theme_key)
-        return html, text, 'react-email'
-    return _python_html(document, spec, colors), _python_text(document), RENDERER_VERSION
+
+def compose(document: dict, *, head: str = '', preheader: str = '') -> tuple[str, str]:
+    return compose_many([{'document': document, 'head': head, 'preheader': preheader}])[0]
 
 
 def checksum(subject: str, html: str, text: str) -> str:

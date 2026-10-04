@@ -181,6 +181,8 @@ class CatalogEventSerializer(serializers.Serializer):
     category = serializers.CharField()
     default_ttl_seconds = serializers.IntegerField(allow_null=True)
     variables = CatalogVariableSerializer(many=True)
+    link_token = serializers.CharField(allow_null=True)
+    default_template = serializers.CharField()
     suggested = serializers.DictField(child=CatalogLanguageSerializer())
 
 
@@ -189,16 +191,50 @@ class CatalogSerializer(serializers.Serializer):
     events = CatalogEventSerializer(many=True)
 
 
-class TemplatePackSerializer(serializers.Serializer):
-    subject = serializers.CharField()
-    preheader = serializers.CharField()
+class LibrarySetSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    name = serializers.CharField()
+
+
+class LibrarySummarySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    key = serializers.CharField()
+    set = serializers.CharField(allow_blank=True)
+    name = serializers.CharField()
+    built_in = serializers.BooleanField()
+    company_id = serializers.IntegerField(allow_null=True)
+    subject = serializers.CharField(allow_blank=True)
+    preheader = serializers.CharField(allow_blank=True)
+    updated_at = serializers.CharField(allow_null=True)
+    html = serializers.CharField(allow_blank=True)
+
+
+class LibraryListSerializer(serializers.Serializer):
+    sets = LibrarySetSerializer(many=True)
+    templates = LibrarySummarySerializer(many=True)
+
+
+class LibraryVariableSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    type = serializers.CharField()
+    required = serializers.BooleanField()
+    example = serializers.CharField()
+    is_url = serializers.BooleanField()
+
+
+class LibraryDetailSerializer(LibrarySummarySerializer):
     document = serializers.JSONField()
+    text = serializers.CharField(allow_blank=True)
+    head = serializers.CharField(allow_blank=True)
+    variables = LibraryVariableSerializer(many=True)
 
 
-class TemplateDefaultsSerializer(serializers.Serializer):
-    template_key = serializers.CharField()
-    languages = serializers.DictField(child=TemplatePackSerializer())
-    variables = CatalogVariableSerializer(many=True)
+class LibraryWriteSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False)
+    source_id = serializers.IntegerField(required=False, help_text='Library template to duplicate. Create only.')
+    subject = serializers.CharField(required=False, allow_blank=True)
+    preheader = serializers.CharField(required=False, allow_blank=True)
+    document = serializers.JSONField(required=False)
 
 
 class TemplateSummarySerializer(serializers.Serializer):
@@ -207,36 +243,15 @@ class TemplateSummarySerializer(serializers.Serializer):
     name = serializers.CharField(allow_blank=True)
     event_type = serializers.CharField(allow_blank=True)
     language = serializers.CharField()
-    company_id = serializers.IntegerField(allow_null=True)
+    company_id = serializers.IntegerField()
     active_version = serializers.IntegerField(allow_null=True)
-    theme = serializers.CharField()
-    uses_company_theme = serializers.BooleanField()
+    source_key = serializers.CharField(allow_blank=True)
+    set = serializers.CharField(allow_blank=True)
+    head = serializers.CharField(allow_blank=True)
 
 
 class TemplateListSerializer(serializers.Serializer):
     templates = TemplateSummarySerializer(many=True)
-
-
-class TemplateCreateRequestSerializer(serializers.Serializer):
-    template_key = serializers.CharField()
-    language = serializers.CharField(required=False)
-
-
-class TemplateCreateResponseSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    template_key = serializers.CharField()
-    language = serializers.CharField()
-    draft_version = serializers.IntegerField()
-
-
-class ThemePaletteSerializer(serializers.Serializer):
-    background = serializers.CharField(required=False)
-    foreground = serializers.CharField(required=False)
-    muted = serializers.CharField(required=False)
-    mutedForeground = serializers.CharField(required=False)
-    primary = serializers.CharField(required=False)
-    primaryForeground = serializers.CharField(required=False)
-    border = serializers.CharField(required=False)
 
 
 class TemplateVersionSerializer(serializers.Serializer):
@@ -245,8 +260,6 @@ class TemplateVersionSerializer(serializers.Serializer):
     subject = serializers.CharField()
     preheader = serializers.CharField(allow_blank=True)
     document = serializers.JSONField()
-    theme_name = serializers.CharField()
-    theme_palette = ThemePaletteSerializer()
     published_at = serializers.CharField(allow_null=True)
 
 
@@ -255,11 +268,13 @@ class TemplateVersionListSerializer(serializers.Serializer):
 
 
 class TemplateVersionCreateRequestSerializer(serializers.Serializer):
-    subject = serializers.CharField()
+    subject = serializers.CharField(required=False)
     preheader = serializers.CharField(required=False, allow_blank=True)
-    document = serializers.JSONField()
-    theme_name = serializers.CharField(required=False)
-    theme_palette = ThemePaletteSerializer(required=False)
+    document = serializers.JSONField(required=False)
+    library_id = serializers.IntegerField(
+        required=False,
+        help_text='Start over from this library template. Subject and preheader stay unless sent.',
+    )
 
 
 class TemplateVersionCreateResponseSerializer(serializers.Serializer):
@@ -273,28 +288,11 @@ class TemplatePublishResponseSerializer(serializers.Serializer):
     checksum = serializers.CharField()
 
 
-class RenderRequestSerializer(serializers.Serializer):
-    template_key = serializers.CharField(required=False)
-    language = serializers.CharField(required=False)
-    variables = serializers.JSONField(required=False)
-    document = serializers.JSONField(required=False)
-    subject = serializers.CharField(required=False, allow_blank=True)
-    theme_palette = ThemePaletteSerializer(required=False)
-
-
-class RenderResponseSerializer(serializers.Serializer):
-    subject = serializers.CharField()
-    html = serializers.CharField()
-    text = serializers.CharField()
-    missing_variables = serializers.ListField(child=serializers.CharField())
-
-
 class TemplateTestSendRequestSerializer(serializers.Serializer):
     to = serializers.EmailField(required=False)
     subject = serializers.CharField(required=False)
     preheader = serializers.CharField(required=False, allow_blank=True)
     document = serializers.JSONField(required=False)
-    theme_palette = ThemePaletteSerializer(required=False)
 
 
 class TestSendResponseSerializer(serializers.Serializer):
@@ -304,8 +302,7 @@ class TestSendResponseSerializer(serializers.Serializer):
 
 
 class EmailRuleContentSerializer(serializers.Serializer):
-    mode = serializers.ChoiceField(choices=['suggested', 'existing'])
-    template_id = serializers.IntegerField(required=False)
+    library_id = serializers.IntegerField(help_text='Library template the event copy starts from.')
 
 
 class EmailRuleSerializer(serializers.Serializer):
@@ -342,24 +339,6 @@ class EmailRulePatchSerializer(serializers.Serializer):
     recipient_mode = serializers.CharField(required=False)
     static_recipients = serializers.ListField(child=serializers.CharField(), required=False)
     language = serializers.CharField(required=False, allow_blank=True)
-    template_id = serializers.IntegerField(required=False)
-
-
-class ThemeItemSerializer(serializers.Serializer):
-    key = serializers.CharField()
-    name = serializers.CharField()
-    preview_url = serializers.CharField()
-
-
-class SettingsSerializer(serializers.Serializer):
-    theme = serializers.CharField()
-    templates_using_other_theme = serializers.IntegerField(required=False)
-    updated_templates = serializers.IntegerField(required=False)
-
-
-class SettingsWriteSerializer(serializers.Serializer):
-    theme = serializers.CharField()
-    apply_to_existing = serializers.BooleanField()
 
 
 class ProviderCredentialsSerializer(serializers.Serializer):

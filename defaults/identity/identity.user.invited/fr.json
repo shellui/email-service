@@ -1,22 +1,4 @@
 {
   "subject": "[Shellui] {{ inviter_name|default:\"Quelqu'un\" }} vous invite dans {{ company_name }}",
-  "preheader": "Vous avez une invitation pour {{ company_name }}.",
-  "document": {
-    "preview": "Vous avez une invitation pour {{ company_name }}.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Vous êtes invité dans {{ company_name }}"
-      },
-      {
-        "type": "text",
-        "text": "{{ inviter_name|default:\"Un membre de l'équipe\" }} a invité {{ recipient_email|default:\"vous\" }} dans {{ company_name }}. Ouvrez l'invitation pour continuer. L'accès commence lorsque vous vous connectez avec cette adresse e-mail."
-      },
-      {
-        "type": "button",
-        "text": "Ouvrir l'invitation",
-        "href": "{{ invitation_url }}"
-      }
-    ]
-  }
+  "preheader": "Vous avez une invitation pour {{ company_name }}."
 }

@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Access removed for {{ recipient_email|default:\"a user\" }}",
-  "preheader": "Company access was disabled.",
-  "document": {
-    "preview": "Company access was disabled.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Company access disabled"
-      },
-      {
-        "type": "text",
-        "text": "Directory sync disabled company access for {{ recipient_email|default:\"a user\" }} in {{ company_name|default:\"your company\" }}. The user account was not deleted."
-      }
-    ]
-  }
+  "preheader": "Company access was disabled."
 }

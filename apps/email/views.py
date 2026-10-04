@@ -31,8 +31,7 @@ from apps.email.models import (
     Unsubscribe,
     parse_message_id,
 )
-from apps.email.palette import PaletteError, stored_palette
-from apps.email.renderers import HtmlRenderer, PrometheusTextRenderer
+from apps.email.renderers import PrometheusTextRenderer
 from apps.email.schema import (
     COMPANY_QUERY,
     BatchRequestSerializer,
@@ -47,6 +46,9 @@ from apps.email.schema import (
     EventResponseSerializer,
     HealthSerializer,
     LaneStateSerializer,
+    LibraryDetailSerializer,
+    LibraryListSerializer,
+    LibraryWriteSerializer,
     MessageCancelSerializer,
     MessageDetailSerializer,
     MessageListSerializer,
@@ -55,8 +57,6 @@ from apps.email.schema import (
     ProviderSerializer,
     ProviderTestSendRequestSerializer,
     ProviderWriteSerializer,
-    RenderRequestSerializer,
-    RenderResponseSerializer,
     SendRequestSerializer,
     SendResponseSerializer,
     ServiceClientCreateSerializer,
@@ -66,9 +66,6 @@ from apps.email.schema import (
     SuppressionCreateSerializer,
     SuppressionCreatedSerializer,
     SuppressionListSerializer,
-    TemplateCreateRequestSerializer,
-    TemplateCreateResponseSerializer,
-    TemplateDefaultsSerializer,
     TemplateListSerializer,
     TemplatePublishResponseSerializer,
     TemplateSummarySerializer,
@@ -76,36 +73,45 @@ from apps.email.schema import (
     TemplateVersionCreateRequestSerializer,
     TemplateVersionCreateResponseSerializer,
     TemplateVersionListSerializer,
-    SettingsSerializer,
-    SettingsWriteSerializer,
     TemplateVersionSerializer,
     TestSendResponseSerializer,
-    ThemeItemSerializer,
     WebhookAckSerializer,
     WebhookEventSerializer,
 )
 from apps.email.unsubscribe import parse_unsubscribe_token, unsubscribe_token, unsubscribe_url
 from apps.providers.credentials import strip_internal_credentials
-from apps.email.rendering import document_tokens, render_document
+from apps.email.document import validate_document
+from apps.email.library import SETS as LIBRARY_SETS
+from apps.email.library import (
+    create_library_template,
+    delete_library_template,
+    ensure_composed,
+    library_detail,
+    library_summary,
+    library_template,
+    set_head,
+    update_library_template,
+    visible_library,
+)
+from apps.email.rendering import compose, document_tokens
 from apps.email.rules import (
-    company_theme,
     create_rule,
+    create_version,
     delete_rule,
     ensure_builtin_rules,
     fits_event,
+    library_document_for,
     publish_version,
     rule_payload,
     template_summary,
-    templates_using_other_theme,
-    update_company_theme,
     update_rule,
 )
-from apps.email.themes import DEFAULT_THEME, is_theme, theme_catalog
 from apps.email.service import (
     SendError,
     accept_batch,
     accept_event,
     accept_send,
+    assets_url,
     platform_fallback_configured,
     send_test_message,
     _url_tokens,
@@ -361,6 +367,8 @@ class CatalogView(APIView):
                         'category': row['category'],
                         'default_ttl_seconds': row['default_ttl_seconds'],
                         'variables': row['variables'],
+                        'link_token': row['link_token'],
+                        'default_template': row['default_template'],
                         'suggested': {
                             language: {
                                 'subject': pack['subject'],
@@ -376,49 +384,114 @@ class CatalogView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['templates'],
-        operation_id='api_v1_templates_defaults_retrieve',
-        parameters=[
-            COMPANY_QUERY,
-            OpenApiParameter('template_key', str, OpenApiParameter.QUERY, required=True),
-            OpenApiParameter('languages', str, OpenApiParameter.QUERY, required=False),
-        ],
-        responses={200: TemplateDefaultsSerializer, **_API_ERRORS},
+        tags=['library'],
+        operation_id='api_v1_library_list',
+        parameters=[COMPANY_QUERY],
+        responses={200: LibraryListSerializer, **_API_ERRORS},
+    ),
+    post=extend_schema(
+        tags=['library'],
+        operation_id='api_v1_library_create',
+        parameters=[COMPANY_QUERY],
+        request=LibraryWriteSerializer,
+        responses={201: LibraryDetailSerializer, **_API_ERRORS},
     ),
 )
-class TemplateDefaultsView(APIView):
+class LibraryListView(APIView):
     def get(self, request):
         try:
-            company_id = company_from_request(request, allow_null=True)
-            require_admin(request, company_id if company_id is not None else None, allow_platform=True)
+            company_id = company_from_request(request)
+            require_admin(request, company_id)
         except SendError as exc:
             return error_response(exc, request)
-        key = request.query_params.get('template_key') or ''
-        definition = get_definition(key)
-        if definition is None:
-            return error_response(SendError(404, 'template_not_found'), request)
-        languages = [item.strip() for item in (request.query_params.get('languages') or 'en,fr').split(',') if item.strip()]
-        packs = {}
-        for language in languages:
-            pack = definition['languages'].get(language)
-            if pack:
-                packs[language] = pack
-        return Response({'template_key': key, 'languages': packs, 'variables': definition['variables']})
+        rows = [ensure_composed(row) for row in visible_library(company_id)]
+        return Response(
+            {
+                'sets': [{'key': key, 'name': name} for key, name in LIBRARY_SETS],
+                'templates': [library_summary(row) for row in rows],
+            }
+        )
+
+    def post(self, request):
+        try:
+            company_id = company_from_request(request)
+            require_admin(request, company_id)
+            row = create_library_template(company_id, request.data)
+        except SubstitutionError:
+            return error_response(SendError(400, 'validation_failed', {'document': ['template_tags_forbidden']}), request)
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(library_detail(row), status=201)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['library'],
+        operation_id='api_v1_library_retrieve',
+        parameters=[COMPANY_QUERY],
+        responses={200: LibraryDetailSerializer, **_API_ERRORS},
+    ),
+    put=extend_schema(
+        tags=['library'],
+        operation_id='api_v1_library_update',
+        parameters=[COMPANY_QUERY],
+        request=LibraryWriteSerializer,
+        responses={200: LibraryDetailSerializer, **_API_ERRORS},
+    ),
+    delete=extend_schema(
+        tags=['library'],
+        operation_id='api_v1_library_destroy',
+        parameters=[COMPANY_QUERY],
+        responses={204: None, **_API_ERRORS},
+    ),
+)
+class LibraryDetailView(APIView):
+    def _row(self, request, library_id):
+        company_id = company_from_request(request)
+        require_admin(request, company_id)
+        return library_template(company_id, library_id)
+
+    def get(self, request, library_id):
+        try:
+            row = ensure_composed(self._row(request, library_id))
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(library_detail(row))
+
+    def put(self, request, library_id):
+        try:
+            row = update_library_template(self._row(request, library_id), request.data)
+        except SubstitutionError:
+            return error_response(SendError(400, 'validation_failed', {'document': ['template_tags_forbidden']}), request)
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(library_detail(row))
+
+    def delete(self, request, library_id):
+        try:
+            delete_library_template(self._row(request, library_id))
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(status=204)
+
+
+def _company_template(request, template_id):
+    template = EmailTemplate.objects.filter(pk=template_id).first()
+    if template is None:
+        raise SendError(404, 'template_not_found')
+    user = require_admin(request, template.company_id)
+    return template, user
 
 
 @extend_schema_view(
     get=extend_schema(
         tags=['templates'],
         operation_id='api_v1_templates_list',
-        parameters=[COMPANY_QUERY],
+        parameters=[
+            COMPANY_QUERY,
+            OpenApiParameter('event_type', OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+        ],
         responses={200: TemplateListSerializer, **_API_ERRORS},
-    ),
-    post=extend_schema(
-        tags=['templates'],
-        operation_id='api_v1_templates_create',
-        parameters=[COMPANY_QUERY],
-        request=TemplateCreateRequestSerializer,
-        responses={201: TemplateCreateResponseSerializer, **_API_ERRORS},
     ),
 )
 class TemplateListView(APIView):
@@ -434,47 +507,10 @@ class TemplateListView(APIView):
                     raise SendError(400, 'event_unknown')
         except SendError as exc:
             return error_response(exc, request)
-        chosen = company_theme(company_id)
-        rows = EmailTemplate.objects.filter(company_id=company_id).order_by('template_key', 'language')
+        rows = EmailTemplate.objects.filter(company_id=company_id).order_by('event_type', 'language', 'id')
         if definition is not None:
             rows = [row for row in rows if fits_event(row, definition)]
-        return Response({'templates': [template_summary(row, company_theme_name=chosen) for row in rows]})
-
-    def post(self, request):
-        try:
-            company_id = company_from_request(request)
-            require_admin(request, company_id)
-            key = str(request.data.get('template_key') or '')
-            language = str(request.data.get('language') or 'en')
-            definition = get_definition(key)
-            if definition is None:
-                raise SendError(404, 'template_not_found')
-            if language not in definition['languages']:
-                raise SendError(400, 'language_not_available')
-            template, created = EmailTemplate.objects.get_or_create(
-                template_key=key,
-                company_id=company_id,
-                language=language,
-            )
-            if created or not template.name:
-                template.name = definition['label'][:120]
-                template.event_type = definition['event_type']
-                template.save(update_fields=['name', 'event_type'])
-            pack = definition['languages'][language]
-            number = (template.versions.order_by('-number').values_list('number', flat=True).first() or 0) + 1
-            TemplateVersion.objects.create(
-                template=template,
-                number=number,
-                state=TemplateVersion.STATE_DRAFT,
-                subject=pack['subject'],
-                preheader=pack['preheader'],
-                document=pack['document'],
-                theme_name=company_theme(company_id),
-                created_by_user_id=getattr(request.user, 'user_id', None),
-            )
-        except SendError as exc:
-            return error_response(exc, request)
-        return Response({'id': template.pk, 'template_key': key, 'language': language, 'draft_version': number}, status=201)
+        return Response({'templates': [template_summary(row) for row in rows]})
 
 
 @extend_schema_view(
@@ -482,12 +518,6 @@ class TemplateListView(APIView):
         tags=['templates'],
         operation_id='api_v1_templates_retrieve',
         responses={200: TemplateSummarySerializer, **_API_ERRORS},
-    ),
-    patch=extend_schema(
-        tags=['templates'],
-        operation_id='api_v1_templates_partial_update',
-        request=None,
-        responses={400: ErrorSerializer},
     ),
     delete=extend_schema(
         tags=['templates'],
@@ -497,33 +527,22 @@ class TemplateListView(APIView):
 )
 class TemplateDetailView(APIView):
     def get(self, request, template_id):
-        template = EmailTemplate.objects.filter(pk=template_id).first()
-        if template is None:
-            return error_response(SendError(404, 'template_not_found'), request)
         try:
-            require_admin(request, template.company_id, allow_platform=template.company_id is None)
+            template, _user = _company_template(request, template_id)
         except SendError as exc:
             return error_response(exc, request)
-        chosen = company_theme(template.company_id) if template.company_id is not None else DEFAULT_THEME
-        return Response(template_summary(template, company_theme_name=chosen))
-
-    def patch(self, request, template_id):
-        return error_response(SendError(400, 'validation_failed', {'template': ['use_versions']}), request)
+        return Response(template_summary(template))
 
     def delete(self, request, template_id):
-        template = EmailTemplate.objects.filter(pk=template_id).first()
-        if template is None:
-            return error_response(SendError(404, 'template_not_found'), request)
-        try:
-            require_admin(request, template.company_id, allow_platform=template.company_id is None)
-        except SendError as exc:
-            return error_response(exc, request)
         from django.db.models import ProtectedError
 
         try:
+            template, _user = _company_template(request, template_id)
             template.delete()
         except ProtectedError:
             return error_response(SendError(409, 'template_in_use'), request)
+        except SendError as exc:
+            return error_response(exc, request)
         return Response(status=204)
 
 
@@ -537,30 +556,8 @@ def _version_payload(version: TemplateVersion) -> dict:
         'subject': version.subject,
         'preheader': version.preheader,
         'document': version.document,
-        'theme_name': version.theme_name,
-        'theme_palette': version.theme_palette or {},
         'published_at': published_at,
     }
-
-
-def _theme_name(raw) -> str:
-    if not isinstance(raw, str) or not is_theme(raw.strip()):
-        raise SendError(400, 'theme_unknown')
-    return raw.strip()
-
-
-def _palette_or_error(raw) -> dict:
-    try:
-        return stored_palette(raw)
-    except PaletteError as exc:
-        raise SendError(400, 'validation_failed', {'theme_palette': ['invalid_color']}) from exc
-
-
-def _rendered(document: dict, palette, theme: str | None = None) -> tuple[str, str, str]:
-    try:
-        return render_document(document, palette, theme)
-    except PaletteError as exc:
-        raise SendError(400, 'validation_failed', {'theme_palette': ['invalid_color']}) from exc
 
 
 @extend_schema_view(
@@ -578,49 +575,41 @@ def _rendered(document: dict, palette, theme: str | None = None) -> tuple[str, s
 )
 class TemplateVersionListView(APIView):
     def get(self, request, template_id):
-        template = EmailTemplate.objects.filter(pk=template_id).first()
-        if template is None:
-            return error_response(SendError(404, 'template_not_found'), request)
         try:
-            require_admin(request, template.company_id, allow_platform=template.company_id is None)
+            template, _user = _company_template(request, template_id)
         except SendError as exc:
             return error_response(exc, request)
         return Response({'versions': [_version_payload(version) for version in template.versions.all()]})
 
     def post(self, request, template_id):
-        template = EmailTemplate.objects.filter(pk=template_id).first()
-        if template is None:
-            return error_response(SendError(404, 'template_not_found'), request)
         try:
-            require_admin(request, template.company_id, allow_platform=template.company_id is None)
-            document = request.data.get('document')
-            subject = str(request.data.get('subject') or '')
-            if not isinstance(document, dict) or not subject:
-                raise SendError(400, 'validation_failed', {'document': ['required']})
-            document_tokens(document, subject, str(request.data.get('preheader') or ''))
-            if 'theme_name' in request.data:
-                theme_name = _theme_name(request.data.get('theme_name'))
-            elif template.company_id is not None:
-                theme_name = company_theme(template.company_id)
+            template, _user = _company_template(request, template_id)
+            data = request.data if isinstance(request.data, dict) else {}
+            latest = template.versions.order_by('-number').first()
+            subject = str(data.get('subject') or (latest.subject if latest else ''))
+            preheader = str(data['preheader'] or '') if 'preheader' in data else (latest.preheader if latest else '')
+            if data.get('library_id') not in (None, ''):
+                source = library_template(template.company_id, data.get('library_id'))
+                document = library_document_for(template, source)
+                template.source_key = source.key
+                template.set = source.set
             else:
-                theme_name = DEFAULT_THEME
-            theme_palette = _palette_or_error(request.data.get('theme_palette') if 'theme_palette' in request.data else None)
-            number = (template.versions.order_by('-number').values_list('number', flat=True).first() or 0) + 1
-            TemplateVersion.objects.create(
-                template=template,
-                number=number,
-                subject=subject,
-                preheader=str(request.data.get('preheader') or ''),
+                document = data.get('document')
+                if not isinstance(document, dict):
+                    raise SendError(400, 'validation_failed', {'document': ['required']})
+            version = create_version(
+                template,
                 document=document,
-                theme_name=theme_name,
-                theme_palette=theme_palette,
-                created_by_user_id=getattr(request.user, 'user_id', None),
+                subject=subject,
+                preheader=preheader,
+                user_id=getattr(request.user, 'user_id', None),
             )
+            template.save(update_fields=['source_key', 'set'])
         except SubstitutionError:
             return error_response(SendError(400, 'validation_failed', {'document': ['template_tags_forbidden']}), request)
         except SendError as exc:
             return error_response(exc, request)
-        return Response({'number': number, 'state': 'draft'}, status=201)
+        return Response({'number': version.number, 'state': version.state}, status=201)
 
 
 @extend_schema_view(
@@ -633,14 +622,11 @@ class TemplateVersionListView(APIView):
 )
 class TemplatePublishView(APIView):
     def post(self, request, template_id, number):
-        template = EmailTemplate.objects.filter(pk=template_id).first()
-        if template is None:
-            return error_response(SendError(404, 'template_not_found'), request)
-        version = TemplateVersion.objects.filter(template=template, number=number).first()
-        if version is None:
-            return error_response(SendError(404, 'template_not_found'), request)
         try:
-            require_admin(request, template.company_id, allow_platform=template.company_id is None)
+            template, _user = _company_template(request, template_id)
+            version = TemplateVersion.objects.filter(template=template, number=number).first()
+            if version is None:
+                raise SendError(404, 'template_not_found')
             publish_version(template, version)
         except SubstitutionError:
             return error_response(SendError(400, 'validation_failed', {'document': ['template_tags_forbidden']}), request)
@@ -658,83 +644,20 @@ class TemplatePublishView(APIView):
 )
 class TemplateVersionDetailView(APIView):
     def get(self, request, template_id, number):
-        template = EmailTemplate.objects.filter(pk=template_id).first()
-        if template is None:
-            return error_response(SendError(404, 'template_not_found'), request)
-        version = TemplateVersion.objects.filter(template=template, number=number).first()
-        if version is None:
-            return error_response(SendError(404, 'template_not_found'), request)
         try:
-            require_admin(request, template.company_id, allow_platform=template.company_id is None)
+            template, _user = _company_template(request, template_id)
+            version = TemplateVersion.objects.filter(template=template, number=number).first()
+            if version is None:
+                raise SendError(404, 'template_not_found')
         except SendError as exc:
             return error_response(exc, request)
         return Response(_version_payload(version))
 
 
-@extend_schema_view(
-    post=extend_schema(
-        tags=['templates'],
-        operation_id='api_v1_render_create',
-        request=RenderRequestSerializer,
-        responses={200: RenderResponseSerializer, **_API_ERRORS},
-    ),
-)
-class RenderView(APIView):
-    def post(self, request):
-        user = request.user
-        if not (
-            isinstance(user, ServicePrincipal)
-            or getattr(user, 'is_staff', False)
-            or getattr(user, 'is_company_owner', False)
-        ):
-            return error_response(SendError(401, 'unauthorized'), request)
-        language = str(request.data.get('language') or 'en')
-        variables = request.data.get('variables') or {}
-        document = request.data.get('document')
-        subject = ''
-        if document is None:
-            definition = get_definition(str(request.data.get('template_key') or ''))
-            if definition is None:
-                return error_response(SendError(404, 'template_not_found'), request)
-            pack = definition['languages'].get(language) or definition['languages'].get('en')
-            if pack is None:
-                return error_response(SendError(400, 'language_not_available'), request)
-            document = pack['document']
-            subject = pack['subject']
-            if not variables:
-                variables = {
-                    item['token']: item.get('example') or ''
-                    for item in definition['variables']
-                }
-        else:
-            subject = str(request.data.get('subject') or '')
-        try:
-            palette = request.data.get('theme_palette') if 'theme_palette' in request.data else None
-            theme = request.data.get('theme_name') if 'theme_name' in request.data else None
-            if theme is not None and not is_theme(str(theme)):
-                raise SendError(400, 'theme_unknown')
-            html, text, _renderer = _rendered(document, palette, str(theme) if theme else None)
-            rendered_subject, missing_subject = substitute(subject, variables, html=False, subject=True)
-            rendered_html, missing_html = substitute(html, variables, html=True, allow_http_localhost=settings.DEBUG)
-            rendered_text, missing_text = substitute(text, variables, html=False, allow_http_localhost=settings.DEBUG)
-        except SubstitutionError as exc:
-            return error_response(SendError(400, exc.code), request)
-        except SendError as exc:
-            return error_response(exc, request)
-        missing = sorted(set(missing_subject + missing_html + missing_text))
-        return Response(
-            {
-                'subject': rendered_subject,
-                'html': rendered_html,
-                'text': rendered_text,
-                'missing_variables': missing,
-            }
-        )
-
-
 def _example_variables(definition: dict | None) -> dict:
     variables = {
         'system.message_id': 'msg_test',
+        'system.assets_url': assets_url(),
     }
     for item in (definition or {}).get('variables') or []:
         example = item.get('example') or ''
@@ -753,11 +676,8 @@ def _example_variables(definition: dict | None) -> dict:
 )
 class TemplateTestSendView(APIView):
     def post(self, request, template_id):
-        template = EmailTemplate.objects.filter(pk=template_id).first()
-        if template is None:
-            return error_response(SendError(404, 'template_not_found'), request)
         try:
-            user = require_admin(request, template.company_id, allow_platform=template.company_id is None)
+            template, user = _company_template(request, template_id)
             jwt_email = (getattr(user, 'email', '') or '').strip()
             requested = request.data.get('to') if 'to' in request.data else None
             if requested in (None, ''):
@@ -768,32 +688,23 @@ class TemplateTestSendView(APIView):
                     raise SendError(403, 'forbidden')
             if '@' not in to_email:
                 raise SendError(400, 'validation_failed', {'to': ['required']})
-            company_id = template.company_id or getattr(user, 'company_id', None) or 0
+            company_id = template.company_id
             if 'document' in request.data:
-                document = request.data.get('document')
-                if not isinstance(document, dict):
-                    raise SendError(400, 'validation_failed', {'document': ['required']})
                 subject = str(request.data.get('subject') or '')
                 preheader = str(request.data.get('preheader') or '')
                 if not subject:
                     raise SendError(400, 'validation_failed', {'subject': ['required']})
-                palette = _palette_or_error(request.data.get('theme_palette') if 'theme_palette' in request.data else None)
-                theme = request.data.get('theme_name') if 'theme_name' in request.data else None
-                if theme is not None and not is_theme(str(theme)):
-                    raise SendError(400, 'theme_unknown')
-                theme = str(theme) if theme else (company_theme(template.company_id) if template.company_id else DEFAULT_THEME)
+                document = validate_document(request.data.get('document'))
+                document_tokens(document, subject, preheader)
+                html, text = compose(document, head=set_head(template.set), preheader=preheader)
             else:
                 draft = template.versions.filter(state=TemplateVersion.STATE_DRAFT).order_by('-number').first()
                 if draft is None:
                     raise SendError(400, 'validation_failed', {'version': ['draft_required']})
-                document = draft.document
-                subject = draft.subject
-                preheader = draft.preheader
-                palette = draft.theme_palette or {}
-                theme = draft.theme_name
-            document_tokens(document, subject, preheader)
-            html, text, _renderer = _rendered(document, palette, theme)
-            definition = get_definition(template.template_key)
+                subject, html, text = draft.subject, draft.html, draft.text
+                if not html:
+                    html, text = compose(draft.document, head=set_head(template.set), preheader=draft.preheader)
+            definition = get_definition(template.event_type or '')
             variables = _example_variables(definition)
             if not definition or definition.get('lane_class') != 'auth':
                 category = (definition or {}).get('lane_class') or 'transactional'
@@ -814,139 +725,6 @@ class TemplateTestSendView(APIView):
         except SendError as exc:
             return error_response(exc, request)
         return Response(result)
-
-
-_SAMPLE = {
-    'en': {
-        'preview': 'A short note from Shellui',
-        'heading': 'Hello from Shellui',
-        'text': 'This is a short sample so you can see the theme.',
-        'button': 'Continue',
-    },
-    'fr': {
-        'preview': 'Un court message de Shellui',
-        'heading': 'Bonjour de Shellui',
-        'text': 'Ceci est un court exemple pour voir le theme.',
-        'button': 'Continuer',
-    },
-}
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['themes'],
-        operation_id='api_v1_themes_list',
-        parameters=[COMPANY_QUERY],
-        responses={200: ThemeItemSerializer(many=True), **_API_ERRORS},
-    ),
-)
-class ThemeListView(APIView):
-    def get(self, request):
-        try:
-            company_id = company_from_request(request)
-            require_admin(request, company_id)
-        except SendError as exc:
-            return error_response(exc, request)
-        themes = [
-            {
-                'key': key,
-                'name': spec['name'],
-                'preview_url': f'/api/v1/themes/{key}/preview?language=en',
-            }
-            for key, spec in theme_catalog().items()
-        ]
-        return Response(themes)
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['themes'],
-        operation_id='api_v1_themes_preview',
-        parameters=[
-            COMPANY_QUERY,
-            OpenApiParameter('language', OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
-        ],
-        responses={
-            (200, 'text/html'): OpenApiResponse(response=OpenApiTypes.STR, description='text/html sample email'),
-            400: ErrorSerializer,
-            401: ErrorSerializer,
-            403: ErrorSerializer,
-            404: ErrorSerializer,
-        },
-    ),
-)
-class ThemePreviewView(APIView):
-    renderer_classes = [HtmlRenderer, JSONRenderer]
-
-    def get(self, request, key):
-        try:
-            company_id = company_from_request(request)
-            require_admin(request, company_id)
-            if not is_theme(key):
-                raise SendError(400, 'theme_unknown')
-            language = str(request.query_params.get('language') or 'en')
-            sample = _SAMPLE.get(language)
-            if sample is None:
-                raise SendError(400, 'language_not_available')
-        except SendError as exc:
-            return error_response(exc, request)
-        document = {
-            'preview': sample['preview'],
-            'blocks': [
-                {'type': 'heading', 'text': sample['heading']},
-                {'type': 'text', 'text': sample['text']},
-                {'type': 'button', 'text': sample['button'], 'href': 'https://shellui.com'},
-            ],
-        }
-        html, _text, _renderer = render_document(document, None, key)
-        return HttpResponse(html, content_type='text/html; charset=utf-8')
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['settings'],
-        operation_id='api_v1_settings_retrieve',
-        parameters=[COMPANY_QUERY],
-        responses={200: SettingsSerializer, **_API_ERRORS},
-    ),
-    put=extend_schema(
-        tags=['settings'],
-        operation_id='api_v1_settings_update',
-        parameters=[COMPANY_QUERY],
-        request=SettingsWriteSerializer,
-        responses={200: SettingsSerializer, **_API_ERRORS},
-    ),
-)
-class SettingsView(APIView):
-    def get(self, request):
-        try:
-            company_id = company_from_request(request)
-            require_admin(request, company_id)
-        except SendError as exc:
-            return error_response(exc, request)
-        return Response(
-            {
-                'theme': company_theme(company_id),
-                'templates_using_other_theme': templates_using_other_theme(company_id),
-            }
-        )
-
-    def put(self, request):
-        try:
-            company_id = company_from_request(request)
-            require_admin(request, company_id)
-            if not isinstance(request.data, dict) or 'theme' not in request.data or 'apply_to_existing' not in request.data:
-                raise SendError(400, 'validation_failed', {'theme': ['required']})
-            if not isinstance(request.data.get('apply_to_existing'), bool):
-                raise SendError(400, 'validation_failed', {'apply_to_existing': ['invalid']})
-            theme, updated = update_company_theme(
-                company_id,
-                str(request.data.get('theme') or ''),
-                apply_to_existing=request.data.get('apply_to_existing'),
-            )
-        except SendError as exc:
-            return error_response(exc, request)
-        return Response({'theme': theme, 'updated_templates': updated})
 
 
 @extend_schema_view(

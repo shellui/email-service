@@ -51,31 +51,44 @@ class CompanyProvider(models.Model):
         return f'{self.company_id}:{self.provider}'
 
 
+class LibraryTemplate(models.Model):
+    """A full email design. Built-ins come from ``renderer/library/`` and stay read-only."""
+
+    key = models.CharField(max_length=128, unique=True)
+    set = models.CharField(max_length=32, blank=True)
+    name = models.CharField(max_length=120)
+    company_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    built_in = models.BooleanField(default=False)
+    subject = models.CharField(max_length=255, blank=True)
+    preheader = models.CharField(max_length=255, blank=True)
+    document = models.JSONField(default=dict)
+    html = models.TextField(blank=True)
+    text = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-built_in', 'set', 'name', 'id']
+
+    def __str__(self) -> str:
+        return self.key
+
+
 class EmailTemplate(models.Model):
-    template_key = models.CharField(max_length=128)
-    company_id = models.PositiveIntegerField(null=True, blank=True)
+    """A company's copy of a library template, sent by the rules that point at it."""
+
+    template_key = models.CharField(max_length=128, unique=True)
+    company_id = models.PositiveIntegerField(db_index=True)
     language = models.CharField(max_length=8)
     name = models.CharField(max_length=120, blank=True)
     event_type = models.CharField(max_length=128, blank=True)
+    source_key = models.CharField(max_length=128, blank=True)
+    set = models.CharField(max_length=32, blank=True)
     active_version = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=['template_key', 'company_id', 'language'],
-                name='uniq_template_company_lang',
-            ),
-            models.UniqueConstraint(
-                fields=['template_key', 'language'],
-                condition=Q(company_id__isnull=True),
-                name='uniq_platform_template_lang',
-            ),
-        ]
-
     def __str__(self) -> str:
-        scope = self.company_id if self.company_id is not None else 'platform'
-        return f'{self.template_key}:{self.language}:{scope}'
+        return f'{self.template_key}:{self.language}:{self.company_id}'
 
 
 class TemplateVersion(models.Model):
@@ -91,8 +104,6 @@ class TemplateVersion(models.Model):
     document = models.JSONField(default=dict)
     html = models.TextField(blank=True)
     text = models.TextField(blank=True)
-    theme_name = models.CharField(max_length=64, default='barebone')
-    theme_palette = models.JSONField(default=dict, blank=True)
     renderer_version = models.CharField(max_length=32, blank=True)
     checksum = models.CharField(max_length=64, blank=True)
     created_by_user_id = models.PositiveIntegerField(null=True, blank=True)
@@ -104,17 +115,6 @@ class TemplateVersion(models.Model):
             models.UniqueConstraint(fields=['template', 'number'], name='uniq_template_version_number'),
         ]
         ordering = ['template_id', 'number']
-
-
-class CompanyEmailSettings(models.Model):
-    """The theme new company templates start from. Missing row means barebone."""
-
-    company_id = models.PositiveIntegerField(unique=True)
-    theme = models.CharField(max_length=32, default='barebone')
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self) -> str:
-        return f'{self.company_id}:{self.theme}'
 
 
 class EmailRule(models.Model):

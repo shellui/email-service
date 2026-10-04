@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Account created for {{ recipient_email|default:\"a user\" }}",
-  "preheader": "A user account was created.",
-  "document": {
-    "preview": "A user account was created.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "New account"
-      },
-      {
-        "type": "text",
-        "text": "An account for {{ recipient_email|default:\"a user\" }} was created in {{ company_name|default:\"your company\" }} (source: {{ source|default:\"oauth\" }})."
-      }
-    ]
-  }
+  "preheader": "A user account was created."
 }

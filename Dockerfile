@@ -18,8 +18,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     SQLITE_PATH=/app/data/db.sqlite3 \
-    DEBUG=false \
-    EMAIL_RENDERER=node
+    DEBUG=false
 
 WORKDIR /app
 

@@ -1,4 +1,4 @@
-"""Company email themes and the rule list that decides which mail an event sends."""
+"""Rules that decide which mail an event sends, and the company copies they send."""
 
 from __future__ import annotations
 
@@ -8,19 +8,14 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.email.catalog import LANE_AUTH, all_definitions, get_definition
-from apps.email.models import CompanyEmailSettings, EmailRule, EmailTemplate, TemplateVersion
-from apps.email.rendering import checksum, document_tokens, render_document
+from apps.email.document import adapt_to_event, validate_document
+from apps.email.library import library_template, set_head
+from apps.email.models import EmailRule, EmailTemplate, LibraryTemplate, TemplateVersion
+from apps.email.rendering import RENDERER_VERSION, checksum, compose, document_tokens
 from apps.email.service import SendError
-from apps.email.themes import DEFAULT_THEME, is_theme
+from apps.email.substitution import SubstitutionError
 
 ALWAYS_AVAILABLE = {'recipient_email'}
-
-
-def company_theme(company_id: int) -> str:
-    row = CompanyEmailSettings.objects.filter(company_id=company_id).first()
-    if row and is_theme(row.theme):
-        return row.theme
-    return DEFAULT_THEME
 
 
 def representative_version(template: EmailTemplate) -> TemplateVersion | None:
@@ -33,24 +28,6 @@ def representative_version(template: EmailTemplate) -> TemplateVersion | None:
         if published:
             return published
     return template.versions.order_by('-number').first()
-
-
-def template_theme(template: EmailTemplate) -> str:
-    version = representative_version(template)
-    if version and is_theme(version.theme_name):
-        return version.theme_name
-    if template.company_id is not None:
-        return company_theme(template.company_id)
-    return DEFAULT_THEME
-
-
-def templates_using_other_theme(company_id: int) -> int:
-    chosen = company_theme(company_id)
-    count = 0
-    for template in EmailTemplate.objects.filter(company_id=company_id):
-        if template_theme(template) != chosen:
-            count += 1
-    return count
 
 
 def available_tokens(definition: dict) -> set[str]:
@@ -96,8 +73,7 @@ def rule_payload(rule: EmailRule) -> dict:
     }
 
 
-def template_summary(template: EmailTemplate, *, company_theme_name: str) -> dict:
-    theme = template_theme(template)
+def template_summary(template: EmailTemplate) -> dict:
     return {
         'id': template.pk,
         'template_key': template.template_key,
@@ -106,25 +82,38 @@ def template_summary(template: EmailTemplate, *, company_theme_name: str) -> dic
         'language': template.language,
         'company_id': template.company_id,
         'active_version': template.active_version,
-        'theme': theme,
-        'uses_company_theme': theme == company_theme_name,
+        'source_key': template.source_key,
+        'set': template.set,
+        'head': set_head(template.set),
     }
 
 
+def _definition_for(template: EmailTemplate) -> dict | None:
+    return get_definition(template.event_type or '')
+
+
+def _validated_content(definition: dict | None, document, subject: str, preheader: str) -> dict:
+    document = validate_document(document)
+    try:
+        document_tokens(document, subject, preheader)
+    except SubstitutionError as exc:
+        raise SendError(400, 'validation_failed', {'document': [exc.code]}) from exc
+    return document
+
+
 def publish_version(template: EmailTemplate, version: TemplateVersion) -> None:
-    definition = get_definition(template.template_key) or get_definition(template.event_type or '')
+    definition = _definition_for(template)
     tokens = document_tokens(version.document, version.subject, version.preheader)
-    if definition and definition.get('lane_class') == 'auth':
+    if definition and definition.get('lane_class') == LANE_AUTH:
         from apps.email.auth_templates import validate_auth_template
 
         validate_auth_template(definition, version.document, version.subject, version.preheader)
     if definition and definition.get('lane_class') == 'bulk' and 'system.unsubscribe_url' not in tokens:
         raise SendError(400, 'unsubscribe_link_missing')
-    html, text, renderer = render_document(version.document, version.theme_palette or None, version.theme_name)
-    version.html = html
-    version.text = text
-    version.renderer_version = renderer
-    version.checksum = checksum(version.subject, html, text)
+    if not version.html:
+        version.html, version.text = compose(version.document, head=set_head(template.set), preheader=version.preheader)
+        version.renderer_version = RENDERER_VERSION
+    version.checksum = checksum(version.subject, version.html, version.text)
     version.state = TemplateVersion.STATE_PUBLISHED
     version.published_at = timezone.now()
     version.save()
@@ -139,101 +128,79 @@ def _next_number(template: EmailTemplate) -> int:
     return (template.versions.order_by('-number').values_list('number', flat=True).first() or 0) + 1
 
 
-def create_company_template(
+def create_version(
+    template: EmailTemplate,
     *,
-    company_id: int,
-    name: str,
-    event_type: str,
-    language: str,
+    document,
     subject: str,
     preheader: str,
-    document: dict,
-    theme: str,
     user_id: int | None = None,
-    publish: bool = True,
-) -> EmailTemplate:
-    template = EmailTemplate.objects.create(
-        template_key='company.' + secrets.token_hex(6),
-        company_id=company_id,
-        language=language,
-        name=(name or '')[:120],
-        event_type=event_type or '',
-    )
-    version = TemplateVersion.objects.create(
-        template=template,
-        number=1,
-        state=TemplateVersion.STATE_DRAFT,
-        subject=subject,
-        preheader=preheader,
-        document=document,
-        theme_name=theme if is_theme(theme) else DEFAULT_THEME,
-        created_by_user_id=user_id,
-    )
-    if publish:
-        publish_version(template, version)
-    return template
-
-
-def _clone_version(template: EmailTemplate, source: TemplateVersion, theme: str, *, publish: bool) -> TemplateVersion:
-    version = TemplateVersion.objects.create(
+) -> TemplateVersion:
+    """Validate, compose, and store a draft. The stored HTML is what publishing sends."""
+    if not subject:
+        raise SendError(400, 'validation_failed', {'subject': ['required']})
+    document = _validated_content(_definition_for(template), document, subject, preheader)
+    html, text = compose(document, head=set_head(template.set), preheader=preheader)
+    return TemplateVersion.objects.create(
         template=template,
         number=_next_number(template),
         state=TemplateVersion.STATE_DRAFT,
-        subject=source.subject,
-        preheader=source.preheader,
-        document=source.document,
-        theme_name=theme,
-        theme_palette=source.theme_palette or {},
-        created_by_user_id=source.created_by_user_id,
+        subject=subject[:255],
+        preheader=preheader[:255],
+        document=document,
+        html=html,
+        text=text,
+        renderer_version=RENDERER_VERSION,
+        checksum=checksum(subject, html, text),
+        created_by_user_id=user_id,
     )
-    if publish:
-        publish_version(template, version)
-    return version
 
 
-def apply_theme_to_existing(company_id: int, theme: str) -> int:
-    updated = 0
-    templates = list(EmailTemplate.objects.filter(company_id=company_id))
-    for template in templates:
-        published = None
-        if template.active_version:
-            published = TemplateVersion.objects.filter(
-                template=template,
-                number=template.active_version,
-                state=TemplateVersion.STATE_PUBLISHED,
-            ).first()
-        latest = template.versions.order_by('-number').first()
-        draft = latest if latest and latest.state == TemplateVersion.STATE_DRAFT else None
-        changed = False
-        if published and published.theme_name != theme:
-            _clone_version(template, published, theme, publish=True)
-            changed = True
-        if draft and draft.theme_name != theme:
-            _clone_version(template, draft, theme, publish=False)
-            changed = True
-        if changed:
-            updated += 1
-    return updated
+def library_document_for(template: EmailTemplate, source: LibraryTemplate) -> dict:
+    """``source`` adapted to the copy's event, for "Start over from another template"."""
+    definition = _definition_for(template) or {}
+    return adapt_to_event(source.document, definition)
 
 
-def update_company_theme(company_id: int, theme: str, *, apply_to_existing: bool) -> tuple[str, int]:
-    if not is_theme(theme):
-        raise SendError(400, 'theme_unknown')
-    with transaction.atomic():
-        updated = apply_theme_to_existing(company_id, theme) if apply_to_existing else 0
-        CompanyEmailSettings.objects.update_or_create(company_id=company_id, defaults={'theme': theme})
-    return theme, updated
+def _suggested(definition: dict, language: str) -> dict:
+    languages = definition['languages']
+    return languages.get(language) or languages['en']
 
 
-def _company_template(company_id: int, raw_id) -> EmailTemplate:
-    try:
-        template_id = int(raw_id)
-    except (TypeError, ValueError):
-        raise SendError(404, 'template_not_found')
-    template = EmailTemplate.objects.filter(pk=template_id, company_id=company_id).first()
-    if template is None:
-        raise SendError(404, 'template_not_found')
+def create_copy(
+    *,
+    company_id: int,
+    source: LibraryTemplate,
+    definition: dict,
+    language: str,
+    user_id: int | None = None,
+) -> EmailTemplate:
+    pack = _suggested(definition, language)
+    template = EmailTemplate.objects.create(
+        template_key='company.' + secrets.token_hex(6),
+        company_id=company_id,
+        language=language if language in definition['languages'] else 'en',
+        name=definition['label'][:120],
+        event_type=definition['event_type'],
+        source_key=source.key,
+        set=source.set,
+    )
+    version = create_version(
+        template,
+        document=adapt_to_event(source.document, definition),
+        subject=pack['subject'],
+        preheader=pack.get('preheader') or '',
+        user_id=user_id,
+    )
+    publish_version(template, version)
     return template
+
+
+def _default_source(definition: dict) -> LibraryTemplate:
+    source = LibraryTemplate.objects.filter(key=definition.get('default_template') or '', built_in=True).first()
+    if source is None:
+        raise SendError(503, 'library_not_synced')
+    return source
 
 
 def _static_recipients(raw) -> list[str]:
@@ -270,7 +237,6 @@ def _mode(raw) -> str:
 
 
 def ensure_builtin_rules(company_id: int) -> None:
-    theme = company_theme(company_id)
     for definition in all_definitions():
         if definition['lane_class'] != LANE_AUTH:
             continue
@@ -281,17 +247,11 @@ def ensure_builtin_rules(company_id: int) -> None:
             with transaction.atomic():
                 if EmailRule.objects.filter(company_id=company_id, event_type=event_type, built_in=True).exists():
                     continue
-                pack = definition['languages']['en']
-                template = create_company_template(
+                template = create_copy(
                     company_id=company_id,
-                    name=definition['label'],
-                    event_type=event_type,
+                    source=_default_source(definition),
+                    definition=definition,
                     language='en',
-                    subject=pack['subject'],
-                    preheader=pack.get('preheader') or '',
-                    document=pack['document'],
-                    theme=theme,
-                    publish=True,
                 )
                 EmailRule.objects.create(
                     company_id=company_id,
@@ -323,42 +283,28 @@ def create_rule(company_id: int, data: dict, *, user_id: int | None = None) -> E
     static_recipients = _static_recipients(data.get('static_recipients'))
     enabled = True if data.get('enabled') is None else bool(data.get('enabled'))
     content = data.get('content')
-    if not isinstance(content, dict):
-        raise SendError(400, 'validation_failed', {'content': ['required']})
-    content_mode = content.get('mode')
-    if content_mode == 'suggested':
-        pack_language = language or 'en'
-        pack = definition['languages'][pack_language]
-        template = create_company_template(
+    if not isinstance(content, dict) or content.get('library_id') in (None, ''):
+        raise SendError(400, 'validation_failed', {'content': ['library_id_required']})
+    source = library_template(company_id, content.get('library_id'))
+    with transaction.atomic():
+        template = create_copy(
             company_id=company_id,
-            name=definition['label'],
-            event_type=event_type,
-            language=pack_language,
-            subject=pack['subject'],
-            preheader=pack.get('preheader') or '',
-            document=pack['document'],
-            theme=company_theme(company_id),
+            source=source,
+            definition=definition,
+            language=language or 'en',
             user_id=user_id,
-            publish=True,
         )
-    elif content_mode == 'existing':
-        template = _company_template(company_id, content.get('template_id'))
-        missing = missing_variables(template, definition)
-        if missing:
-            raise SendError(400, 'template_variables_mismatch', extra={'missing_variables': missing})
-    else:
-        raise SendError(400, 'validation_failed', {'content': ['invalid']})
-    return EmailRule.objects.create(
-        company_id=company_id,
-        service=service,
-        event_type=event_type,
-        enabled=enabled,
-        template=template,
-        language=language,
-        recipient_mode=mode,
-        static_recipients=static_recipients,
-        built_in=False,
-    )
+        return EmailRule.objects.create(
+            company_id=company_id,
+            service=service,
+            event_type=event_type,
+            enabled=enabled,
+            template=template,
+            language=language,
+            recipient_mode=mode,
+            static_recipients=static_recipients,
+            built_in=False,
+        )
 
 
 def update_rule(rule: EmailRule, data: dict) -> EmailRule:
@@ -369,12 +315,6 @@ def update_rule(rule: EmailRule, data: dict) -> EmailRule:
         raise SendError(400, 'event_unknown')
     if 'enabled' in data and not bool(data.get('enabled')) and rule.built_in:
         raise SendError(409, 'rule_built_in')
-    if 'template_id' in data:
-        template = _company_template(rule.company_id, data.get('template_id'))
-        missing = missing_variables(template, definition)
-        if missing:
-            raise SendError(400, 'template_variables_mismatch', extra={'missing_variables': missing})
-        rule.template = template
     if 'language' in data:
         rule.language = _language(definition, data.get('language'))
     if 'recipient_mode' in data:
@@ -390,20 +330,42 @@ def update_rule(rule: EmailRule, data: dict) -> EmailRule:
 def delete_rule(rule: EmailRule) -> None:
     if rule.built_in:
         raise SendError(409, 'rule_built_in')
-    rule.delete()
+    template = rule.template
+    with transaction.atomic():
+        rule.delete()
+        if not template.rules.exists():
+            template.delete()
 
 
-def _matches_pack(version: TemplateVersion, pack: dict) -> bool:
-    return version.subject == pack['subject'] and (version.preheader or '') == (pack.get('preheader') or '') and version.document == pack['document']
+def _swap_suggested(definition: dict | None, version: TemplateVersion, language: str) -> tuple[str, str]:
+    """An unedited suggested subject follows the send language. The body stays as written."""
+    if definition is None or language not in definition['languages']:
+        return version.subject, version.preheader
+    for pack in definition['languages'].values():
+        if version.subject == pack['subject'] and (version.preheader or '') == (pack.get('preheader') or ''):
+            chosen = definition['languages'][language]
+            return chosen['subject'], chosen.get('preheader') or ''
+    return version.subject, version.preheader
 
 
-def content_for_template(template: EmailTemplate, language: str, *, theme_fallback: str | None = None) -> dict:
-    """Published content for a company template.
+def default_content(definition: dict, language: str) -> dict:
+    """The event's default design, for sends that have no company copy yet."""
+    source = _default_source(definition)
+    pack = _suggested(definition, language)
+    preheader = pack.get('preheader') or ''
+    html, text = compose(adapt_to_event(source.document, definition), head=set_head(source.set), preheader=preheader)
+    return {
+        'subject': pack['subject'],
+        'preheader': preheader,
+        'html': html,
+        'text': text,
+        'version': None,
+        'language': language if language in definition['languages'] else 'en',
+    }
 
-    An unedited suggested document follows ``language`` so a French event still
-    uses the French catalog pack until someone edits the template.
-    """
-    definition = get_definition(template.event_type or '') or get_definition(template.template_key)
+
+def content_for_template(template: EmailTemplate, language: str) -> dict:
+    definition = _definition_for(template)
     version = None
     if template.active_version:
         version = TemplateVersion.objects.filter(
@@ -415,46 +377,40 @@ def content_for_template(template: EmailTemplate, language: str, *, theme_fallba
     if version is None:
         if definition is None:
             raise SendError(404, 'template_not_found')
-        pack = definition['languages'].get(requested) or definition['languages'].get('en')
-        if pack is None:
-            raise SendError(400, 'language_not_available')
-        fallback = theme_fallback or (company_theme(template.company_id) if template.company_id else DEFAULT_THEME)
-        html, text, _renderer = render_document(pack['document'], None, fallback)
-        used = requested if requested in definition['languages'] else 'en'
-        return {
-            'subject': pack['subject'],
-            'preheader': pack.get('preheader') or '',
-            'html': html,
-            'text': text,
-            'version': None,
-            'language': used,
-        }
-    if definition is not None:
-        matched = next(
-            (code for code, pack in definition['languages'].items() if _matches_pack(version, pack)),
-            None,
-        )
-        if matched and requested in definition['languages'] and requested != matched:
-            pack = definition['languages'][requested]
-            html, text, _renderer = render_document(pack['document'], version.theme_palette or None, version.theme_name)
-            return {
-                'subject': pack['subject'],
-                'preheader': pack.get('preheader') or '',
-                'html': html,
-                'text': text,
-                'version': version.number,
-                'language': requested,
-            }
-    html, text, _renderer = render_document(version.document, version.theme_palette or None, version.theme_name)
+        return default_content(definition, requested)
+    if not version.html:
+        version.html, version.text = compose(version.document, head=set_head(template.set), preheader=version.preheader)
+        version.save(update_fields=['html', 'text'])
+    subject, preheader = _swap_suggested(definition, version, requested)
+    swapped = (subject, preheader) != (version.subject, version.preheader)
     return {
-        'subject': version.subject,
-        'preheader': version.preheader,
-        'html': html,
-        'text': text,
+        'subject': subject,
+        'preheader': preheader,
+        'html': version.html,
+        'text': version.text,
         'version': version.number,
-        'language': template.language or requested,
+        'language': requested if swapped else template.language or requested,
     }
 
 
 def content_for_rule(rule: EmailRule, language: str) -> dict:
-    return content_for_template(rule.template, language, theme_fallback=company_theme(rule.company_id))
+    return content_for_template(rule.template, language)
+
+
+def content_for_event(company_id: int, definition: dict, language: str) -> dict:
+    """Direct sends use the company's copy for the event when there is one."""
+    copies = EmailTemplate.objects.filter(
+        company_id=company_id,
+        event_type=definition['event_type'],
+        active_version__isnull=False,
+    ).order_by('created_at', 'id')
+    builtin = EmailRule.objects.filter(company_id=company_id, event_type=definition['event_type'], built_in=True).first()
+    template = (
+        (builtin.template if builtin else None)
+        or copies.filter(language=language).first()
+        or copies.filter(language='en').first()
+        or copies.first()
+    )
+    if template is not None:
+        return content_for_template(template, language)
+    return default_content(definition, language)

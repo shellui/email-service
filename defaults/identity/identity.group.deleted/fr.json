@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Le groupe {{ display_name|default:\"retiré\" }} a été retiré",
-  "preheader": "Un groupe a été supprimé.",
-  "document": {
-    "preview": "Un groupe a été supprimé.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Groupe retiré"
-      },
-      {
-        "type": "text",
-        "text": "Le groupe {{ display_name|default:\"(sans nom)\" }} a été retiré de {{ company_name|default:\"votre entreprise\" }}."
-      }
-    ]
-  }
+  "preheader": "Un groupe a été supprimé."
 }

@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Échec du déploiement de {{ display_name|default:\"votre application\" }}",
-  "preheader": "Le dernier déploiement ne s'est pas terminé.",
-  "document": {
-    "preview": "Le dernier déploiement ne s'est pas terminé.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Le déploiement ne s'est pas terminé"
-      },
-      {
-        "type": "text",
-        "text": "Le déploiement de {{ display_name|default:\"votre application\" }} ({{ app_version|default:\"sans version\" }}) pour {{ company_name|default:\"votre entreprise\" }} a échoué. Motif : {{ error|default:\"unknown_error\" }}. Le déploiement actif précédent, s'il existe, continue de servir le trafic."
-      }
-    ]
-  }
+  "preheader": "Le dernier déploiement ne s'est pas terminé."
 }

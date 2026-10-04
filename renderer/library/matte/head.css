@@ -1,0 +1,35 @@
+@media (max-width:600px){.mobile_px-6imprtnt{padding-right:1.5rem!important;padding-left:1.5rem!important}}
+@font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 300;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuOKfMZg.ttf) format('truetype');
+    }
+* {
+      font-family: 'Inter', Arial, sans-serif;
+    }
+@font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 400;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2) format('woff2');
+    }
+@font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 500;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuI6fMZg.ttf) format('truetype');
+    }
+@media (max-width:600px){.mobile_imprtntblock{display:block!important}}
+@media (max-width:600px){.mobile_imprtntw-full{width:100%!important}}
+@media (max-width:600px){.mobile_imprtntmax-w-full{max-width:100%!important}}
+@media (max-width:600px){.mobile_px-0imprtnt{padding-right:0px!important;padding-left:0px!important}}
+@media (max-width:600px){.mobile_py-16imprtnt{padding-bottom:4rem!important;padding-top:4rem!important}}
+@media (max-width:600px){.mobile_pt-10{padding-top:2.5rem!important}}
+@media (max-width:600px){.mobile_pb-6{padding-bottom:1.5rem!important}}
+@media (max-width:600px){.mobile_pl-0{padding-left:0px!important}}
+@media (max-width:600px){.mobile_pr-0{padding-right:0px!important}}
+@media (max-width:600px){.mobile_pb-10{padding-bottom:2.5rem!important}}

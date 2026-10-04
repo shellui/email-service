@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Le groupe {{ display_name|default:\"mis à jour\" }} a été mis à jour",
-  "preheader": "Les détails d'un groupe ont changé.",
-  "document": {
-    "preview": "Les détails d'un groupe ont changé.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Groupe mis à jour"
-      },
-      {
-        "type": "text",
-        "text": "{{ display_name|default:\"Un groupe\" }} dans {{ company_name|default:\"votre entreprise\" }} a été mis à jour. Champs : {{ changed_fields|default:\"métadonnées\" }}."
-      }
-    ]
-  }
+  "preheader": "Les détails d'un groupe ont changé."
 }

@@ -8,11 +8,11 @@ Auth-lane events get a built-in rule for every company, created on the first rul
 
 Every other event, including ones marked enabled below, returns `202` with `skipped_reason: no_rule` until the company creates a rule. That includes `hosting.deployment.failed`, `identity.user.invitation_revoked`, and `identity.scim.provisioning_conflict`, which used to send with no rule row.
 
-An enabled rule with no recipient (`recipients: []`, or a static rule with no addresses) is accepted and skipped (`no_recipients`). See [integration.md](integration.md). Callers do not send `company_name`. email-service fills it from a name it already stored, or the mail uses the template's language default.
+An enabled rule with no recipient (`recipients: []`, or a static rule with no addresses) is accepted and skipped (`no_recipients`). See [integration.md](integration.md). Callers may omit `company_name`. email-service then uses a name it already stored, or the provider From name.
 
 Events marked disabled below are noisy (every upload, every user edit). A company opts in by creating a rule.
 
-Suggested documents are one heading, one short paragraph, and a button only when the event has an action URL. English and French. Variables are on the catalog response.
+Each event has a suggested subject and preheader in English and French, its variables, `link_token` (the URL variable a design's main link becomes), and `default_template` (the [library](library.md) design for built-in rules and for direct sends before any copy exists: `barebone.activation` for magic links, `barebone.welcome` for invitations, `barebone.text-only` otherwise). Design text is English and edited per copy.
 
 Login events `identity.auth.login.succeeded` and `identity.auth.login.failed` are not listed. Identity marks them `webhook: false`.
 
@@ -42,4 +42,4 @@ Login events `identity.auth.login.succeeded` and `identity.auth.login.failed` ar
 | `hosting.deployment.created` | transactional | disabled | The artifact may not exist yet. |
 | `hosting.deployment.succeeded` | transactional | disabled | Success is visible in the hosting UI. Create a rule for release mail. |
 
-Source files: `defaults/<service>/<event>/` (`definition.json`, `subjects.json`, `en.json`, `fr.json`), generated from the catalog.
+Source files: `defaults/<service>/<event>/` (`definition.json` with `link_token` and `default_template`, `subjects.json`, and `en.json` / `fr.json` with the subject and preheader), generated from the catalog by `export_defaults` in `apps/email/catalog.py`.

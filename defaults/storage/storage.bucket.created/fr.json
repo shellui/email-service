@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Le stockage est prêt pour {{ company_name|default:\"votre entreprise\" }}",
-  "preheader": "Le compartiment de l'entreprise a été créé.",
-  "document": {
-    "preview": "Le compartiment de l'entreprise a été créé.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Compartiment de stockage prêt"
-      },
-      {
-        "type": "text",
-        "text": "Le compartiment {{ bucket_name|default:\"company\" }} a été créé pour {{ company_name|default:\"votre entreprise\" }}. Les fichiers déposés pour cette entreprise y seront conservés."
-      }
-    ]
-  }
+  "preheader": "Le compartiment de l'entreprise a été créé."
 }

@@ -33,6 +33,7 @@ The web form stays closed when `DEBUG=false` and `SETUP_TOKEN` is empty. Set `SE
 | --- | --- | --- |
 | `EMAIL_SERVICE_PORT` | `8003` | Host port for Docker Compose. The container still listens on `8000`. Identity is 8000, storage 8001, hosting 8002. |
 | `PUBLIC_BASE_URL` | `https://email.shellui.com` | Unsubscribe links and the public origin |
+| `EMAIL_PUBLIC_URL` | `PUBLIC_BASE_URL` | Origin recipients load library images from (`{EMAIL_PUBLIC_URL}/static/library/`). It must be reachable from the internet. |
 | `DEFAULT_FROM_EMAIL` | `no-reply@shellui.com` | Auth and transactional fallback |
 | `DEFAULT_FROM_NAME` | `Shellui` | Display name |
 | `BULK_FROM_EMAIL` | `news@news.shellui.com` | Reserved for later bulk mail |
@@ -54,11 +55,18 @@ The web form stays closed when `DEBUG=false` and `SETUP_TOKEN` is empty. Set `SE
 | `RESEND_WEBHOOK_SECRET` | empty | Svix secret for the platform Resend account |
 | `EMAIL_HOST` and related | empty | Platform SMTP |
 
+## Composing
+
+| Variable | Default | Role |
+| --- | --- | --- |
+| `EMAIL_NODE_BINARY` | `node` | Node used to run `renderer/compose.mjs` on every save. Run `npm ci` in the service root first. |
+| `EMAIL_COMPOSE_TIMEOUT_SECONDS` | `60` | A compose that runs longer fails with `503 renderer_unavailable` |
+| `EMAIL_MAX_DOCUMENT_BYTES` | `524288` | Largest editor document accepted, as JSON (`too_large` above it) |
+
 ## Workers and retention
 
 | Variable | Default |
 | --- | --- |
-| `EMAIL_RENDERER` | `python` locally, `node` in the Docker image |
 | `EMAIL_DELIVER_SYNC` | `false` |
 | `EMAIL_AUTH_DEFAULT_TTL_SECONDS` | `120` |
 | `EMAIL_AUTH_MAX_TTL_SECONDS` | `300` |

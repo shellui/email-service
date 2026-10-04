@@ -11,6 +11,7 @@ from apps.email.catalog import get_definition
 from apps.email.crypto import encrypt_json
 from apps.email.keys import issue_service_key
 from apps.email.models import CompanyProvider, EventSkip, Message
+from apps.email.tests.helpers import library_content
 from apps.providers.registry import fake_provider
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -61,7 +62,7 @@ class HostingContractTests(TestCase):
 
         create_rule(
             company_id,
-            {'event_type': 'hosting.deployment.failed', 'content': {'mode': 'suggested'}},
+            {'event_type': 'hosting.deployment.failed', 'content': library_content()},
         )
 
     def _failed(self, company_id, **extra):
@@ -154,21 +155,22 @@ class HostingContractTests(TestCase):
         self._auth(self.hosting_key)
         event = self.client.post('/api/v1/events', self._failed(21), format='json')
         self.assertEqual(event.status_code, 202, event.content)
-        html = fake_provider().sent[-1].html
-        self.assertIn('Acme', html)
-        self.assertIn('artifact_extract_failed', html)
-        self.assertNotIn('your company', html)
+        sent = fake_provider().sent[-1]
+        self.assertIn('Acme', sent.html)
+        self.assertIn('Docs', sent.subject)
+        self.assertNotIn('{{', sent.html)
 
-    def test_unknown_company_uses_the_template_language_default(self):
+    def test_unknown_company_sends_in_the_requested_language_without_placeholders(self):
         self._provider(22, from_name='Shellui')
         self._enable_failed(22)
         self._auth(self.hosting_key)
         english = self.client.post('/api/v1/events', self._failed(22, language='en'), format='json')
         self.assertEqual(english.status_code, 202, english.content)
-        self.assertIn('your company', fake_provider().sent[-1].html)
+        english_mail = fake_provider().sent[-1]
+        self.assertNotIn('{{', english_mail.html)
         french = self.client.post('/api/v1/events', self._failed(22, language='fr'), format='json')
         self.assertEqual(french.status_code, 202, french.content)
-        self.assertIn('votre entreprise', fake_provider().sent[-1].html)
+        self.assertNotEqual(fake_provider().sent[-1].subject, english_mail.subject)
 
     def test_provider_from_name_fills_company_name(self):
         self._provider(23, from_name='Northwind')

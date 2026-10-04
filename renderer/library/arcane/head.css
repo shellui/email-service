@@ -1,0 +1,50 @@
+@media (max-width:600px){.mobile_mb-10{margin-bottom:2.5rem!important}}
+@media (max-width:600px){.mobile_imprtntblock{display:block!important}}
+@media (max-width:600px){.mobile_imprtnthidden{display:none!important}}
+@media (max-width:600px){.mobile_imprtntw-full{width:100%!important}}
+@media (max-width:600px){.mobile_imprtntmax-w-full{max-width:100%!important}}
+@media (max-width:600px){.mobile_px-6{padding-right:1.5rem!important;padding-left:1.5rem!important}}
+@media (max-width:600px){.mobile_pt-6{padding-top:1.5rem!important}}
+@media (max-width:600px){.mobile_pt-12{padding-top:3rem!important}}
+@media (max-width:600px){.mobile_pb-10{padding-bottom:2.5rem!important}}
+@font-face {
+      font-family: 'Instrument Serif';
+      font-style: normal;
+      font-weight: 400;
+      mso-font-alt: 'Georgia';
+      src: url(https://fonts.gstatic.com/s/instrumentserif/v5/jizBRFtNs2ka5fXjeivQ4LroWlx-6zUTjg.woff2) format('woff2');
+    }
+* {
+      font-family: 'Instrument Serif', Georgia, Times New Roman, serif;
+    }
+@font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 400;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2) format('woff2');
+    }
+* {
+      font-family: 'Inter', Arial, sans-serif;
+    }
+@font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 500;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuI6fMZg.ttf) format('truetype');
+    }
+@font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 600;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuGKYMZg.ttf) format('truetype');
+    }
+@media (max-width:600px){.mobile_mt-10{margin-top:2.5rem!important}}
+@media (max-width:600px){.mobile_mt-12{margin-top:3rem!important}}
+@media (max-width:600px){.mobile_pl-3{padding-left:0.75rem!important}}
+@media (max-width:600px){.mobile_py-6{padding-bottom:1.5rem!important;padding-top:1.5rem!important}}
+@media (max-width:600px){.mobile_pt-8{padding-top:2rem!important}}
+@media (max-width:600px){.mobile_pr-0{padding-right:0px!important}}
+@media (max-width:600px){.mobile_font-56{font-size:56px!important;line-height:1!important;letter-spacing:-0.36px!important}}

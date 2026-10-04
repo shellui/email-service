@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] {{ display_name|default:\"Votre application\" }} est prête à être hébergée",
-  "preheader": "Une nouvelle application hébergée a été créée.",
-  "document": {
-    "preview": "Une nouvelle application hébergée a été créée.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Votre application est sur Shellui Hosting"
-      },
-      {
-        "type": "text",
-        "text": "{{ display_name|default:\"Une nouvelle application\" }} ({{ name|default:\"app\" }}) a été créée pour {{ company_name|default:\"votre entreprise\" }}. Le slug public est {{ slug|default:\"en attente\" }}. Vous pouvez publier un déploiement lorsque l'artefact est prêt."
-      }
-    ]
-  }
+  "preheader": "Une nouvelle application hébergée a été créée."
 }

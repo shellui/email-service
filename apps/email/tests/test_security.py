@@ -18,6 +18,7 @@ from rest_framework.test import APIClient
 from apps.authapi.principal import EmailPrincipal
 from apps.email.keys import issue_service_key
 from apps.email.models import LaneState, Message
+from apps.email.tests.helpers import library_content, paragraphs
 from apps.email.views import _unsubscribe_token
 from apps.providers.base import ProviderMessage
 from apps.providers.registry import fake_provider
@@ -244,24 +245,13 @@ class SecurityRegressionTests(TestCase):
 
     def test_auth_override_keeps_link_and_platform_from_is_limited(self):
         owner = self._owner(4)
-        created = owner.post(
-            '/api/v1/templates?company_id=4',
-            {'template_key': 'identity.auth.magic_link.requested', 'language': 'en'},
-            format='json',
-        )
-        self.assertEqual(created.status_code, 201, created.content)
-        template_id = created.json()['id']
+        rules = owner.get('/api/v1/rules?company_id=4&service=identity').json()['rules']
+        template_id = next(row for row in rules if row['event_type'] == 'identity.auth.magic_link.requested')['template_id']
         evil = owner.post(
             f'/api/v1/templates/{template_id}/versions',
             {
                 'subject': 'Sign in',
-                'document': {
-                    'preview': 'Sign in',
-                    'blocks': [
-                        {'type': 'text', 'text': 'Use {{ magic_link_url }}'},
-                        {'type': 'button', 'text': 'Continue', 'href': 'https://evil.example/login'},
-                    ],
-                },
+                'document': paragraphs('Use {{ magic_link_url }}', ('Continue', 'https://evil.example/login')),
             },
             format='json',
         )
@@ -271,13 +261,7 @@ class SecurityRegressionTests(TestCase):
         self.assertEqual(published.json()['error_code'], 'auth_link_host_not_allowed')
         missing = owner.post(
             f'/api/v1/templates/{template_id}/versions',
-            {
-                'subject': 'Sign in',
-                'document': {
-                    'preview': 'Sign in',
-                    'blocks': [{'type': 'text', 'text': 'Hello'}],
-                },
-            },
+            {'subject': 'Sign in', 'document': paragraphs('Hello')},
             format='json',
         )
         refused = owner.post(f'/api/v1/templates/{template_id}/versions/{missing.json()["number"]}/publish')
@@ -285,15 +269,7 @@ class SecurityRegressionTests(TestCase):
         self.assertEqual(refused.json()['error_code'], 'auth_link_missing')
         good = owner.post(
             f'/api/v1/templates/{template_id}/versions',
-            {
-                'subject': 'Sign in',
-                'document': {
-                    'preview': 'Sign in',
-                    'blocks': [
-                        {'type': 'button', 'text': 'Sign in', 'href': '{{ magic_link_url }}'},
-                    ],
-                },
-            },
+            {'subject': 'Sign in', 'document': paragraphs(('Sign in', '{{ magic_link_url }}'))},
             format='json',
         )
         ok = owner.post(f'/api/v1/templates/{template_id}/versions/{good.json()["number"]}/publish')
@@ -313,7 +289,7 @@ class SecurityRegressionTests(TestCase):
 
         from apps.email.rules import create_rule
 
-        create_rule(8, {'event_type': 'hosting.deployment.failed', 'content': {'mode': 'suggested'}})
+        create_rule(8, {'event_type': 'hosting.deployment.failed', 'content': library_content()})
         self._service(self.hosting_key)
         denied = self.client.post(
             '/api/v1/events',

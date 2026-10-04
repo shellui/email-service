@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Jeton SCIM révoqué",
-  "preheader": "Un jeton SCIM a été révoqué.",
-  "document": {
-    "preview": "Un jeton SCIM a été révoqué.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Jeton SCIM révoqué"
-      },
-      {
-        "type": "text",
-        "text": "Le jeton SCIM {{ token_name|default:\"(sans nom)\" }} (préfixe {{ token_prefix|default:\"masqué\" }}) a été révoqué pour {{ company_name|default:\"votre entreprise\" }}. La synchronisation d'annuaire qui l'utilise va s'arrêter."
-      }
-    ]
-  }
+  "preheader": "Un jeton SCIM a été révoqué."
 }

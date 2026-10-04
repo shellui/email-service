@@ -11,19 +11,10 @@ from apps.authapi.principal import EmailPrincipal
 from apps.email.crypto import encrypt_json
 from apps.email.keys import issue_service_key
 from apps.email.models import CompanyProvider
+from apps.email.tests.helpers import library_content, paragraphs
 from apps.providers.registry import fake_provider
 
 ROOT = Path(__file__).resolve().parents[3]
-
-PALETTE = {
-    'background': '#ffffff',
-    'foreground': '#111111',
-    'muted': '#eeeeee',
-    'mutedForeground': '#666666',
-    'primary': '#112233',
-    'primaryForeground': '#ffffff',
-    'border': '#cccccc',
-}
 
 
 def _owner(company_id, *, email='owner@acme.com', staff=False):
@@ -129,23 +120,24 @@ class AdminContractTests(TestCase):
         self.assertEqual(cleared.status_code, 200, cleared.content)
         self.assertEqual(cleared.json()['bulk_from_email'], '')
 
-    def test_versions_return_the_document_and_palette(self):
-        owner = _owner(40)
-        created = owner.post(
-            '/api/v1/templates?company_id=40',
-            {'template_key': 'hosting.deployment.failed', 'language': 'en'},
+    def _copy(self, owner):
+        rule = owner.post(
+            '/api/v1/rules?company_id=40',
+            {'event_type': 'hosting.deployment.failed', 'content': library_content()},
             format='json',
         )
-        self.assertEqual(created.status_code, 201, created.content)
-        template_id = created.json()['id']
+        self.assertEqual(rule.status_code, 201, rule.content)
+        return rule.json()['template_id']
+
+    def test_versions_return_the_editor_document(self):
+        owner = _owner(40)
+        template_id = self._copy(owner)
         draft = owner.post(
             f'/api/v1/templates/{template_id}/versions',
             {
                 'subject': 'Edited subject',
                 'preheader': 'Edited preheader',
-                'document': {'preview': 'Edited', 'blocks': [{'type': 'heading', 'text': 'Edited heading'}]},
-                'theme_name': 'matte',
-                'theme_palette': PALETTE,
+                'document': paragraphs('Edited heading'),
             },
             format='json',
         )
@@ -154,61 +146,33 @@ class AdminContractTests(TestCase):
         listed = owner.get(f'/api/v1/templates/{template_id}/versions').json()['versions']
         row = next(item for item in listed if item['number'] == number)
         self.assertEqual(row['preheader'], 'Edited preheader')
-        self.assertEqual(row['document']['blocks'][0]['text'], 'Edited heading')
-        self.assertEqual(row['theme_name'], 'matte')
-        self.assertEqual(row['theme_palette']['primary'], '#112233')
+        self.assertEqual(row['document'], paragraphs('Edited heading'))
+        self.assertEqual(set(row), {'number', 'state', 'subject', 'preheader', 'document', 'published_at'})
         one = owner.get(f'/api/v1/templates/{template_id}/versions/{number}')
         self.assertEqual(one.status_code, 200, one.content)
         self.assertEqual(one.json()['subject'], 'Edited subject')
         rejected = owner.post(
             f'/api/v1/templates/{template_id}/versions',
-            {
-                'subject': 'Bad color',
-                'preheader': '',
-                'document': {'preview': '', 'blocks': []},
-                'theme_palette': {**PALETTE, 'primary': 'gold'},
-            },
+            {'subject': 'Old shape', 'document': {'preview': '', 'blocks': []}},
             format='json',
         )
         self.assertEqual(rejected.status_code, 400)
-        self.assertEqual(rejected.json()['field_errors']['theme_palette'], ['invalid_color'])
+        self.assertEqual(rejected.json()['field_errors']['document'], ['invalid'])
 
-    def test_sent_mail_uses_the_stored_palette(self):
+    def test_sent_mail_uses_the_published_html(self):
         owner = _owner(40)
-        created = owner.post(
-            '/api/v1/templates?company_id=40',
-            {'template_key': 'hosting.deployment.failed', 'language': 'en'},
-            format='json',
-        )
-        template_id = created.json()['id']
+        template_id = self._copy(owner)
         draft = owner.post(
             f'/api/v1/templates/{template_id}/versions',
             {
                 'subject': 'Edited subject',
                 'preheader': 'Edited preheader',
-                'document': {
-                    'preview': 'Edited',
-                    'blocks': [
-                        {'type': 'heading', 'text': 'Edited heading'},
-                        {'type': 'button', 'text': 'Open', 'href': 'https://example.com'},
-                    ],
-                },
-                'theme_name': 'matte',
-                'theme_palette': PALETTE,
+                'document': paragraphs('Edited heading', ('Open', 'https://example.com')),
             },
             format='json',
         )
         published = owner.post(f'/api/v1/templates/{template_id}/versions/{draft.json()["number"]}/publish')
         self.assertEqual(published.status_code, 200, published.content)
-        rule = owner.post(
-            '/api/v1/rules?company_id=40',
-            {
-                'event_type': 'hosting.deployment.failed',
-                'content': {'mode': 'existing', 'template_id': template_id},
-            },
-            format='json',
-        )
-        self.assertEqual(rule.status_code, 201, rule.content)
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.hosting_key}')
         sent = client.post(
@@ -223,62 +187,40 @@ class AdminContractTests(TestCase):
             format='json',
         )
         self.assertEqual(sent.status_code, 202, sent.content)
-        html = fake_provider().sent[-1].html
-        self.assertIn('#112233', html)
-        self.assertIn('Edited heading', html)
-        preview = owner.post(
-            '/api/v1/render',
-            {
-                'document': {'preview': '', 'blocks': [{'type': 'button', 'text': 'Open', 'href': 'https://example.com'}]},
-                'subject': 'Preview',
-                'theme_palette': PALETTE,
-            },
-            format='json',
-        )
-        self.assertEqual(preview.status_code, 200, preview.content)
-        self.assertIn('#112233', preview.json()['html'])
+        message = fake_provider().sent[-1]
+        self.assertIn('Edited heading', message.html)
+        self.assertIn('href="https://example.com"', message.html)
+        self.assertEqual(message.subject, 'Edited subject')
 
     def test_send_test_renders_the_draft_and_stays_on_the_owner_email(self):
         owner = _owner(40)
-        created = owner.post(
-            '/api/v1/templates?company_id=40',
-            {'template_key': 'hosting.deployment.failed', 'language': 'en'},
-            format='json',
-        )
-        template_id = created.json()['id']
-        suggested = owner.post(f'/api/v1/templates/{template_id}/send-test', {}, format='json')
-        self.assertEqual(suggested.status_code, 200, suggested.content)
-        self.assertEqual(fake_provider().sent[-1].to_email, 'owner@acme.com')
-        self.assertIn('My App', fake_provider().sent[-1].subject)
+        template_id = self._copy(owner)
+        no_draft = owner.post(f'/api/v1/templates/{template_id}/send-test', {}, format='json')
+        self.assertEqual(no_draft.status_code, 400)
         owner.post(
             f'/api/v1/templates/{template_id}/versions',
             {
                 'subject': 'Edited subject {{ display_name }}',
                 'preheader': '',
-                'document': {'preview': '', 'blocks': [{'type': 'heading', 'text': 'Edited heading'}]},
-                'theme_palette': PALETTE,
+                'document': paragraphs('Edited heading'),
             },
             format='json',
         )
         latest = owner.post(f'/api/v1/templates/{template_id}/send-test', {}, format='json')
         self.assertEqual(latest.status_code, 200, latest.content)
+        self.assertEqual(fake_provider().sent[-1].to_email, 'owner@acme.com')
         self.assertIn('Edited heading', fake_provider().sent[-1].html)
-        self.assertIn('#111111', fake_provider().sent[-1].html)
         self.assertIn('My App', fake_provider().sent[-1].subject)
         unsaved = owner.post(
             f'/api/v1/templates/{template_id}/send-test',
-            {
-                'subject': 'Unsaved {{ display_name }}',
-                'document': {'preview': '', 'blocks': [{'type': 'heading', 'text': 'Unsaved heading'}]},
-                'theme_palette': PALETTE,
-            },
+            {'subject': 'Unsaved {{ display_name }}', 'document': paragraphs('Unsaved heading')},
             format='json',
         )
         self.assertEqual(unsaved.status_code, 200, unsaved.content)
         self.assertIn('Unsaved heading', fake_provider().sent[-1].html)
         denied = owner.post(
             f'/api/v1/templates/{template_id}/send-test',
-            {'to': 'other@acme.com', 'subject': 'Nope', 'document': {'preview': '', 'blocks': []}},
+            {'to': 'other@acme.com', 'subject': 'Nope', 'document': paragraphs('Nope')},
             format='json',
         )
         self.assertEqual(denied.status_code, 403)
@@ -317,5 +259,5 @@ class AdminContractTests(TestCase):
         self.assertIn('"error": "artifact_extract_failed"', text)
         self.assertNotIn('error_summary', text)
         self.assertIn('smtp_allowed', text)
-        self.assertIn('theme_palette', text)
+        self.assertIn('library_id', text)
         self.assertIn('auth_link_hosts', text)

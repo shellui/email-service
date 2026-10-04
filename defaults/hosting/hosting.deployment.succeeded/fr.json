@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] {{ display_name|default:\"Votre application\" }} est en ligne",
-  "preheader": "Le déploiement sert le trafic.",
-  "document": {
-    "preview": "Le déploiement sert le trafic.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Le déploiement est en ligne"
-      },
-      {
-        "type": "text",
-        "text": "{{ display_name|default:\"Votre application\" }} {{ app_version|default:\"\" }} est maintenant le déploiement actif pour {{ company_name|default:\"votre entreprise\" }}. Slug public : {{ slug|default:\"votre slug\" }}."
-      }
-    ]
-  }
+  "preheader": "Le déploiement sert le trafic."
 }

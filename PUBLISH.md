@@ -13,7 +13,7 @@ Publishing to Docker Hub is manual. There is no CI workflow that pushes the imag
 | Listen port | `8000` (Compose maps host `${EMAIL_SERVICE_PORT:-8003}`) |
 | Data volume | `/app/data` |
 
-The image contains application code, the React Email renderer (`EMAIL_RENDERER=node`), and collected static files. Gunicorn listens on port 8000. Secrets come from the environment at start (see `.env.example`).
+The image contains application code, Node with the React Email compose script (`renderer/compose.mjs`), and collected static files, including the library images under `/static/library/`. Gunicorn listens on port 8000. Secrets come from the environment at start (see `.env.example`).
 
 Delivery is not inside Gunicorn. Run `manage.py run_email_worker` beside the web process, plus `retry_webhooks` and `purge_expired_data`.
 

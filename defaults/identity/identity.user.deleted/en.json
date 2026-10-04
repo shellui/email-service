@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Account deleted",
-  "preheader": "A user account was deleted.",
-  "document": {
-    "preview": "A user account was deleted.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Account deleted"
-      },
-      {
-        "type": "text",
-        "text": "The account {{ recipient_email|default:\"a user\" }} was permanently deleted from {{ company_name|default:\"your company\" }}."
-      }
-    ]
-  }
+  "preheader": "A user account was deleted."
 }

@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Directory conflict for {{ display_name|default:\"a group\" }}",
-  "preheader": "SCIM could not apply a change.",
-  "document": {
-    "preview": "SCIM could not apply a change.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Directory provisioning needs attention"
-      },
-      {
-        "type": "text",
-        "text": "SCIM could not {{ operation|default:\"apply\" }} {{ display_name|default:\"an entry\" }} for {{ company_name|default:\"your company\" }} because of a conflict. Review the group in Shellui admin and in your identity provider, then retry the change from the provider."
-      }
-    ]
-  }
+  "preheader": "SCIM could not apply a change."
 }

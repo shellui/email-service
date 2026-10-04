@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] {{ path|default:\"A file\" }} was uploaded",
-  "preheader": "A file was stored.",
-  "document": {
-    "preview": "A file was stored.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "File uploaded"
-      },
-      {
-        "type": "text",
-        "text": "{{ path|default:\"A file\" }} ({{ mime_type|default:\"file\" }}) was stored in bucket {{ bucket_name|default:\"company\" }} for {{ company_name|default:\"your company\" }}."
-      }
-    ]
-  }
+  "preheader": "A file was stored."
 }

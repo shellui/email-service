@@ -33,5 +33,7 @@
       "example": "Ada",
       "is_url": false
     }
-  ]
+  ],
+  "link_token": "magic_link_url",
+  "default_template": "barebone.activation"
 }

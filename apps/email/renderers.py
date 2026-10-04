@@ -27,19 +27,3 @@ class PrometheusTextRenderer(BaseRenderer):
             return data.encode(self.charset)
         return json.dumps(data).encode(self.charset)
 
-
-class HtmlRenderer(BaseRenderer):
-    """Registers `text/html` so a theme preview can be loaded in an iframe."""
-
-    media_type = 'text/html'
-    format = 'html'
-    charset = 'utf-8'
-
-    def render(self, data, accepted_media_type=None, renderer_context=None):
-        if data is None:
-            return b''
-        if isinstance(data, (bytes, bytearray, memoryview)):
-            return bytes(data)
-        if isinstance(data, str):
-            return data.encode(self.charset)
-        return json.dumps(data).encode(self.charset)

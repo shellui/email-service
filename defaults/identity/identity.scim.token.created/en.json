@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] SCIM token created for {{ company_name|default:\"your company\" }}",
-  "preheader": "A new SCIM token was issued.",
-  "document": {
-    "preview": "A new SCIM token was issued.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "New SCIM token"
-      },
-      {
-        "type": "text",
-        "text": "A SCIM token named {{ token_name|default:\"(unnamed)\" }} (prefix {{ token_prefix|default:\"hidden\" }}) was created for {{ company_name|default:\"your company\" }}. If you do not recognize this change, revoke the token in Shellui admin."
-      }
-    ]
-  }
+  "preheader": "A new SCIM token was issued."
 }

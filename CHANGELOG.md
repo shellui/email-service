@@ -10,11 +10,17 @@ Notable changes to this project. Format: [Keep a Changelog](https://keepachangel
 - Auth-lane events (`identity.auth.magic_link.requested`, `identity.user.invited`) get a built-in rule that cannot be deleted or disabled.
 - `POST /api/v1/events` with no enabled rule returns `skipped_reason: no_rule`. Catalog `default_enabled` no longer sends mail.
 - Company templates have `name`, optional `event_type`, and a generated `company.<hex>` key when created from a rule.
-- Themes: `barebone`, `matte`, `protocol`, `arcane`, `studio`. `GET /api/v1/themes`, `GET /api/v1/themes/{key}/preview`, `GET/PUT /api/v1/settings`. Versions stored as `shellui` migrate to `barebone`.
-- Block documents support inline formatting and two new blocks. `heading`, `text`, `footer`, and list items take optional `content` runs with `bold`, `italic`, `underline`, and `href`. New `list` (bulleted or `ordered`) and `divider` blocks. Both renderers output them, inline links with an unsafe scheme render as plain text, and auth-lane checks apply the button link rules to inline links. Python renderer version is `shellui-email-3`.
-- The node renderer's plain-text part keeps heading case, so `{{ token }}` in a heading still substitutes.
-- `{{ token|default:"…" }}` substitutes in node-rendered HTML. React Email writes the quotes as `&quot;`, which the HTML substitution now accepts. Before, the placeholder was sent as written.
-- The node renderer builds the five templates with React Email and Tailwind in `renderer/email.mjs`. Colors are Tailwind tokens filled from the theme or `theme_palette`, so any palette works on any template. The Shellui admin vendors the same file for its live preview. Arcane's outline button now has padding (`button_pad` `12px 20px`). Barebone keeps a 16px card-colored frame around its inset panel, as in the React Email demo, so the white card shows again (and the background color of a custom palette).
+- Template library: 40 built-in designs vendored from the React Email demos (Barebone, Matte, Protocol, Arcane, Studio sets, MIT, `renderer/demos/LICENSE`), imported to editor JSON by `npm run import:demos` and synced on migrate. Companies add their own templates with `GET/POST /api/v1/library` and `GET/PUT/DELETE /api/v1/library/{id}`. Built-ins are read-only (`409 library_built_in`).
+- `POST /api/v1/rules` takes `content.library_id` and creates the rule's own copy, published, with the catalog subject and preheader and `{{ action_url }}` mapped to the event link. Deleting a rule deletes its copy. `PATCH` no longer accepts `template_id`.
+- Documents are React Email editor JSON, checked against a node, mark, link, and image allowlist. `renderer/compose.mjs` composes HTML and text on every save, and sends substitute variables into the stored HTML. `POST /api/v1/templates/{id}/versions` with `library_id` starts a copy over and keeps its subject and preheader.
+- Catalog events carry `link_token` and `default_template`. Built-in auth rules and direct sends with no copy use the default design.
+- New settings `EMAIL_PUBLIC_URL`, `EMAIL_NODE_BINARY`, `EMAIL_COMPOSE_TIMEOUT_SECONDS`, `EMAIL_MAX_DOCUMENT_BYTES`. React is pinned to 18.3.1 to match the admin preview.
+- `{{ token|default:"…" }}` substitutes in composed HTML, where React Email writes the quotes as `&quot;`.
+
+### Removed
+
+- Themes, theme palettes, and company settings (`/api/v1/themes`, `/api/v1/settings`), block documents and the block renderers, `EMAIL_RENDERER`, `POST /api/v1/render`, `POST /api/v1/templates`, and `GET /api/v1/templates/defaults`.
+- Migration `0005_library_templates` deletes existing rules, company templates, and versions.
 
 ## [0.1.0] - 2026-10-02
 

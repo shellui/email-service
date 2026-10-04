@@ -175,10 +175,9 @@ SPECTACULAR_SETTINGS = {
     'TAGS': [
         {'name': 'send', 'description': 'Direct send and event ingest.'},
         {'name': 'messages', 'description': 'Message status and cancellation.'},
-        {'name': 'catalog', 'description': 'Suggested templates for service events.'},
-        {'name': 'templates', 'description': 'Company template overrides.'},
-        {'name': 'themes', 'description': 'Official email themes and previews.'},
-        {'name': 'settings', 'description': 'Company email theme.'},
+        {'name': 'catalog', 'description': 'Service events, suggested subjects, and default designs.'},
+        {'name': 'library', 'description': 'Built-in and company email designs.'},
+        {'name': 'templates', 'description': 'Event copies and their versions.'},
         {'name': 'rules', 'description': 'Per-company email rules.'},
         {'name': 'provider', 'description': 'Company sending provider credentials.'},
         {'name': 'stats', 'description': 'Per-company delivery statistics.'},
@@ -420,7 +419,11 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
 EMAIL_USE_TLS = _env_bool('EMAIL_USE_TLS', True)
 EMAIL_USE_SSL = _env_bool('EMAIL_USE_SSL', False)
-EMAIL_RENDERER = os.getenv('EMAIL_RENDERER', 'python').strip().lower() or 'python'
+# Library images load from {EMAIL_PUBLIC_URL}/static/library/ in sent mail.
+EMAIL_PUBLIC_URL = os.getenv('EMAIL_PUBLIC_URL', '').strip().rstrip('/') or PUBLIC_BASE_URL
+EMAIL_NODE_BINARY = os.getenv('EMAIL_NODE_BINARY', 'node').strip() or 'node'
+EMAIL_COMPOSE_TIMEOUT_SECONDS = _env_int('EMAIL_COMPOSE_TIMEOUT_SECONDS', 60)
+EMAIL_MAX_DOCUMENT_BYTES = _env_int('EMAIL_MAX_DOCUMENT_BYTES', 512 * 1024)
 EMAIL_DELIVER_SYNC = _env_bool('EMAIL_DELIVER_SYNC', False)
 EMAIL_ALLOW_FAKE_PROVIDER = _env_bool('EMAIL_ALLOW_FAKE_PROVIDER', DEBUG)
 # Company SMTP opens a connection from the worker. Off until an operator opts in.

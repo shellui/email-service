@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] SCIM token revoked",
-  "preheader": "A SCIM token was revoked.",
-  "document": {
-    "preview": "A SCIM token was revoked.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "SCIM token revoked"
-      },
-      {
-        "type": "text",
-        "text": "The SCIM token {{ token_name|default:\"(unnamed)\" }} (prefix {{ token_prefix|default:\"hidden\" }}) was revoked for {{ company_name|default:\"your company\" }}. Directory sync using that token will stop."
-      }
-    ]
-  }
+  "preheader": "A SCIM token was revoked."
 }

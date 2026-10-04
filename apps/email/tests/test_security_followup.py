@@ -14,17 +14,12 @@ from apps.email.crypto import decrypt_json, email_hmac, encrypt_json
 from apps.email.keys import issue_service_key
 from apps.email.models import CompanyProfile, CompanyProvider, Message, Unsubscribe
 from apps.email.service import _system_variables
+from apps.email.tests.helpers import library_content, paragraphs
 from apps.providers.base import ProviderMessage
 from apps.providers.registry import fake_provider
 from apps.providers.smtp import SmtpProvider
 
-PALETTE_DOC = {
-    'preview': 'Sign in',
-    'blocks': [
-        {'type': 'heading', 'text': 'Sign in at https://evil.example/phish'},
-        {'type': 'button', 'text': 'Sign in', 'href': '{{ magic_link_url }}'},
-    ],
-}
+LITERAL_LINK_DOC = paragraphs('Sign in at https://evil.example/phish', ('Sign in', '{{ magic_link_url }}'))
 
 
 def _owner(company_id):
@@ -80,7 +75,7 @@ class SecurityFollowupTests(TestCase):
     def test_unscoped_hosting_key_does_not_store_company_name(self):
         from apps.email.rules import create_rule
 
-        create_rule(42, {'event_type': 'hosting.deployment.failed', 'content': {'mode': 'suggested'}})
+        create_rule(42, {'event_type': 'hosting.deployment.failed', 'content': library_content()})
         self._auth(self.hosting_key)
         poisoned = self.api.post(
             '/api/v1/events',
@@ -138,7 +133,7 @@ class SecurityFollowupTests(TestCase):
         self._auth(raw)
         from apps.email.rules import create_rule
 
-        create_rule(42, {'event_type': 'hosting.deployment.failed', 'content': {'mode': 'suggested'}})
+        create_rule(42, {'event_type': 'hosting.deployment.failed', 'content': library_content()})
         scoped = self.api.post(
             '/api/v1/events',
             {
@@ -336,15 +331,11 @@ class SecurityFollowupTests(TestCase):
 
     def test_auth_prose_rejects_a_literal_url(self):
         owner = _owner(42)
-        created = owner.post(
-            '/api/v1/templates?company_id=42',
-            {'template_key': 'identity.auth.magic_link.requested', 'language': 'en'},
-            format='json',
-        )
-        template_id = created.json()['id']
+        rules = owner.get('/api/v1/rules?company_id=42&service=identity').json()['rules']
+        template_id = next(row for row in rules if row['event_type'] == 'identity.auth.magic_link.requested')['template_id']
         draft = owner.post(
             f'/api/v1/templates/{template_id}/versions',
-            {'subject': 'Sign in', 'preheader': '', 'document': PALETTE_DOC},
+            {'subject': 'Sign in', 'preheader': '', 'document': LITERAL_LINK_DOC},
             format='json',
         )
         published = owner.post(f'/api/v1/templates/{template_id}/versions/{draft.json()["number"]}/publish')

@@ -8,8 +8,8 @@ The integration contract is [docs/integration.md](docs/integration.md).
 
 - Direct send (`POST /api/v1/send`) for auth mail: magic links and invitations, with TTL and idempotency
 - Event ingest (`POST /api/v1/events`): every enabled email rule for that company, service, and event queues a message. Auth-lane events have a built-in rule.
-- Suggested English and French templates for identity, storage, and hosting webhook events (a heading, one paragraph, and a button only when the event has an action URL)
-- Five themes (Barebone, Matte, Protocol, Arcane, Studio). Layout and type are adapted from the React Email demos. See `renderer/themes/LICENSE`.
+- Template library: 40 React Email demo designs in five sets (Barebone, Matte, Protocol, Arcane, Studio), plus company templates. See [docs/library.md](docs/library.md) and `renderer/demos/LICENSE`.
+- Each email rule sends its own editable copy of a library design, with suggested English and French subjects for identity, storage, and hosting events
 - Provider adapters: Resend (default) and SMTP. Mailjet is the next adapter. See [docs/providers.md](docs/providers.md).
 - Per-company credentials encrypted at rest. API responses return a masked hint and `configured`.
 - Admin API for rules, templates, stats, test sends, and suppressions
@@ -24,9 +24,9 @@ The integration contract is [docs/integration.md](docs/integration.md).
 - `apps/email/` catalog, queue, rules, stats
 - `apps/providers/` Resend, SMTP, and the planned Mailjet module
 - `apps/actions/` Shellui Actions outbox
-- `defaults/` exported suggested templates
+- `defaults/` exported catalog events (subjects, preheaders, link and default design)
 - `docs/` guides, including the integration contract
-- `renderer/` React Email renderer used when `EMAIL_RENDERER=node`, including `renderer/themes/LICENSE`
+- `renderer/` React Email compose script (`compose.mjs`), library seeds, and the vendored demos with `renderer/demos/LICENSE`
 
 ## Main endpoints
 
@@ -38,8 +38,7 @@ The integration contract is [docs/integration.md](docs/integration.md).
 | Messages | `GET /api/v1/messages`, `GET /api/v1/messages/{id}`, `POST /api/v1/messages/{id}/cancel` |
 | Catalog | `GET /api/v1/catalog` |
 | Provider | `GET/PUT /api/v1/provider`, `POST /api/v1/provider/test-send` |
-| Themes | `GET /api/v1/themes`, `GET /api/v1/themes/{key}/preview` |
-| Settings | `GET/PUT /api/v1/settings` |
+| Library | `GET/POST /api/v1/library`, `GET/PUT/DELETE /api/v1/library/{id}` |
 | Rules | `GET/POST /api/v1/rules`, `GET/PATCH/DELETE /api/v1/rules/{id}` |
 | Templates | `/api/v1/templates` |
 | Stats | `GET /api/v1/stats` |

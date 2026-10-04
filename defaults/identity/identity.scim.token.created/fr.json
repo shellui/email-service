@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Jeton SCIM créé pour {{ company_name|default:\"votre entreprise\" }}",
-  "preheader": "Un nouveau jeton SCIM a été émis.",
-  "document": {
-    "preview": "Un nouveau jeton SCIM a été émis.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Nouveau jeton SCIM"
-      },
-      {
-        "type": "text",
-        "text": "Un jeton SCIM nommé {{ token_name|default:\"(sans nom)\" }} (préfixe {{ token_prefix|default:\"masqué\" }}) a été créé pour {{ company_name|default:\"votre entreprise\" }}. Si vous ne reconnaissez pas ce changement, révoquez le jeton dans l'admin Shellui."
-      }
-    ]
-  }
+  "preheader": "Un nouveau jeton SCIM a été émis."
 }

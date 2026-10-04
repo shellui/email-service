@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Group {{ display_name|default:\"created\" }} was added",
-  "preheader": "A group was created.",
-  "document": {
-    "preview": "A group was created.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "New group"
-      },
-      {
-        "type": "text",
-        "text": "The group {{ display_name|default:\"(unnamed)\" }} was created in {{ company_name|default:\"your company\" }} (source: {{ source|default:\"manual\" }})."
-      }
-    ]
-  }
+  "preheader": "A group was created."
 }

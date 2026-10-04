@@ -15,6 +15,7 @@ from apps.email.crypto import email_hmac
 from apps.email.keys import issue_service_key
 from apps.email.models import Message, Suppression
 from apps.email.substitution import find_tokens
+from apps.email.tests.helpers import library_content
 from apps.providers.registry import fake_provider
 
 BANNED = re.compile(
@@ -24,7 +25,7 @@ BANNED = re.compile(
 
 
 def _tokens(pack: dict) -> set[str]:
-    blobs = [pack['subject'], pack['preheader'], json.dumps(pack['document'])]
+    blobs = [pack['subject'], pack['preheader']]
     found = set()
     for blob in blobs:
         found |= find_tokens(blob)
@@ -116,7 +117,7 @@ class EmailApiTests(TestCase):
             declared = {item['token'] for item in definition['variables']}
             self.assertTrue(en <= declared, f'{definition["key"]} undeclared {en - declared}')
             for language, pack in definition['languages'].items():
-                blob = pack['subject'] + pack['preheader'] + json.dumps(pack['document'])
+                blob = pack['subject'] + pack['preheader']
                 self.assertIsNone(BANNED.search(blob), f'{definition["key"]} {language}')
                 self.assertNotIn('\u2014', blob)
                 self.assertNotIn('\u2013', blob)
@@ -278,7 +279,7 @@ class EmailApiTests(TestCase):
     def test_stats_and_metrics(self):
         from apps.email.rules import create_rule
 
-        create_rule(7, {'event_type': 'hosting.deployment.failed', 'content': {'mode': 'suggested'}})
+        create_rule(7, {'event_type': 'hosting.deployment.failed', 'content': library_content()})
         self._auth(self.hosting_key)
         self.client.post(
             '/api/v1/events',

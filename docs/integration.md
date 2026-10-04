@@ -39,7 +39,7 @@ A key that is not allowed to use a lane receives `403 lane_not_allowed`. A key w
 
 | Credential | Who | What they can call |
 | --- | --- | --- |
-| `esk_` service key | A Shellui service | `/send`, `/send/batch`, `/events`, `/messages/{id}`, `/catalog`, `/render`, and identity-only `/privacy/erase` |
+| `esk_` service key | A Shellui service | `/send`, `/send/batch`, `/events`, `/messages/{id}`, `/catalog`, and identity-only `/privacy/erase` |
 | Identity JWT (RS256, JWKS) | Staff, or a company owner | Admin routes below. `company_id` on the token must match the requested company unless the caller is staff. |
 
 Health is public. Provider webhooks use Svix signatures, not a Bearer token. Metrics require a JWT (same pattern as storage-service). Service keys cannot read metrics.
@@ -60,7 +60,7 @@ JSON errors never contain translated sentences. Shape:
 }
 ```
 
-`field_errors` and `request_id` are omitted when empty. `template_variables_mismatch` also includes `missing_variables`, a list of token names.
+`field_errors` and `request_id` are omitted when empty.
 
 | `error_code` | HTTP | Meaning |
 | --- | --- | --- |
@@ -69,14 +69,16 @@ JSON errors never contain translated sentences. Shape:
 | `company_mismatch` | 403 | Token or key `company_id` does not match the request |
 | `lane_not_allowed` | 403 | Service key cannot use this lane |
 | `validation_failed` | 400 | See `field_errors` |
-| `template_not_found` | 404 | Unknown `template_key` |
+| `template_not_found` | 404 | Unknown `template_key`, template id, or version number |
 | `language_not_available` | 400 | Language is not `en` or `fr` for that template |
 | `unknown_event` | 400 | `event_type` on `POST /api/v1/events` is not in the catalog |
 | `event_unknown` | 400 | `event_type` on the rules API or `GET /api/v1/templates` is not in the catalog, or `service` does not own that event |
-| `theme_unknown` | 400 | `theme` or `theme_name` is not `barebone`, `matte`, `protocol`, `arcane`, or `studio` |
-| `template_variables_mismatch` | 400 | A rule's template uses `{{ token }}` values the event does not declare. `missing_variables` lists them. |
+| `library_not_found` | 404 | Library id is not a built-in or one of this company's templates |
+| `library_built_in` | 409 | `PUT` or `DELETE` on a built-in library template |
+| `library_not_synced` | 503 | An event's default design is missing because migrations have not run |
+| `renderer_unavailable` | 503 | Node or `renderer/compose.mjs` could not run, or timed out |
 | `rule_built_in` | 409 | A built-in auth rule cannot be deleted or disabled |
-| `template_in_use` | 409 | `DELETE /api/v1/templates/{id}` while an email rule still points at that template |
+| `template_in_use` | 409 | `DELETE /api/v1/templates/{id}` while an email rule still points at that copy |
 | `template_lane_mismatch` | 400 | Requested lane does not match the template's lane class |
 | `lane_requires_campaign` | 400 | `bulk` is not accepted on `/send`. Campaigns are not in this version. |
 | `lane_paused` | 409 | Staff paused the lane for every company, or this company's provider returned 401/403. Retry later. |
@@ -91,9 +93,9 @@ JSON errors never contain translated sentences. Shape:
 | `platform_sender_not_allowed` | 409 | Non-auth mail for a company with no provider, and the company is not listed in `EMAIL_PLATFORM_COMPANY_IDS`. Auth mail still uses the platform fallback. The same code is HTTP 403 when a company sets `from_email` to the platform From address. |
 | `company_smtp_disabled` | 400 or 409 | Company SMTP is off (`EMAIL_ALLOW_COMPANY_SMTP` defaults to false). 400 when saving the provider, 409 when a send is refused. |
 | `provider_host_not_public` | 400 | Company SMTP host is missing, private, or not a public address |
-| `auth_link_missing` | 400 | An auth-lane template override dropped a required link variable such as `magic_link_url` |
-| `auth_link_host_not_allowed` | 400 | An auth-lane button `href` is not an allowlisted `https` host or an allowed link variable |
-| `auth_literal_link` | 400 | An auth-lane override has a literal URL in the subject, preheader, preview, heading, text, footer, or button label |
+| `auth_link_missing` | 400 | An auth-lane copy dropped a required link variable such as `magic_link_url` |
+| `auth_link_host_not_allowed` | 400 | An auth-lane link (link mark, button, or linked image) is not an allowlisted `https` host, a declared URL variable, or `system.message_id` |
+| `auth_literal_link` | 400 | An auth-lane copy has a literal URL in the subject, preheader, or document text |
 | `provider_not_available` | 400 | Provider name is not `resend` or `smtp` |
 | `provider_test_failed` | 502 | The test send was refused by the provider |
 | `message_not_found` | 404 | Unknown message id |
@@ -104,7 +106,7 @@ JSON errors never contain translated sentences. Shape:
 | `rate_limited` | 429 | Generic DRF throttle mapped by the exception handler |
 | `request_failed` | other | Unmapped handler error |
 
-The design names `template_not_published` and `campaign_state_invalid` are not emitted. Unpublished company templates fall back to the suggested catalog document. Campaigns are not implemented, so bulk sends return `lane_requires_campaign`.
+The design names `template_not_published` and `campaign_state_invalid` are not emitted. A direct send with no published copy uses the event's default library design. Campaigns are not implemented, so bulk sends return `lane_requires_campaign`.
 
 ## Idempotency
 
@@ -191,7 +193,7 @@ Auth: service key.
 }
 ```
 
-`to` on this response is the address you submitted. Admin list endpoints mask it. `template_version` is `null` when the suggested catalog document is used, or the published version number when a company override is active.
+`to` on this response is the address you submitted. Admin list endpoints mask it. `template_version` is `null` when the event's default library design is used, or the published version number when a company copy sends.
 
 With `EMAIL_DELIVER_SYNC=true` (tests and local only), `status` may already be `sent`, `failed`, or `expired`. Production workers deliver asynchronously. Poll `GET /api/v1/messages/{id}` or subscribe to Shellui Actions.
 
@@ -308,7 +310,7 @@ Recipient selection, per rule:
 | `hints` (default) | Use the `recipients` array on the request. |
 | `static` | Ignore request recipients. Use `static_recipients` on the rule. Stored values are email strings. Input may be a string or `{email}`. |
 
-Language, per message: the rule `language` when it is set, otherwise the recipient `language`, then the request `language`, then `en`. An unedited suggested document still follows that language. Once the company edits the subject, preheader, or document, that stored document is what sends.
+Language, per message: the rule `language` when it is set, otherwise the recipient `language`, then the request `language`, then `en`. An unedited catalog subject and preheader still follow that language. Once the company edits them, the stored text is what sends. The body is always the copy as stored.
 
 `payload` keys match the template variables. Extra keys are ignored. For `hosting.deployment.failed` the failure text is `error` (for example `artifact_extract_failed`), the same field hosting stores on its webhook payload.
 
@@ -317,7 +319,7 @@ Language, per message: the rule `language` when it is set, otherwise the recipie
 1. `company_name` on this request, when it is non-empty. It is stored for later mail only when the caller is the identity service key, or a service key whose `allowed_company_ids` is exactly this company. Any other caller, including a hosting or storage key that can address every company, uses the name for this message only.
 2. A `company_name` stored from an earlier allowed caller for the same `company_id` (identity mail usually does this).
 3. The company provider `from_name`, when the provider is configured and `from_name` is not the platform default (`Shellui`).
-4. Otherwise the variable is left unset. Suggested templates then use their language default (`your company` in English, `votre entreprise` in French).
+4. Otherwise the variable is left unset and renders empty, unless the copy gives it a default (`{{ company_name|default:"your company" }}`).
 
 Hosting and storage do not need to send `company_name`. Identity still may. Auth templates that require `company_name` (`identity.auth.magic_link.requested`, `identity.user.invited`, `identity.user.invitation_revoked`) succeed without it once a name is stored. If none of the sources above has a name, those templates still return `validation_failed` with `variables.company_name: ["required"]`. Other required variables are unchanged.
 
@@ -329,7 +331,7 @@ Non-auth mail (`POST /api/v1/send` on a transactional template, and `POST /api/v
 
 A company that is not in `EMAIL_PLATFORM_COMPANY_IDS` cannot set `from_email` or `bulk_from_email` to `DEFAULT_FROM_EMAIL` or `BULK_FROM_EMAIL` (`403 platform_sender_not_allowed`).
 
-Auth-lane template overrides must still contain every required URL variable (`magic_link_url` or `invitation_url`). Each button `href` must be one of those variables (or another declared URL variable) or a literal `https` URL whose host is on `EMAIL_AUTH_LINK_HOSTS`. Otherwise publish returns `auth_link_missing` or `auth_link_host_not_allowed`. Subject, preheader, preview, heading, text, footer, and the button label must not contain a literal URL. The required link variable may appear there. A literal URL returns `auth_literal_link`.
+Auth-lane copies must still contain every required URL variable (`magic_link_url` or `invitation_url`). Every link in the document (link marks, button `href`, linked images) must be a declared URL variable, `{{ system.message_id }}`, or a literal `https` URL whose host is on `EMAIL_AUTH_LINK_HOSTS`. Otherwise publish returns `auth_link_missing` or `auth_link_host_not_allowed`. Subject, preheader, and document text must not contain a literal URL. The required link variable may appear there. A literal URL returns `auth_literal_link`.
 
 ## Message status
 
@@ -381,6 +383,8 @@ Auth: service key, staff, or company owner.
       "category": "auth",
       "default_ttl_seconds": 120,
       "variables": [],
+      "link_token": "magic_link_url",
+      "default_template": "barebone.activation",
       "suggested": {
         "en": {"subject": "[Shellui] Sign in to {{ company_name }}", "preheader": "Your sign-in link."},
         "fr": {"subject": "[Shellui] Connexion à {{ company_name }}", "preheader": "Votre lien de connexion."}
@@ -392,23 +396,7 @@ Auth: service key, staff, or company owner.
 
 `auth_link_hosts` is the read-only `EMAIL_AUTH_LINK_HOSTS` list. The editor uses it to check a button `href` before publish. `variables[]` items: `token`, `type` (`string` or `url`), `required`, `description` (an i18n key `email.var.<token>`), `example`, `is_url`, and optionally `sensitive` and `allowed_hosts_setting`. A variable with `allowed_hosts_setting: "EMAIL_AUTH_LINK_HOSTS"` must use one of those hosts.
 
-Full documents (blocks, not only subject) are on `GET /api/v1/templates/defaults?template_key=&languages=en,fr` (admin JWT).
-
-## Render
-
-`POST /api/v1/render`
-
-Auth: service key, staff, or company owner. Does not send mail.
-
-```json
-{
-  "template_key": "hosting.deployment.failed",
-  "language": "en",
-  "variables": {"company_name": "Acme", "display_name": "My App"}
-}
-```
-
-Or send your own `document` and `subject`. Optional `theme_name` is one of the five theme keys. Omit it for `barebone`. An unknown key returns `400 theme_unknown`. Optional `theme_palette` replaces that theme's colors. Omit it, or send `{}`, to keep the theme palette. Response: `subject`, `html`, `text`, `missing_variables` (tokens left unsubstituted).
+`link_token` is the URL variable a design's main link (`{{ action_url }}`) becomes on a copy of this event, empty when the event has no link. `default_template` is the library key used for built-in rules and for direct sends before the company has a copy. Designs are on `GET /api/v1/library` (admin JWT).
 
 ## Admin: provider
 
@@ -483,43 +471,19 @@ Auth rate limits: 5 messages per recipient per company per 10 minutes (`recipien
 
 Default from address when the company has none: `no-reply@shellui.com`. Bulk from address: `news@news.shellui.com`. The HTTP host is `email.shellui.com` and is not a sending domain.
 
-## Admin: themes and settings
+## Admin: library
 
-Auth: staff or company owner, same as the other admin routes. Theme names are proper nouns and are not translated. Full layout notes and the MIT attribution are in [themes.md](themes.md).
+Auth: staff or company owner. See [library.md](library.md) for the designs and their source.
 
-`GET /api/v1/themes?company_id=42` returns a JSON array, not a wrapper:
+| Method | Path | Result |
+| --- | --- | --- |
+| `GET` | `/api/v1/library?company_id=` | `{sets: [{key, name}], templates: […]}`, built-ins first, then this company's templates |
+| `POST` | `/api/v1/library?company_id=` | Body `name`, `subject`, `preheader`, `document`, or `source_id` to duplicate another library template. `201` detail |
+| `GET` | `/api/v1/library/{id}?company_id=` | Detail |
+| `PUT` | `/api/v1/library/{id}?company_id=` | Any of `name`, `subject`, `preheader`, `document`. `409 library_built_in` on a built-in |
+| `DELETE` | `/api/v1/library/{id}?company_id=` | `204`. `409 library_built_in` on a built-in. Existing event copies are not affected |
 
-```json
-[
-  {"key": "barebone", "name": "Barebone", "preview_url": "/api/v1/themes/barebone/preview?language=en"},
-  {"key": "matte", "name": "Matte", "preview_url": "/api/v1/themes/matte/preview?language=en"},
-  {"key": "protocol", "name": "Protocol", "preview_url": "/api/v1/themes/protocol/preview?language=en"},
-  {"key": "arcane", "name": "Arcane", "preview_url": "/api/v1/themes/arcane/preview?language=en"},
-  {"key": "studio", "name": "Studio", "preview_url": "/api/v1/themes/studio/preview?language=en"}
-]
-```
-
-`GET /api/v1/themes/{key}/preview?company_id=42&language=en` returns `text/html` (a heading, one paragraph, and a button) for a sandboxed iframe. `language` is `en` (default) or `fr`. Unknown key: `400 theme_unknown`. Unknown language: `400 language_not_available`. Load it with the same Bearer token. The admin can place the HTML in an iframe `srcdoc`.
-
-`GET /api/v1/settings?company_id=42`
-
-```json
-{"theme": "barebone", "templates_using_other_theme": 0}
-```
-
-A company with no settings row has theme `barebone`. `templates_using_other_theme` counts company templates whose representative theme differs. The representative theme is the active published version, otherwise the latest version, otherwise the company theme.
-
-`PUT /api/v1/settings?company_id=42`
-
-```json
-{"theme": "protocol", "apply_to_existing": false}
-```
-
-`apply_to_existing` is required and must be a boolean (`400 validation_failed` otherwise). Unknown `theme` is `400 theme_unknown`.
-
-With `apply_to_existing: false` the setting changes and existing templates stay as they are. The response is `{"theme": "protocol", "updated_templates": 0}`.
-
-With `apply_to_existing: true`, every company template on another theme gets a new version with the same content in the new theme. A published template stays published: it is re-rendered, the previous published version is archived, and `active_version` moves. A latest draft on another theme becomes a new draft. The template is counted once. Response: `{"theme": "protocol", "updated_templates": 2}`.
+List items: `id`, `key`, `set`, `name`, `built_in`, `company_id` (null on built-ins), `subject`, `preheader`, `html`, `updated_at`. Detail adds `document`, `text`, `head` (the set CSS), and `variables` (`company_name`, `action_url`). Unknown id: `404 library_not_found`.
 
 ## Admin: rules
 
@@ -560,46 +524,42 @@ Email rules are a list, like Shellui Actions webhook rules. The old per-event to
   "language": "",
   "recipient_mode": "hints",
   "static_recipients": [],
-  "content": {"mode": "suggested"}
+  "content": {"library_id": 3}
 }
 ```
 
-`content.mode` is `suggested` or `existing`. `suggested` creates a published company template from the event's minimal default, in the company's current theme, named after the event label, with a key such as `company.a1b2c3d4e5f6`, and links it. `existing` requires `content.template_id`. Optional `service` must match the event's owner service. Several rules on one event are allowed.
+`content.library_id` is a library template the company can see. email-service copies it onto the event and publishes the copy, named after the event label, with a key such as `company.a1b2c3d4e5f6`, the catalog subject and preheader in the rule language, and `{{ action_url }}` replaced by the event's `link_token`. The response `template_id` is that copy. Optional `service` must match the event's owner service. Several rules on one event are allowed, each with its own copy.
 
 `GET /api/v1/rules/{id}?company_id=42` returns one rule. Unknown id: `404 not_found`.
 
-`PATCH /api/v1/rules/{id}?company_id=42` accepts any of `enabled`, `recipient_mode`, `static_recipients`, `language`, `template_id`.
+`PATCH /api/v1/rules/{id}?company_id=42` accepts any of `enabled`, `recipient_mode`, `static_recipients`, `language`.
 
-`DELETE /api/v1/rules/{id}?company_id=42` returns `204`.
+`DELETE /api/v1/rules/{id}?company_id=42` returns `204` and deletes the rule's copy.
 
 | `error_code` | When |
 | --- | --- |
 | `event_unknown` | Unknown `event_type`, or `service` does not own it |
-| `template_not_found` | `content.template_id` or `template_id` is missing or not this company's template |
-| `template_variables_mismatch` | The template's `{{ token }}` values are not all available on the event. Body includes `missing_variables`. `system.*` tokens are ignored. `recipient_email` is always available. |
+| `library_not_found` | `content.library_id` is not a built-in or one of this company's templates |
 | `rule_built_in` | Delete, or `enabled: false`, on a built-in rule |
 | `language_not_available` | `language` is not `en` or `fr` for that event |
-| `validation_failed` | `content` missing or invalid, `recipient_mode` not `hints` or `static`, or `static_recipients` is not a list of addresses |
+| `validation_failed` | `content.library_id` missing (`field_errors.content: ["library_id_required"]`), `recipient_mode` not `hints` or `static`, or `static_recipients` is not a list of addresses |
 
-Built-in rules exist for every catalog event with `lane_class: auth` (`identity.auth.magic_link.requested` and `identity.user.invited` today). They are created on the first rules list or the first event for that company, and a second create is a no-op. They cannot be deleted or disabled. Their template content can be edited, and `template_id` can move to another compatible company template. `enabled: true` on a built-in rule is accepted. Other patch fields (`language`, `recipient_mode`, `static_recipients`) still apply.
+Built-in rules exist for every catalog event with `lane_class: auth` (`identity.auth.magic_link.requested` and `identity.user.invited` today). They are created on the first rules list or the first event for that company, and a second create is a no-op. They cannot be deleted or disabled. Their copy starts from the event's `default_template` and can be edited or started over from another library template. `enabled: true` on a built-in rule is accepted. Other patch fields (`language`, `recipient_mode`, `static_recipients`) still apply.
 
 ## Admin: templates
 
-Suggested copy is used until a company publishes a version.
+Company templates here are event copies, one per rule. Detail is in [templates.md](templates.md).
 
 | Method | Path | Result |
 | --- | --- | --- |
-| `GET` | `/api/v1/templates?company_id=` | Company template rows. Optional `event_type` keeps only templates whose `{{ token }}` values fit that event. Unknown event: `400 event_unknown`. |
-| `POST` | `/api/v1/templates?company_id=` | Body `template_key` (a catalog id), `language`. Creates a draft from the suggested document, named after the event, `event_type` set, theme set to the company theme. `201` `{id, template_key, language, draft_version}` |
-| `GET` | `/api/v1/templates/{id}` | Metadata, including `name`, `event_type`, `theme`, `uses_company_theme` |
-| `PATCH` | `/api/v1/templates/{id}` | `400` with `field_errors.template: ["use_versions"]` |
-| `DELETE` | `/api/v1/templates/{id}` | `204`. `409 template_in_use` when a rule points at it. Deleting a catalog-key override that no rule uses lets later direct sends use the suggested document again. |
-| `GET` | `/api/v1/templates/{id}/versions` | `{versions: [{number, state, subject, preheader, document, theme_name, theme_palette, published_at}]}` |
+| `GET` | `/api/v1/templates?company_id=` | Copies. Optional `event_type` keeps only copies whose `{{ token }}` values fit that event. Unknown event: `400 event_unknown`. |
+| `GET` | `/api/v1/templates/{id}` | One copy |
+| `DELETE` | `/api/v1/templates/{id}` | `204`. `409 template_in_use` when a rule points at it |
+| `GET` | `/api/v1/templates/{id}/versions` | `{versions: [{number, state, subject, preheader, document, published_at}]}` |
 | `GET` | `/api/v1/templates/{id}/versions/{number}` | One version, same fields |
-| `POST` | `/api/v1/templates/{id}/versions` | Body `subject`, `preheader`, `document`, optional `theme_name` and `theme_palette`. Omitted `theme_name` uses the company theme (`barebone` for a platform template). `201` `{number, state: "draft"}` |
-| `POST` | `/api/v1/templates/{id}/versions/{number}/publish` | Renders HTML in the stored theme, sets `active_version`. `{number, state, checksum}` |
-| `POST` | `/api/v1/templates/{id}/send-test` | Renders the draft in the body, or the latest unpublished version, and sends it to the admin's own JWT email |
-| `GET` | `/api/v1/templates/defaults?template_key=&languages=en,fr` | Suggested subject, preheader, document, variables |
+| `POST` | `/api/v1/templates/{id}/versions` | Body `subject`, `preheader`, `document`, or `library_id` to start over from a library template (the subject and preheader stay). Composes and stores HTML and text. `201` `{number, state: "draft"}` |
+| `POST` | `/api/v1/templates/{id}/versions/{number}/publish` | Runs the lane checks, sets `active_version`. `{number, state, checksum}` |
+| `POST` | `/api/v1/templates/{id}/send-test` | Sends the document in the body, or the latest draft, with catalog examples |
 
 List and detail items:
 
@@ -609,64 +569,51 @@ List and detail items:
   "template_key": "company.a1b2c3d4e5f6",
   "name": "Deployment failed",
   "event_type": "hosting.deployment.failed",
-  "language": "en",
+  "language": "",
   "company_id": 42,
   "active_version": 1,
-  "theme": "barebone",
-  "uses_company_theme": true
+  "source_key": "barebone.text-only",
+  "set": "barebone",
+  "head": "/* set CSS */"
 }
 ```
 
-`name` is plain text, max 120. Company templates created from a rule use a generated `company.<12 hex>` key. Catalog keys still work for `POST /api/v1/send` and for `POST /api/v1/templates`.
-
-`theme_name` is one of `barebone`, `matte`, `protocol`, `arcane`, `studio`. Anything else, including the old string `shellui`, is `400 theme_unknown`.
-
-`theme_palette` is either `{}` or all of these keys, each a `#RRGGBB` color: `background`, `foreground`, `muted`, `mutedForeground`, `primary`, `primaryForeground`, `border`. `{}` keeps the theme's own colors. A full palette replaces those color slots on top of the theme's fonts, spacing, and button shape. `primary` is the button accent. Any other shape is `400 validation_failed` with `theme_palette: ["invalid_color"]`. Publish and later sends apply the stored theme and palette, so the message matches the admin preview.
+`name` is plain text, max 120. `source_key` is the library template the copy came from, and `head` is the CSS of its `set`. Catalog keys still work for `POST /api/v1/send`.
 
 `POST /api/v1/templates/{id}/send-test` body, all optional:
 
 ```json
 {
-  "document": {"preview": "Short inbox preview", "blocks": []},
+  "document": {"type": "doc", "content": []},
   "subject": "Hello",
   "preheader": "",
-  "theme_palette": {},
-  "theme_name": "barebone"
+  "to": "ada@acme.com"
 }
 ```
 
-When `document` is present it is the draft being edited, including one that has not been saved as a version. When it is omitted, the highest-numbered `draft` version is rendered. No draft is `400` with `version: ["draft_required"]`. Catalog `example` values fill `{{ token }}` so the message is readable. A company owner can only send to the email on their JWT. Staff may set `to`. The response matches provider test-send: `status`, `provider`, `provider_message_id`.
+When `document` is present it is the draft being edited, including one that has not been saved as a version, and `subject` is required. When it is omitted, the highest-numbered `draft` version is sent. No draft is `400` with `version: ["draft_required"]`. Catalog `example` values fill `{{ token }}` so the message is readable. A company owner can only send to the email on their JWT. Staff may set `to`. The response matches provider test-send: `status`, `provider`, `provider_message_id`.
 
-`document` shape:
+`document` is React Email editor JSON (TipTap):
 
 ```json
 {
-  "preview": "Short inbox preview",
-  "blocks": [
-    {"type": "heading", "text": "Title"},
-    {"type": "text", "text": "Hello {{ company_name }}."},
-    {"type": "button", "text": "Open", "href": "{{ magic_link_url }}"},
+  "type": "doc",
+  "content": [
+    {"type": "heading", "attrs": {"level": 1}, "content": [{"type": "text", "text": "Title"}]},
     {
-      "type": "text",
-      "text": "Read the docs first.",
+      "type": "paragraph",
       "content": [
-        {"text": "Read "},
-        {"text": "the docs", "bold": true, "href": "https://shellui.com/docs"},
-        {"text": " first."}
+        {"type": "text", "text": "Read "},
+        {"type": "text", "text": "the docs", "marks": [{"type": "bold"}, {"type": "link", "attrs": {"href": "https://shellui.com/docs"}}]},
+        {"type": "text", "text": " first."}
       ]
     },
-    {"type": "list", "ordered": true, "items": [{"text": "Sign in"}, {"text": "Invite your team"}]},
-    {"type": "divider"},
-    {"type": "footer", "text": "Reference {{ system.message_id }}."}
+    {"type": "button", "attrs": {"href": "{{ magic_link_url }}"}, "content": [{"type": "text", "text": "Open"}]}
   ]
 }
 ```
 
-Placeholders are `{{ token }}` or `{{ token|default:"fallback" }}`. `{%` is rejected (`template_tags_forbidden`).
-
-Block types are `heading`, `text`, `button`, `footer`, `list`, and `divider`. Unknown types are skipped when rendering.
-
-`heading`, `text`, `footer`, and each `list` item take plain `text`. They may also take `content`, a list of inline runs `{"text", "bold"?, "italic"?, "underline"?, "href"?}`. When `content` is a list it is rendered instead of `text`, so keep `text` as the plain version. A `\n` in a run is a line break. An inline `href` must start with `https://`, `http://`, `mailto:`, `tel:`, or a `{{ token }}`. Other links render as plain text. `list` takes `items` and an optional `ordered` (numbered when `true`).
+Placeholders are `{{ token }}` or `{{ token|default:"fallback" }}`. `{%` is rejected (`template_tags_forbidden`). Allowed nodes and marks, link and image rules, and the size cap are in [templates.md](templates.md#document). A rejected document is `400 validation_failed` with `field_errors.document` set to `invalid`, `too_large`, `node_not_allowed`, `mark_not_allowed`, `unsafe_attribute`, `unsafe_link`, `unsafe_image`, or `render_failed`.
 
 ## Admin: stats
 

@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Membership changed in {{ display_name|default:\"a group\" }}",
-  "preheader": "Group membership changed.",
-  "document": {
-    "preview": "Group membership changed.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Group membership changed"
-      },
-      {
-        "type": "text",
-        "text": "Membership of {{ display_name|default:\"a group\" }} in {{ company_name|default:\"your company\" }} changed ({{ change|default:\"updated\" }})."
-      }
-    ]
-  }
+  "preheader": "Group membership changed."
 }

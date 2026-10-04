@@ -1,22 +1,4 @@
 {
   "subject": "[Shellui] Connexion à {{ company_name }}",
-  "preheader": "Votre lien de connexion pour {{ company_name }}.",
-  "document": {
-    "preview": "Votre lien de connexion pour {{ company_name }}.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Connexion à {{ company_name }}"
-      },
-      {
-        "type": "text",
-        "text": "Bonjour {{ recipient_name|default:\"\" }}, Utilisez le bouton ci-dessous pour vous connecter à {{ company_name }}. Le lien ne fonctionne qu'une fois et expire bientôt. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message."
-      },
-      {
-        "type": "button",
-        "text": "Se connecter",
-        "href": "{{ magic_link_url }}"
-      }
-    ]
-  }
+  "preheader": "Votre lien de connexion pour {{ company_name }}."
 }

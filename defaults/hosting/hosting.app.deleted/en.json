@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] {{ display_name|default:\"An app\" }} was removed",
-  "preheader": "A hosted app was deleted.",
-  "document": {
-    "preview": "A hosted app was deleted.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Hosted app removed"
-      },
-      {
-        "type": "text",
-        "text": "{{ display_name|default:\"An app\" }} ({{ name|default:\"app\" }}) and its deployments were removed from {{ company_name|default:\"your company\" }}."
-      }
-    ]
-  }
+  "preheader": "A hosted app was deleted."
 }

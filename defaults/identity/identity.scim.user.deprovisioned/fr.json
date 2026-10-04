@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Accès retiré pour {{ recipient_email|default:\"un utilisateur\" }}",
-  "preheader": "L'accès à l'entreprise a été désactivé.",
-  "document": {
-    "preview": "L'accès à l'entreprise a été désactivé.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Accès à l'entreprise désactivé"
-      },
-      {
-        "type": "text",
-        "text": "La synchronisation d'annuaire a désactivé l'accès de {{ recipient_email|default:\"un utilisateur\" }} à {{ company_name|default:\"votre entreprise\" }}. Le compte n'a pas été supprimé."
-      }
-    ]
-  }
+  "preheader": "L'accès à l'entreprise a été désactivé."
 }

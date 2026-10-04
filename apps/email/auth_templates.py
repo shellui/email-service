@@ -1,4 +1,4 @@
-"""Auth-lane template overrides must keep the catalog link and an allowlisted button."""
+"""Auth-lane copies must keep the catalog link, and every link must be a declared URL or an allowlisted host."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 
-from apps.email.blocks import document_runs
+from apps.email.document import links, texts
 from apps.email.rendering import document_tokens
 from apps.email.service import SendError
 from apps.email.substitution import TOKEN_RE, SubstitutionError, find_tokens, reject_template_tags
@@ -16,6 +16,8 @@ from apps.email.substitution import TOKEN_RE, SubstitutionError, find_tokens, re
 _LITERAL_LINK = re.compile(
     r'(?i)(?:\b(?:https?://|mailto:|tel:)[^\s<>"\']+|www\.[^\s<>"\']+|<\s*a\b|\bhref\s*=)'
 )
+# Auth mail has no unsubscribe or preferences page, so those system links stay empty.
+_AUTH_SYSTEM_LINKS = {'system.message_id'}
 
 
 def _required_url_tokens(definition: dict) -> set[str]:
@@ -43,8 +45,29 @@ def _literal_host_allowed(href: str) -> bool:
     return bool(host) and host in allowed
 
 
+def _link_error(definition: dict, href: str) -> str | None:
+    try:
+        reject_template_tags(href)
+    except SubstitutionError:
+        return 'template_tags_forbidden'
+    href_tokens = find_tokens(href)
+    allowed_tokens = _declared_url_tokens(definition) | _AUTH_SYSTEM_LINKS
+    if any(token not in allowed_tokens for token in href_tokens):
+        return 'token_not_allowed'
+    leftover = TOKEN_RE.sub('', href).strip()
+    if not href_tokens and not leftover:
+        return 'required'
+    if leftover and not _literal_host_allowed(leftover):
+        return 'host_not_allowed'
+    return None
+
+
+def auth_link_allowed(definition: dict, href: str) -> bool:
+    return _link_error(definition, href) is None
+
+
 def validate_auth_template(definition: dict, document: dict, subject: str, preheader: str) -> None:
-    """Reject an auth override that drops the sign-in link or points a button elsewhere."""
+    """Reject an auth copy that drops the sign-in link or links anywhere else."""
     if not definition or definition.get('lane_class') != 'auth':
         return
     try:
@@ -54,54 +77,27 @@ def validate_auth_template(definition: dict, document: dict, subject: str, prehe
     missing = sorted(_required_url_tokens(definition) - tokens)
     if missing:
         raise SendError(400, 'auth_link_missing', {token: ['required'] for token in missing})
-    allowed_tokens = _declared_url_tokens(definition)
-    for block in document.get('blocks') or []:
-        if isinstance(block, dict) and block.get('type') == 'button':
-            _check_link(str(block.get('href') or ''), allowed_tokens)
-    for run in document_runs(document):
-        if str(run.get('href') or '').strip():
-            _check_link(str(run.get('href')), allowed_tokens)
+    for href in links(document):
+        error = _link_error(definition, href)
+        if error == 'template_tags_forbidden':
+            raise SendError(400, 'validation_failed', {'document': [error]})
+        if error:
+            raise SendError(400, 'auth_link_host_not_allowed', {'href': [error]})
     _reject_literal_links(definition, document, subject, preheader)
-
-
-def _check_link(href: str, allowed_tokens: set[str]) -> None:
-    try:
-        reject_template_tags(href)
-    except SubstitutionError as exc:
-        raise SendError(400, 'validation_failed', {'document': [exc.code]}) from exc
-    href_tokens = find_tokens(href)
-    unknown = sorted(token for token in href_tokens if token not in allowed_tokens and not token.startswith('system.'))
-    if unknown:
-        raise SendError(400, 'auth_link_host_not_allowed', {'href': ['token_not_allowed']})
-    leftover = TOKEN_RE.sub('', href).strip()
-    if not href_tokens and not leftover:
-        raise SendError(400, 'auth_link_host_not_allowed', {'href': ['required']})
-    if leftover and not _literal_host_allowed(leftover):
-        raise SendError(400, 'auth_link_host_not_allowed', {'href': ['host_not_allowed']})
 
 
 def _prose_without_allowed_tokens(text: str, allowed_tokens: set[str]) -> str:
     def replace(match: re.Match) -> str:
-        token = match.group(1)
-        if token in allowed_tokens:
-            return ''
-        return match.group(0)
+        return '' if match.group(1) in allowed_tokens else match.group(0)
 
     return TOKEN_RE.sub(replace, text or '')
 
 
 def _reject_literal_links(definition: dict, document: dict, subject: str, preheader: str) -> None:
     allowed = _required_url_tokens(definition)
-    fields = (
-        ('subject', subject),
-        ('preheader', preheader),
-        ('preview', str(document.get('preview') or '')),
-    )
-    for name, value in fields:
+    for name, value in (('subject', subject), ('preheader', preheader)):
         if _LITERAL_LINK.search(_prose_without_allowed_tokens(value, allowed)):
             raise SendError(400, 'auth_literal_link', {name: ['literal_url']})
-    prose = [str(block.get('text') or '') for block in document.get('blocks') or [] if isinstance(block, dict)]
-    prose += [str(run.get('text') or '') for run in document_runs(document)]
-    for text in prose:
+    for text in texts(document):
         if _LITERAL_LINK.search(_prose_without_allowed_tokens(text, allowed)):
             raise SendError(400, 'auth_literal_link', {'document': ['literal_url']})

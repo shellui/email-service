@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Accès activé pour {{ recipient_email|default:\"un utilisateur\" }}",
-  "preheader": "L'accès à l'entreprise a été activé depuis l'annuaire.",
-  "document": {
-    "preview": "L'accès à l'entreprise a été activé depuis l'annuaire.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Accès à l'entreprise activé"
-      },
-      {
-        "type": "text",
-        "text": "{{ recipient_email|default:\"Un utilisateur\" }} a maintenant accès à {{ company_name|default:\"votre entreprise\" }} (source : {{ source|default:\"scim\" }})."
-      }
-    ]
-  }
+  "preheader": "L'accès à l'entreprise a été activé depuis l'annuaire."
 }

@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] Profil mis à jour",
-  "preheader": "Les informations du compte ont changé.",
-  "document": {
-    "preview": "Les informations du compte ont changé.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Profil mis à jour"
-      },
-      {
-        "type": "text",
-        "text": "Le profil de {{ recipient_email|default:\"un utilisateur\" }} dans {{ company_name|default:\"votre entreprise\" }} a été mis à jour. Champs : {{ changed_fields|default:\"profil\" }}."
-      }
-    ]
-  }
+  "preheader": "Les informations du compte ont changé."
 }

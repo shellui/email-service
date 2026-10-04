@@ -1,17 +1,4 @@
 {
   "subject": "[Shellui] L'invitation à {{ company_name }} a été révoquée",
-  "preheader": "Cette invitation n'est plus valable.",
-  "document": {
-    "preview": "Cette invitation n'est plus valable.",
-    "blocks": [
-      {
-        "type": "heading",
-        "text": "Invitation révoquée"
-      },
-      {
-        "type": "text",
-        "text": "L'invitation de {{ recipient_email|default:\"vous\" }} à rejoindre {{ company_name }} a été révoquée. La connexion avec cette invitation sera refusée tant qu'une nouvelle invitation n'aura pas été envoyée."
-      }
-    ]
-  }
+  "preheader": "Cette invitation n'est plus valable."
 }

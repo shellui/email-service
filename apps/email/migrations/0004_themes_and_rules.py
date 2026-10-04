@@ -48,7 +48,7 @@ def _copy_enabled_rules(apps, schema_editor):
         else:
             subject = pack['subject']
             preheader = pack.get('preheader') or ''
-            document = pack['document']
+            document = pack.get('document') or {'preview': '', 'blocks': []}
             theme_name = 'barebone'
             palette = {}
         label = definition['label'] if definition else rule.event_type

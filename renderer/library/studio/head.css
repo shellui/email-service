@@ -1,0 +1,76 @@
+@media (max-width:600px){.mobile_imprtntblock{display:block!important}}
+@media (max-width:600px){.mobile_imprtntw-full{width:100%!important}}
+@media (max-width:600px){.mobile_imprtntmax-w-full{max-width:100%!important}}
+@media (max-width:600px){.mobile_px-4{padding-right:1rem!important;padding-left:1rem!important}}
+@media (max-width:600px){.mobile_px-6{padding-right:1.5rem!important;padding-left:1.5rem!important}}
+@font-face {
+      font-family: 'Geist';
+      font-style: normal;
+      font-weight: 400;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/geist/v4/gyByhwUxId8gMEwcGFU.woff2) format('woff2');
+    }
+* {
+      font-family: 'Geist', Arial, sans-serif;
+    }
+@font-face {
+      font-family: 'Geist';
+      font-style: normal;
+      font-weight: 450;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/geist/v4/gyByhwUxId8gMEwcGFU.woff2) format('woff2');
+    }
+@font-face {
+      font-family: 'Geist';
+      font-style: normal;
+      font-weight: 500;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/geist/v4/gyByhwUxId8gMEwcGFU.woff2) format('woff2');
+    }
+@font-face {
+      font-family: 'Geist';
+      font-style: normal;
+      font-weight: 600;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/geist/v4/gyByhwUxId8gMEwcGFU.woff2) format('woff2');
+    }
+@font-face {
+      font-family: 'Geist';
+      font-style: normal;
+      font-weight: 700;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/geist/v4/gyByhwUxId8gMEwcGFU.woff2) format('woff2');
+    }
+@font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 400;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuOKfMZg.ttf) format('truetype');
+    }
+* {
+      font-family: 'Inter', Arial, sans-serif;
+    }
+@font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 450;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuOKfMZg.ttf) format('truetype');
+    }
+@font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 500;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuI6fMZg.ttf) format('truetype');
+    }
+@font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 600;
+      mso-font-alt: 'Arial';
+      src: url(https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuGKYMZg.ttf) format('truetype');
+    }
+@media (max-width:600px){.mobile_px-0{padding-right:0px!important;padding-left:0px!important}}
+@media (max-width:600px){.mobile_px-2{padding-right:0.5rem!important;padding-left:0.5rem!important}}
