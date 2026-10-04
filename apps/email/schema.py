@@ -222,8 +222,16 @@ class LibraryVariableSerializer(serializers.Serializer):
     is_url = serializers.BooleanField()
 
 
+THEME_HELP = (
+    'Colors that repaint a library design: {name, label, colors: {role: "#rrggbb"}}. '
+    'Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. '
+    '{} keeps the design\'s own colors.'
+)
+
+
 class LibraryDetailSerializer(LibrarySummarySerializer):
     document = serializers.JSONField()
+    theme = serializers.JSONField(help_text=THEME_HELP + ' Copies made from this template start with it.')
     text = serializers.CharField(allow_blank=True)
     head = serializers.CharField(allow_blank=True)
     variables = LibraryVariableSerializer(many=True)
@@ -235,6 +243,7 @@ class LibraryWriteSerializer(serializers.Serializer):
     subject = serializers.CharField(required=False, allow_blank=True)
     preheader = serializers.CharField(required=False, allow_blank=True)
     document = serializers.JSONField(required=False)
+    theme = serializers.JSONField(required=False, help_text=THEME_HELP + ' A duplicate keeps its source\'s when omitted.')
 
 
 class TemplateSummarySerializer(serializers.Serializer):
@@ -263,6 +272,7 @@ class TemplateVersionSerializer(serializers.Serializer):
     translations = serializers.JSONField(
         help_text='Other languages: {lang: {subject, preheader, blocks: {textId: {content, source}}}}. Same layout as document.',
     )
+    theme = serializers.JSONField(help_text=THEME_HELP)
     published_at = serializers.CharField(allow_null=True)
 
 
@@ -277,6 +287,10 @@ class TemplateVersionCreateRequestSerializer(serializers.Serializer):
     translations = serializers.JSONField(
         required=False,
         help_text='Other languages of the copy. Kept from the latest version when omitted; a start over keeps their subjects only.',
+    )
+    theme = serializers.JSONField(
+        required=False,
+        help_text=THEME_HELP + ' Kept from the latest version when omitted. A start over takes the library template\'s, if it has one.',
     )
     library_id = serializers.IntegerField(
         required=False,
@@ -300,6 +314,7 @@ class TemplateTestSendRequestSerializer(serializers.Serializer):
     subject = serializers.CharField(required=False)
     preheader = serializers.CharField(required=False, allow_blank=True)
     document = serializers.JSONField(required=False)
+    theme = serializers.JSONField(required=False, help_text=THEME_HELP + ' Used with document.')
 
 
 class TestSendResponseSerializer(serializers.Serializer):
@@ -310,6 +325,10 @@ class TestSendResponseSerializer(serializers.Serializer):
 
 class EmailRuleContentSerializer(serializers.Serializer):
     library_id = serializers.IntegerField(help_text='Library template the event copy starts from.')
+    theme = serializers.JSONField(
+        required=False,
+        help_text=THEME_HELP + ' Used when the library template has none.',
+    )
 
 
 class EmailRuleSerializer(serializers.Serializer):

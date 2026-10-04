@@ -17,6 +17,7 @@ Notable changes to this project. Format: [Keep a Changelog](https://keepachangel
 - New settings `EMAIL_PUBLIC_URL`, `EMAIL_NODE_BINARY`, `EMAIL_COMPOSE_TIMEOUT_SECONDS`, `EMAIL_MAX_DOCUMENT_BYTES`. React is pinned to 18.3.1 to match the admin preview.
 - `{{ token|default:"…" }}` substitutes in composed HTML, where React Email writes the quotes as `&quot;`.
 - Template versions carry `translations`: per language, a subject, a preheader, and the text of blocks matched by `attrs.textId`, over one shared layout. Every language is validated, composed on save, and checked on publish. Sends use the send language's translation, falling back to the main text block by block. Migration `0006_template_translations`.
+- Email themes: library design colors are stored as theme roles (`var(--email-<role>,<original>)`, see `apps/email/theming.py`). Template versions and company library templates carry `theme` (`{name, label, colors}` or `{}`), and composing resolves the roles to the theme's colors or the originals, so sent HTML is unchanged without a theme. `POST /api/v1/rules` takes `content.theme`, used when the library template has none. Versions keep the latest theme when `theme` is omitted. Send-test takes `theme` with a document. Migration `0007_email_themes` tokenizes existing rows and copies.
 
 ### Removed
 

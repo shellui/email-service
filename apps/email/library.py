@@ -16,6 +16,7 @@ from apps.email.models import LibraryTemplate
 from apps.email.rendering import compose, compose_many, document_tokens
 from apps.email.service import SendError
 from apps.email.substitution import SubstitutionError
+from apps.email.theming import clean_theme, theme_colors, tokenize
 
 logger = logging.getLogger(__name__)
 
@@ -48,16 +49,21 @@ def set_head(set_key: str) -> str:
 
 
 def seed_files() -> list[dict]:
+    """The built-in designs, their colors tokenized as theme roles."""
     seeds = []
     for set_key, _name in SETS:
         folder = library_dir() / set_key
         for path in sorted(folder.glob('*.json')):
-            seeds.append(json.loads(path.read_text(encoding='utf-8')))
+            seed = json.loads(path.read_text(encoding='utf-8'))
+            seed['document'] = tokenize(seed['document'], seed['set'])
+            seeds.append(seed)
     return seeds
 
 
 def compose_library(row: LibraryTemplate) -> None:
-    row.html, row.text = compose(row.document, head=set_head(row.set), preheader=row.preheader)
+    row.html, row.text = compose(
+        row.document, head=set_head(row.set), preheader=row.preheader, colors=theme_colors(row.theme)
+    )
 
 
 def sync_builtins() -> int:
@@ -145,6 +151,7 @@ def library_detail(row: LibraryTemplate) -> dict:
     payload.update(
         {
             'document': row.document,
+            'theme': row.theme or {},
             'text': row.text,
             'head': set_head(row.set),
             'variables': LIBRARY_VARIABLES,
@@ -193,6 +200,7 @@ def create_library_template(company_id: int, data: dict) -> LibraryTemplate:
         subject=subject,
         preheader=preheader,
         document=document,
+        theme=clean_theme(data.get('theme')) if 'theme' in data else (source.theme if source else {}),
     )
     compose_library(row)
     with transaction.atomic():
@@ -213,6 +221,8 @@ def update_library_template(row: LibraryTemplate, data: dict) -> LibraryTemplate
     row.subject, row.preheader, row.document = _content(
         data, subject=row.subject, preheader=row.preheader, document=row.document
     )
+    if 'theme' in data:
+        row.theme = clean_theme(data.get('theme'))
     compose_library(row)
     row.save()
     return row

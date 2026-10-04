@@ -62,6 +62,8 @@ class LibraryTemplate(models.Model):
     subject = models.CharField(max_length=255, blank=True)
     preheader = models.CharField(max_length=255, blank=True)
     document = models.JSONField(default=dict)
+    # See ``apps.email.theming``. Copies made from this template start with it.
+    theme = models.JSONField(default=dict, blank=True)
     html = models.TextField(blank=True)
     text = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -107,6 +109,8 @@ class TemplateVersion(models.Model):
     # Other languages, see ``apps.email.translations``. ``rendered`` maps each to its ``html`` and ``text``.
     translations = models.JSONField(default=dict, blank=True)
     rendered = models.JSONField(default=dict, blank=True)
+    # See ``apps.email.theming``. Every language composes with it.
+    theme = models.JSONField(default=dict, blank=True)
     renderer_version = models.CharField(max_length=32, blank=True)
     checksum = models.CharField(max_length=64, blank=True)
     created_by_user_id = models.PositiveIntegerField(null=True, blank=True)

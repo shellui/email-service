@@ -43,11 +43,12 @@ Rendered bodies are not stored on the message and are not returned by status API
 
 - the library document, with `{{ action_url }}` replaced by the event's link variable (or `https://example.com` when the event has none);
 - on auth-lane events, only the links the auth checks accept (see [security.md](security.md#links-in-auth-mail)), so the copy publishes as is;
-- the catalog subject and preheader in the rule's language (English when the rule has none).
+- the catalog subject and preheader in the rule's language (English when the rule has none);
+- the library template's [theme](#themes), or else `content.theme` (the admin sends the user's current Shellui theme).
 
-`POST /api/v1/templates/{id}/versions` adds a draft. Send `subject`, `preheader`, `document`, and optionally `translations` (see below; omitted, the latest version's are kept), or `library_id` to start over from another library template: the document is replaced (adapted to the event the same way), the subject and preheader stay, and translations keep only their subject and preheader. The copy's `source_key` and `set` follow the new template. `201` `{number, state: "draft"}`.
+`POST /api/v1/templates/{id}/versions` adds a draft. Send `subject`, `preheader`, `document`, and optionally `translations` (see below) and `theme` (omitted, the latest version's are kept), or `library_id` to start over from another library template: the document is replaced (adapted to the event the same way), the subject and preheader stay, translations keep only their subject and preheader, and the theme becomes the new template's when it has one. The copy's `source_key` and `set` follow the new template. `201` `{number, state: "draft"}`.
 
-`GET /api/v1/templates/{id}/versions` and `GET /api/v1/templates/{id}/versions/{number}` return `{number, state, subject, preheader, document, translations, published_at}`. `POST /api/v1/templates/{id}/versions/{number}/publish` runs the lane checks on every language and sets `active_version`.
+`GET /api/v1/templates/{id}/versions` and `GET /api/v1/templates/{id}/versions/{number}` return `{number, state, subject, preheader, document, translations, theme, published_at}`. `POST /api/v1/templates/{id}/versions/{number}/publish` runs the lane checks on every language and sets `active_version`.
 
 ## Languages
 
@@ -65,7 +66,19 @@ A copy is one layout with text per language. `document`, `subject`, and `prehead
 
 The admin edits every language in the same editor and publishes them together. Translators, or an AI pass later, only need `translations`: the block ids and main texts are in `document`.
 
-`POST /api/v1/templates/{id}/send-test` sends the posted `subject`, `preheader`, and `document` (composed on the fly) or, without a document, the latest draft, to the caller or to `to` for staff.
+## Themes
+
+A theme repaints a library design with a Shellui theme's colors. The built-in designs keep their colors inline, and `apps/email/theming.py` maps each color of a set to a role: `background`, `foreground`, `card`, `muted`, `muted_foreground`, `primary`, `primary_foreground`, `border`. Library sync (and migration `0007` for existing rows and copies) rewrites those colors as CSS variables that keep the original as fallback:
+
+```text
+color:rgb(20,23,30)  becomes  color:var(--email-foreground,rgb(20,23,30))
+```
+
+A theme is `{"name": "ocean", "label": "Ocean", "colors": {"primary": "#0a66c2", …}}` with `#rrggbb` colors for any of the roles, or `{}` for the design's own colors. Anything else is `400 validation_failed` with `field_errors.theme`. It is stored on the version and every language composes with it. Composing always replaces the variables, by the theme's color or the fallback, so stored and sent HTML never holds `var()`.
+
+The admin lists "Template colors" and every theme of Settings > Appearance, using each theme's light colors. Switching sets the variables on the editor canvas, so the design repaints live, and the preview composes with the theme. A design without roles (a blank template, or colors the map does not know) is unaffected.
+
+`POST /api/v1/templates/{id}/send-test` sends the posted `subject`, `preheader`, `document`, and `theme` (composed on the fly) or, without a document, the latest draft, to the caller or to `to` for staff.
 
 `GET /api/v1/templates?event_type=` lists the company's copies, optionally only those whose tokens fit that event. Every `{{ token }}` must be declared on the event, or be `recipient_email`, or start with `system.`. List and detail items carry `name`, `event_type`, `language`, `active_version`, `source_key`, `set`, and `head`.
 

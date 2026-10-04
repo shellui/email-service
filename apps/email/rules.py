@@ -14,6 +14,7 @@ from apps.email.models import EmailRule, EmailTemplate, LibraryTemplate, Templat
 from apps.email.rendering import RENDERER_VERSION, checksum, compose, compose_many, document_tokens
 from apps.email.service import SendError
 from apps.email.substitution import SubstitutionError
+from apps.email.theming import clean_theme, theme_colors
 from apps.email.translations import clean_translations, variants
 
 ALWAYS_AVAILABLE = {'recipient_email'}
@@ -124,7 +125,10 @@ def _version_checksum(version: TemplateVersion) -> str:
 def _render_variants(template: EmailTemplate, version: TemplateVersion, definition: dict | None) -> None:
     rows = list(_version_variants(definition, version))
     head = set_head(template.set)
-    outputs = compose_many([{'document': document, 'head': head, 'preheader': preheader} for _, document, _, preheader in rows])
+    colors = theme_colors(version.theme)
+    outputs = compose_many(
+        [{'document': document, 'head': head, 'preheader': preheader, 'colors': colors} for _, document, _, preheader in rows]
+    )
     version.html, version.text = outputs[0]
     version.rendered = {language: {'html': html, 'text': text} for (language, *_), (html, text) in zip(rows[1:], outputs[1:])}
     version.renderer_version = RENDERER_VERSION
@@ -169,6 +173,7 @@ def create_version(
     subject: str,
     preheader: str,
     translations=None,
+    theme=None,
     user_id: int | None = None,
 ) -> TemplateVersion:
     """Validate, compose, and store a draft in every language. The stored HTML is what publishing sends."""
@@ -183,6 +188,7 @@ def create_version(
         preheader=preheader[:255],
         document=_validated_content(definition, document, subject, preheader),
         translations=clean_translations(translations, template.language),
+        theme=clean_theme(theme),
         created_by_user_id=user_id,
     )
     for language, localized, localized_subject, localized_preheader in list(_version_variants(definition, version))[1:]:
@@ -214,8 +220,10 @@ def create_copy(
     source: LibraryTemplate,
     definition: dict,
     language: str,
+    theme=None,
     user_id: int | None = None,
 ) -> EmailTemplate:
+    """A published copy of ``source``. It keeps the source's theme, or else takes ``theme``."""
     pack = _suggested(definition, language)
     template = EmailTemplate.objects.create(
         template_key='company.' + secrets.token_hex(6),
@@ -231,6 +239,7 @@ def create_copy(
         document=adapt_to_event(source.document, definition),
         subject=pack['subject'],
         preheader=pack.get('preheader') or '',
+        theme=source.theme or theme,
         user_id=user_id,
     )
     publish_version(template, version)
@@ -327,12 +336,14 @@ def create_rule(company_id: int, data: dict, *, user_id: int | None = None) -> E
     if not isinstance(content, dict) or content.get('library_id') in (None, ''):
         raise SendError(400, 'validation_failed', {'content': ['library_id_required']})
     source = library_template(company_id, content.get('library_id'))
+    theme = clean_theme(content.get('theme'))
     with transaction.atomic():
         template = create_copy(
             company_id=company_id,
             source=source,
             definition=definition,
             language=language or 'en',
+            theme=theme,
             user_id=user_id,
         )
         return EmailRule.objects.create(

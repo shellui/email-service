@@ -34,6 +34,8 @@ A company template is a library row with `built_in: false` and the company's `co
 
 Company templates are visible only to their company. Deleting one does not touch the event copies made from it.
 
+A company template can save a [theme](templates.md#themes). Its HTML is composed with it, duplicates keep it, and event copies made from it start with it. Built-ins have none.
+
 ## Endpoints
 
 Auth: staff or company owner, `company_id` query or the company on the JWT.
@@ -62,7 +64,7 @@ Auth: staff or company owner, `company_id` query or the company on the JWT.
 
 `html` is the composed email with placeholders intact, for previews in a sandboxed iframe.
 
-`GET /api/v1/library/{id}?company_id=42` adds `document`, `text`, `head` (the set's CSS, read-only), and `variables` (`company_name` and `action_url`, the only tokens a library design uses).
+`GET /api/v1/library/{id}?company_id=42` adds `document`, `theme` (`{}` when none), `text`, `head` (the set's CSS, read-only), and `variables` (`company_name` and `action_url`, the only tokens a library design uses).
 
 `POST /api/v1/library?company_id=42` creates a company template and returns it at `201` with the detail shape:
 
@@ -70,9 +72,9 @@ Auth: staff or company owner, `company_id` query or the company on the JWT.
 {"name": "Acme welcome", "source_id": 3}
 ```
 
-All fields are optional except that a blank template needs `name`. With `source_id`, an omitted `name` becomes the source name plus ` copy`. `subject`, `preheader`, and `document` override the source.
+All fields are optional except that a blank template needs `name`. With `source_id`, an omitted `name` becomes the source name plus ` copy`. `subject`, `preheader`, `document`, and `theme` override the source.
 
-`PUT /api/v1/library/{id}?company_id=42` updates `name`, `subject`, `preheader`, or `document` and recomposes the HTML.
+`PUT /api/v1/library/{id}?company_id=42` updates `name`, `subject`, `preheader`, `document`, or `theme` and recomposes the HTML.
 
 `DELETE /api/v1/library/{id}?company_id=42` returns `204`.
 

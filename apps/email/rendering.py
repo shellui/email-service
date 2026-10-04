@@ -11,6 +11,7 @@ from django.conf import settings
 
 from apps.email.service import SendError
 from apps.email.substitution import find_tokens, reject_template_tags
+from apps.email.theming import resolve
 
 RENDERER_VERSION = 'react-email-editor-1'
 
@@ -51,7 +52,14 @@ def _run_node(items: list[dict]) -> list[tuple[str, str]]:
 
 
 def compose_many(items: list[dict]) -> list[tuple[str, str]]:
-    """``items`` are ``{document, head, preheader}``. Returns ``(html, text)`` in the same order."""
+    """``items`` are ``{document, head, preheader, colors?}``. Returns ``(html, text)`` in the same order.
+
+    ``colors`` are the theme's, see ``apps.email.theming``. Without them a design keeps its own.
+    """
+    items = [
+        {'document': resolve(item['document'], item.get('colors')), 'head': item['head'], 'preheader': item['preheader']}
+        for item in items
+    ]
     keys = [_cache_key(item) for item in items]
     pending = [index for index, key in enumerate(keys) if key not in _cache]
     if pending:
@@ -63,8 +71,8 @@ def compose_many(items: list[dict]) -> list[tuple[str, str]]:
     return [_cache[key] for key in keys]
 
 
-def compose(document: dict, *, head: str = '', preheader: str = '') -> tuple[str, str]:
-    return compose_many([{'document': document, 'head': head, 'preheader': preheader}])[0]
+def compose(document: dict, *, head: str = '', preheader: str = '', colors: dict | None = None) -> tuple[str, str]:
+    return compose_many([{'document': document, 'head': head, 'preheader': preheader, 'colors': colors}])[0]
 
 
 def checksum(subject: str, html: str, text: str) -> str:

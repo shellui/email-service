@@ -118,6 +118,7 @@ from apps.email.service import (
 )
 from apps.email.stats import company_stats
 from apps.email.substitution import SubstitutionError, substitute
+from apps.email.theming import clean_theme, theme_colors
 from apps.email.translations import translated_inbox
 from apps.providers.registry import ACTIVE_PROVIDER_NAMES
 from apps.providers.webhooks import verify_svix
@@ -558,6 +559,7 @@ def _version_payload(version: TemplateVersion) -> dict:
         'preheader': version.preheader,
         'document': version.document,
         'translations': version.translations or {},
+        'theme': version.theme or {},
         'published_at': published_at,
     }
 
@@ -591,12 +593,14 @@ class TemplateVersionListView(APIView):
             subject = str(data.get('subject') or (latest.subject if latest else ''))
             preheader = str(data['preheader'] or '') if 'preheader' in data else (latest.preheader if latest else '')
             translations = data['translations'] if 'translations' in data else (latest.translations if latest else {})
+            theme = data['theme'] if 'theme' in data else (latest.theme if latest else {})
             if data.get('library_id') not in (None, ''):
                 source = library_template(template.company_id, data.get('library_id'))
                 document = library_document_for(template, source)
                 template.source_key = source.key
                 template.set = source.set
                 translations = translated_inbox(translations)
+                theme = source.theme or theme
             else:
                 document = data.get('document')
                 if not isinstance(document, dict):
@@ -607,6 +611,7 @@ class TemplateVersionListView(APIView):
                 subject=subject,
                 preheader=preheader,
                 translations=translations,
+                theme=theme,
                 user_id=getattr(request.user, 'user_id', None),
             )
             template.save(update_fields=['source_key', 'set'])
@@ -701,14 +706,20 @@ class TemplateTestSendView(APIView):
                     raise SendError(400, 'validation_failed', {'subject': ['required']})
                 document = validate_document(request.data.get('document'))
                 document_tokens(document, subject, preheader)
-                html, text = compose(document, head=set_head(template.set), preheader=preheader)
+                colors = theme_colors(clean_theme(request.data.get('theme')))
+                html, text = compose(document, head=set_head(template.set), preheader=preheader, colors=colors)
             else:
                 draft = template.versions.filter(state=TemplateVersion.STATE_DRAFT).order_by('-number').first()
                 if draft is None:
                     raise SendError(400, 'validation_failed', {'version': ['draft_required']})
                 subject, html, text = draft.subject, draft.html, draft.text
                 if not html:
-                    html, text = compose(draft.document, head=set_head(template.set), preheader=draft.preheader)
+                    html, text = compose(
+                        draft.document,
+                        head=set_head(template.set),
+                        preheader=draft.preheader,
+                        colors=theme_colors(draft.theme),
+                    )
             definition = get_definition(template.event_type or '')
             variables = _example_variables(definition)
             if not definition or definition.get('lane_class') != 'auth':
