@@ -28,7 +28,7 @@ When `DEBUG=false`, `SECURE_SSL_REDIRECT`, HSTS (one year), and secure session a
 
 ## Links in auth mail
 
-`magic_link_url` must use `https` and a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false` that list cannot include `localhost`, `127.0.0.1`, or `::1`. Other URL variables must be `https`, `mailto`, or `tel`. An auth-lane company override must keep the required link variable, and every button `href` must be that variable or an allowlisted `https` host. Subject, preheader, preview, heading, text, footer, and the button label cannot contain a literal URL (`auth_literal_link`). The required link variable is the only link allowed in that prose.
+`magic_link_url` must use `https` and a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false` that list cannot include `localhost`, `127.0.0.1`, or `::1`. Other URL variables must be `https`, `mailto`, or `tel`. An auth-lane company override must keep the required link variable, and every button `href` and inline link `href` must be that variable or an allowlisted `https` host. Subject, preheader, preview, heading, text, footer, list items, and the button label cannot contain a literal URL (`auth_literal_link`). The check reads the inline runs that are rendered, not only the plain `text`. The required link variable is the only link allowed in that prose.
 
 ## Webhook targets
 

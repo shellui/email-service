@@ -646,12 +646,27 @@ When `document` is present it is the draft being edited, including one that has 
     {"type": "heading", "text": "Title"},
     {"type": "text", "text": "Hello {{ company_name }}."},
     {"type": "button", "text": "Open", "href": "{{ magic_link_url }}"},
+    {
+      "type": "text",
+      "text": "Read the docs first.",
+      "content": [
+        {"text": "Read "},
+        {"text": "the docs", "bold": true, "href": "https://shellui.com/docs"},
+        {"text": " first."}
+      ]
+    },
+    {"type": "list", "ordered": true, "items": [{"text": "Sign in"}, {"text": "Invite your team"}]},
+    {"type": "divider"},
     {"type": "footer", "text": "Reference {{ system.message_id }}."}
   ]
 }
 ```
 
 Placeholders are `{{ token }}` or `{{ token|default:"fallback" }}`. `{%` is rejected (`template_tags_forbidden`).
+
+Block types are `heading`, `text`, `button`, `footer`, `list`, and `divider`. Unknown types are skipped when rendering.
+
+`heading`, `text`, `footer`, and each `list` item take plain `text`. They may also take `content`, a list of inline runs `{"text", "bold"?, "italic"?, "underline"?, "href"?}`. When `content` is a list it is rendered instead of `text`, so keep `text` as the plain version. A `\n` in a run is a line break. An inline `href` must start with `https://`, `http://`, `mailto:`, `tel:`, or a `{{ token }}`. Other links render as plain text. `list` takes `items` and an optional `ordered` (numbered when `true`).
 
 ## Admin: stats
 

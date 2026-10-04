@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 
+from apps.email.blocks import document_runs
 from apps.email.rendering import document_tokens
 from apps.email.service import SendError
 from apps.email.substitution import TOKEN_RE, SubstitutionError, find_tokens, reject_template_tags
@@ -55,23 +56,28 @@ def validate_auth_template(definition: dict, document: dict, subject: str, prehe
         raise SendError(400, 'auth_link_missing', {token: ['required'] for token in missing})
     allowed_tokens = _declared_url_tokens(definition)
     for block in document.get('blocks') or []:
-        if block.get('type') != 'button':
-            continue
-        href = str(block.get('href') or '')
-        try:
-            reject_template_tags(href)
-        except SubstitutionError as exc:
-            raise SendError(400, 'validation_failed', {'document': [exc.code]}) from exc
-        href_tokens = find_tokens(href)
-        unknown = sorted(token for token in href_tokens if token not in allowed_tokens and not token.startswith('system.'))
-        if unknown:
-            raise SendError(400, 'auth_link_host_not_allowed', {'href': ['token_not_allowed']})
-        leftover = TOKEN_RE.sub('', href).strip()
-        if not href_tokens and not leftover:
-            raise SendError(400, 'auth_link_host_not_allowed', {'href': ['required']})
-        if leftover and not _literal_host_allowed(leftover):
-            raise SendError(400, 'auth_link_host_not_allowed', {'href': ['host_not_allowed']})
+        if isinstance(block, dict) and block.get('type') == 'button':
+            _check_link(str(block.get('href') or ''), allowed_tokens)
+    for run in document_runs(document):
+        if str(run.get('href') or '').strip():
+            _check_link(str(run.get('href')), allowed_tokens)
     _reject_literal_links(definition, document, subject, preheader)
+
+
+def _check_link(href: str, allowed_tokens: set[str]) -> None:
+    try:
+        reject_template_tags(href)
+    except SubstitutionError as exc:
+        raise SendError(400, 'validation_failed', {'document': [exc.code]}) from exc
+    href_tokens = find_tokens(href)
+    unknown = sorted(token for token in href_tokens if token not in allowed_tokens and not token.startswith('system.'))
+    if unknown:
+        raise SendError(400, 'auth_link_host_not_allowed', {'href': ['token_not_allowed']})
+    leftover = TOKEN_RE.sub('', href).strip()
+    if not href_tokens and not leftover:
+        raise SendError(400, 'auth_link_host_not_allowed', {'href': ['required']})
+    if leftover and not _literal_host_allowed(leftover):
+        raise SendError(400, 'auth_link_host_not_allowed', {'href': ['host_not_allowed']})
 
 
 def _prose_without_allowed_tokens(text: str, allowed_tokens: set[str]) -> str:
@@ -94,13 +100,8 @@ def _reject_literal_links(definition: dict, document: dict, subject: str, prehea
     for name, value in fields:
         if _LITERAL_LINK.search(_prose_without_allowed_tokens(value, allowed)):
             raise SendError(400, 'auth_literal_link', {name: ['literal_url']})
-    for block in document.get('blocks') or []:
-        kind = block.get('type')
-        if kind == 'button':
-            text = str(block.get('text') or '')
-        elif kind in {'heading', 'text', 'footer'}:
-            text = str(block.get('text') or '')
-        else:
-            continue
+    prose = [str(block.get('text') or '') for block in document.get('blocks') or [] if isinstance(block, dict)]
+    prose += [str(run.get('text') or '') for run in document_runs(document)]
+    for text in prose:
         if _LITERAL_LINK.search(_prose_without_allowed_tokens(text, allowed)):
             raise SendError(400, 'auth_literal_link', {'document': ['literal_url']})

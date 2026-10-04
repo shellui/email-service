@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import re
-from html import escape
+from html import escape, unescape
 from urllib.parse import urlparse
 
 TOKEN_RE = re.compile(
     r'\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*(?:\|\s*default\s*:\s*"([^"]*)"\s*)?\}\}'
+)
+# React Email writes the quotes of a default as `&quot;` in rendered HTML.
+HTML_TOKEN_RE = re.compile(
+    r'\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*'
+    r'(?:\|\s*default\s*:\s*(?:"|&quot;|&#34;)((?:(?!&quot;|&#34;)[^"])*)(?:"|&quot;|&#34;)\s*)?\}\}'
 )
 TAG_RE = re.compile(r'\{%|%\}|\{#|#\}')
 
@@ -83,6 +88,8 @@ def substitute(
     def replace(match: re.Match) -> str:
         token = match.group(1)
         default = match.group(2)
+        if html and default is not None:
+            default = unescape(default)
         value, present = _lookup(variables, token, default)
         if not present:
             missing.append(token)
@@ -100,7 +107,7 @@ def substitute(
             return escape(value, quote=True)
         return value
 
-    rendered = TOKEN_RE.sub(replace, source or '')
+    rendered = (HTML_TOKEN_RE if html else TOKEN_RE).sub(replace, source or '')
     if subject:
         rendered = rendered.replace('\r', '').replace('\n', '')
     return rendered, missing

@@ -21,7 +21,7 @@ Placeholders: `{{ token }}` and `{{ token|default:"fallback" }}`. Django templat
 
 The product name in suggested copy is Shellui.
 
-`EMAIL_RENDERER=python` (local and tests) renders those blocks to HTML. `EMAIL_RENDERER=node` (the Docker image) renders the same document with React Email in `renderer/render.mjs`. Both renderers take a theme key (`barebone`, `matte`, `protocol`, `arcane`, `studio`) and leave placeholders intact. An optional `theme_palette` overrides the theme colors. `{}` keeps the theme palette. Substitution happens at send time, with HTML escaping. URL tokens are checked before they are inserted.
+`EMAIL_RENDERER=python` (local and tests) renders those blocks to HTML. `EMAIL_RENDERER=node` (the Docker image) renders the same document with React Email in `renderer/render.mjs`, using the Tailwind templates in `renderer/email.mjs`. Both renderers take a theme key (`barebone`, `matte`, `protocol`, `arcane`, `studio`) and leave placeholders intact. An optional `theme_palette` overrides the theme colors. `{}` keeps the theme palette. Substitution happens at send time, with HTML escaping. URL tokens are checked before they are inserted.
 
 Theme layout, the MIT notice, and the settings API are in [themes.md](themes.md).
 

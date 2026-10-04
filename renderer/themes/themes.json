@@ -172,7 +172,7 @@
     "text_size": "15px",
     "button_radius": "0",
     "card_radius": "0",
-    "button_pad": "0",
+    "button_pad": "12px 20px",
     "button_style": "outline",
     "align": "left",
     "max_width": "640px",

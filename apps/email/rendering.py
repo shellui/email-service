@@ -10,10 +10,11 @@ from pathlib import Path
 
 from django.conf import settings
 
+from apps.email.blocks import TEXT_BLOCKS, block_runs, list_items, runs_text, safe_href
 from apps.email.substitution import escape_keeping_tokens, find_tokens, reject_template_tags
 from apps.email.themes import DEFAULT_THEME, colors_for, is_theme
 
-RENDERER_VERSION = 'shellui-email-2'
+RENDERER_VERSION = 'shellui-email-3'
 
 
 def document_tokens(document: dict, subject: str = '', preheader: str = '') -> set[str]:
@@ -79,10 +80,19 @@ def _python_html(document: dict, spec: dict, colors: dict[str, str]) -> str:
         parts.append(
             f'<tr><td style="height:8px;background:{colors["foreground"]};font-size:0;line-height:0;">&nbsp;</td></tr>'
         )
+    inner_radius = radius
+    if layout == 'inset':
+        inner_radius = '8px'
+        parts.append(
+            '<tr><td style="padding:16px;">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+        )
     parts.append(
-        f'<tr><td style="padding:{pad};background:{inner_bg};border-radius:{radius};text-align:{align};">'
+        f'<tr><td style="padding:{pad};background:{inner_bg};border-radius:{inner_radius};text-align:{align};">'
     )
     for block in document.get('blocks') or []:
+        if not isinstance(block, dict):
+            continue
         kind = block.get('type')
         text = escape_keeping_tokens(str(block.get('text') or ''))
         if kind == 'heading':
@@ -90,13 +100,25 @@ def _python_html(document: dict, spec: dict, colors: dict[str, str]) -> str:
                 f'<div style="font-family:{heading_font};font-size:{spec["heading_size"]};'
                 f'font-weight:{spec["heading_weight"]};line-height:1.2;letter-spacing:-0.02em;'
                 f'text-transform:{spec.get("heading_transform") or "none"};color:{colors["foreground"]};'
-                f'margin:0 0 16px;">{text}</div>'
+                f'margin:0 0 16px;">{_runs_html(block_runs(block), colors["foreground"])}</div>'
             )
         elif kind == 'text':
             parts.append(
                 f'<div style="font-family:{font};font-size:{spec["text_size"]};line-height:1.5;'
-                f'color:{colors["body"]};margin:0 0 16px;">{text}</div>'
+                f'color:{colors["body"]};margin:0 0 16px;">{_runs_html(block_runs(block), colors["body"])}</div>'
             )
+        elif kind == 'list':
+            tag = 'ol' if block.get('ordered') is True else 'ul'
+            items = ''.join(
+                f'<li style="margin:0 0 4px;">{_runs_html(runs, colors["body"])}</li>'
+                for runs in list_items(block)
+            )
+            parts.append(
+                f'<{tag} style="font-family:{font};font-size:{spec["text_size"]};line-height:1.5;'
+                f'color:{colors["body"]};margin:0 0 16px;padding-left:24px;text-align:left;">{items}</{tag}>'
+            )
+        elif kind == 'divider':
+            parts.append(f'<hr style="border:0;border-top:1px solid {colors["border"]};margin:24px 0;">')
         elif kind == 'button':
             href = escape_keeping_tokens(str(block.get('href') or ''))
             parts.append(
@@ -110,9 +132,34 @@ def _python_html(document: dict, spec: dict, colors: dict[str, str]) -> str:
         elif kind == 'footer':
             parts.append(
                 f'<div style="font-family:{font};font-size:12px;line-height:1.5;'
-                f'color:{colors["mutedForeground"]};margin:12px 0 0;">{text}</div>'
+                f'color:{colors["mutedForeground"]};margin:12px 0 0;">'
+                f'{_runs_html(block_runs(block), colors["mutedForeground"])}</div>'
             )
+    if layout == 'inset':
+        parts.append('</td></tr></table>')
     parts.append('</td></tr></table></td></tr></table></body></html>')
+    return ''.join(parts)
+
+
+def _runs_html(runs: list[dict], link_color: str) -> str:
+    parts = []
+    for run in runs:
+        piece = escape_keeping_tokens(str(run.get('text') or '')).replace('\n', '<br>')
+        if not piece:
+            continue
+        if run.get('bold') is True:
+            piece = f'<strong>{piece}</strong>'
+        if run.get('italic') is True:
+            piece = f'<em>{piece}</em>'
+        if run.get('underline') is True:
+            piece = f'<u>{piece}</u>'
+        href = safe_href(run.get('href'))
+        if href:
+            piece = (
+                f'<a href="{escape_keeping_tokens(href)}" '
+                f'style="color:{link_color};text-decoration:underline;">{piece}</a>'
+            )
+        parts.append(piece)
     return ''.join(parts)
 
 
@@ -123,13 +170,18 @@ def _python_text(document: dict) -> str:
         lines.append(preview)
         lines.append('')
     for block in document.get('blocks') or []:
+        if not isinstance(block, dict):
+            continue
         kind = block.get('type')
         text = str(block.get('text') or '').strip()
-        if kind == 'heading':
-            lines.append(text)
+        if kind in TEXT_BLOCKS:
+            lines.append(runs_text(block_runs(block)))
             lines.append('')
-        elif kind in {'text', 'footer'}:
-            lines.append(text)
+        elif kind == 'list':
+            ordered = block.get('ordered') is True
+            for index, runs in enumerate(list_items(block), start=1):
+                marker = f'{index}.' if ordered else '-'
+                lines.append(f'{marker} {runs_text(runs)}')
             lines.append('')
         elif kind == 'button':
             href = str(block.get('href') or '').strip()

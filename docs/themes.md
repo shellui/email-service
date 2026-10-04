@@ -20,7 +20,9 @@ Layout, palette, typography, and fonts are adapted from the MIT-licensed demos i
 
 A block document (`heading`, `text`, `button`, `footer`) renders inside that wrapper. Fonts load with a fallback stack (`Arial` or `system-ui`) when the remote font file is unavailable.
 
-`EMAIL_RENDERER=node` (the Docker image, `renderer/render.mjs`) applies the theme spec in `renderer/themes/themes.json`. `EMAIL_RENDERER=python` (local and tests) uses the same five keys and the same palette, font stacks, and button style.
+`EMAIL_RENDERER=node` (the Docker image, `renderer/render.mjs`) renders the templates in `renderer/email.mjs`. Each template is a React Email tree styled with Tailwind classes. Colors are tokens only (`bg-page`, `bg-card`, `bg-inner`, `text-foreground`, `text-body`, `text-muted`, `bg-primary`, `text-primary-foreground`, `border-border`). They are filled at render time from the theme colors in `renderer/themes/themes.json`, or from `theme_palette` when one is stored. `EMAIL_RENDERER=python` (local and tests) uses the same five keys and the same palette, font stacks, and button style. Set `EMAIL_RENDERER=node` locally to get the exact HTML the admin preview shows.
+
+`renderer/email.mjs` has no Node APIs and no JSX on purpose. The Shellui admin copies it byte for byte (`pnpm sync:email-templates` in shellui/admin) and renders it in the browser for the editor preview. After changing it or `themes.json`, run that script in the admin so both sides stay identical.
 
 `theme_palette` on a template version is an optional accent override. `{}` keeps the theme colors. A full seven-color palette (`background`, `foreground`, `muted`, `mutedForeground`, `primary`, `primaryForeground`, `border`, each `#RRGGBB`) replaces those slots. Fonts, spacing, and button shape stay with the theme. `primary` is the button accent. A partial palette is `400 validation_failed` with `theme_palette: ["invalid_color"]`.
 
