@@ -35,6 +35,13 @@ export function cssToJs(css) {
   return style;
 }
 
+/** React Email images are blocks, so auto margins place them. */
+function imageAlignStyle(alignment) {
+  if (alignment === 'center') return { marginLeft: 'auto', marginRight: 'auto' };
+  if (alignment === 'right') return { marginLeft: 'auto', marginRight: 0 };
+  return {};
+}
+
 const Image = EmailNode.create({
   name: 'image',
   group: 'block',
@@ -61,12 +68,13 @@ const Image = EmailNode.create({
     return ['img', HTMLAttributes];
   },
   renderToReactEmail({ node, style }) {
+    if (!node.attrs?.src) return null;
     const img = jsx(Img, {
       alt: node.attrs?.alt ?? '',
       className: node.attrs?.class || undefined,
       height: node.attrs?.height === 'auto' ? undefined : node.attrs?.height,
-      src: node.attrs?.src ?? '',
-      style: { ...style, ...cssToJs(node.attrs?.style) },
+      src: node.attrs.src,
+      style: { ...style, ...cssToJs(node.attrs?.style), ...imageAlignStyle(node.attrs?.alignment) },
       width: node.attrs?.width === 'auto' ? undefined : node.attrs?.width,
     });
     return node.attrs?.href ? jsx(Link, { href: node.attrs.href, children: img }) : img;
