@@ -388,6 +388,131 @@ class RuleTests(TestCase):
         self.assertIn('Acme', sent.subject)
         self.assertEqual(EmailRule.objects.filter(company_id=40, built_in=True).count(), 2)
 
+    def _translated_draft(self, template_id, translations):
+        document = {
+            'type': 'doc',
+            'content': [
+                {'type': 'paragraph', 'attrs': {'textId': 'greet'}, 'content': [{'type': 'text', 'text': 'Deploy failed'}]},
+                {'type': 'paragraph', 'attrs': {'textId': 'error'}, 'content': [{'type': 'text', 'text': 'Error {{ error }}'}]},
+            ],
+        }
+        return self.owner.post(
+            f'/api/v1/templates/{template_id}/versions',
+            {'subject': 'Deploy of {{ display_name }} failed', 'document': document, 'translations': translations},
+            format='json',
+        )
+
+    def test_translations_render_and_send_in_the_recipient_language(self):
+        rule = self._rule('hosting.deployment.failed', recipient_mode='static', static_recipients=['ops@acme.com']).json()
+        fr = {
+            'subject': 'Échec du déploiement de {{ display_name }}',
+            'preheader': '',
+            'blocks': {'greet': {'content': [{'type': 'text', 'text': 'Le déploiement a échoué'}], 'source': 'x1'}},
+        }
+        draft = self._translated_draft(rule['template_id'], {'fr': fr})
+        self.assertEqual(draft.status_code, 201, draft.content)
+        version = EmailTemplate.objects.get(pk=rule['template_id']).versions.get(number=draft.json()['number'])
+        self.assertIn('Le déploiement a échoué', version.rendered['fr']['html'])
+        self.assertIn('Error {{ error }}', version.rendered['fr']['html'])
+        self.assertNotIn('textId', version.html)
+        listed = self.owner.get(f'/api/v1/templates/{rule["template_id"]}/versions').json()['versions']
+        self.assertEqual(listed[-1]['translations']['fr']['blocks']['greet']['source'], 'x1')
+        published = self.owner.post(f'/api/v1/templates/{rule["template_id"]}/versions/{draft.json()["number"]}/publish')
+        self.assertEqual(published.status_code, 200, published.content)
+
+        self.owner.patch(f'/api/v1/rules/{rule["id"]}?company_id=40', {'language': 'fr'}, format='json')
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.hosting_key}')
+        sent = client.post(
+            '/api/v1/events',
+            {
+                'company_id': 40,
+                'service': 'hosting',
+                'event_type': 'hosting.deployment.failed',
+                'payload': {'display_name': 'Docs', 'error': 'boom'},
+            },
+            format='json',
+        )
+        self.assertEqual(sent.status_code, 202, sent.content)
+        message = fake_provider().sent[-1]
+        self.assertEqual(message.subject, 'Échec du déploiement de Docs')
+        self.assertIn('Le déploiement a échoué', message.html)
+        self.assertIn('Error boom', message.html)
+        self.assertEqual(Message.objects.filter(company_id=40).latest('accepted_at').language, 'fr')
+
+    def test_translations_are_validated_per_language(self):
+        rule = self._rule('hosting.deployment.failed').json()
+        cases = {
+            'language_not_available': {'en': {'subject': 'Same', 'blocks': {}}},
+            'validation_failed': {'fr': {'blocks': {'greet': {'content': [{'type': 'image', 'attrs': {'src': ''}}]}}}},
+        }
+        for code, translations in cases.items():
+            with self.subTest(code=code):
+                refused = self._translated_draft(rule['template_id'], translations)
+                self.assertEqual(refused.status_code, 400, refused.content)
+                self.assertEqual(refused.json()['error_code'], code)
+        unsafe = self._translated_draft(
+            rule['template_id'],
+            {
+                'fr': {
+                    'blocks': {
+                        'greet': {
+                            'content': [
+                                {'type': 'text', 'text': 'Ici', 'marks': [{'type': 'link', 'attrs': {'href': 'ftp://x.example'}}]}
+                            ]
+                        }
+                    }
+                }
+            },
+        )
+        self.assertEqual(unsafe.json()['field_errors'], {'document': ['unsafe_link']})
+        self.assertEqual(unsafe.json()['language'], 'fr')
+
+    def test_auth_translations_keep_the_sign_in_link(self):
+        rule = next(
+            row
+            for row in self.owner.get('/api/v1/rules?company_id=40&service=identity').json()['rules']
+            if row['event_type'] == 'identity.auth.magic_link.requested'
+        )
+        document = {
+            'type': 'doc',
+            'content': [
+                {
+                    'type': 'paragraph',
+                    'attrs': {'textId': 'link'},
+                    'content': [{'type': 'text', 'text': 'Sign in', 'marks': [{'type': 'link', 'attrs': {'href': '{{ magic_link_url }}'}}]}],
+                }
+            ],
+        }
+        draft = self.owner.post(
+            f'/api/v1/templates/{rule["template_id"]}/versions',
+            {
+                'subject': 'Sign in',
+                'document': document,
+                'translations': {'fr': {'blocks': {'link': {'content': [{'type': 'text', 'text': 'Se connecter'}]}}}},
+            },
+            format='json',
+        )
+        self.assertEqual(draft.status_code, 201, draft.content)
+        refused = self.owner.post(f'/api/v1/templates/{rule["template_id"]}/versions/{draft.json()["number"]}/publish')
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.json()['error_code'], 'auth_link_missing')
+        self.assertEqual(refused.json()['language'], 'fr')
+
+    def test_start_over_keeps_translated_subjects_only(self):
+        rule = self._rule('hosting.deployment.failed').json()
+        fr = {'subject': 'Échec', 'preheader': 'Détails', 'blocks': {'greet': {'content': [{'type': 'text', 'text': 'Oups'}]}}}
+        self._translated_draft(rule['template_id'], {'fr': fr})
+        restarted = self.owner.post(
+            f'/api/v1/templates/{rule["template_id"]}/versions',
+            {'library_id': self._library_id('matte.welcome')},
+            format='json',
+        )
+        self.assertEqual(restarted.status_code, 201, restarted.content)
+        version = EmailTemplate.objects.get(pk=rule['template_id']).versions.get(number=restarted.json()['number'])
+        self.assertEqual(version.translations, {'fr': {'subject': 'Échec', 'preheader': 'Détails', 'blocks': {}}})
+        self.assertIn('fr', version.rendered)
+
     def test_send_test_uses_the_draft_with_sample_values(self):
         rule = self._rule('hosting.deployment.failed').json()
         draft = self.owner.post(

@@ -11,9 +11,10 @@ from apps.email.catalog import LANE_AUTH, all_definitions, get_definition
 from apps.email.document import adapt_to_event, validate_document
 from apps.email.library import library_template, set_head
 from apps.email.models import EmailRule, EmailTemplate, LibraryTemplate, TemplateVersion
-from apps.email.rendering import RENDERER_VERSION, checksum, compose, document_tokens
+from apps.email.rendering import RENDERER_VERSION, checksum, compose, compose_many, document_tokens
 from apps.email.service import SendError
 from apps.email.substitution import SubstitutionError
+from apps.email.translations import clean_translations, variants
 
 ALWAYS_AVAILABLE = {'recipient_email'}
 
@@ -101,19 +102,52 @@ def _validated_content(definition: dict | None, document, subject: str, preheade
     return document
 
 
+def _version_variants(definition: dict | None, version: TemplateVersion):
+    """The main language first, then each translation."""
+    yield '', version.document, version.subject, version.preheader
+    yield from variants(
+        version.document,
+        version.translations,
+        lambda language: _swap_suggested(definition, version.subject, version.preheader, language),
+    )
+
+
+def _version_checksum(version: TemplateVersion) -> str:
+    parts = [checksum(version.subject, version.html, version.text)]
+    for language in sorted(version.rendered or {}):
+        rendered = version.rendered[language]
+        entry = (version.translations or {}).get(language) or {}
+        parts.append(checksum(entry.get('subject') or '', rendered.get('html') or '', rendered.get('text') or ''))
+    return parts[0] if len(parts) == 1 else checksum('', '\n'.join(parts), '')
+
+
+def _render_variants(template: EmailTemplate, version: TemplateVersion, definition: dict | None) -> None:
+    rows = list(_version_variants(definition, version))
+    head = set_head(template.set)
+    outputs = compose_many([{'document': document, 'head': head, 'preheader': preheader} for _, document, _, preheader in rows])
+    version.html, version.text = outputs[0]
+    version.rendered = {language: {'html': html, 'text': text} for (language, *_), (html, text) in zip(rows[1:], outputs[1:])}
+    version.renderer_version = RENDERER_VERSION
+
+
 def publish_version(template: EmailTemplate, version: TemplateVersion) -> None:
     definition = _definition_for(template)
-    tokens = document_tokens(version.document, version.subject, version.preheader)
-    if definition and definition.get('lane_class') == LANE_AUTH:
-        from apps.email.auth_templates import validate_auth_template
+    for language, document, subject, preheader in _version_variants(definition, version):
+        try:
+            tokens = document_tokens(document, subject, preheader)
+            if definition and definition.get('lane_class') == LANE_AUTH:
+                from apps.email.auth_templates import validate_auth_template
 
-        validate_auth_template(definition, version.document, version.subject, version.preheader)
-    if definition and definition.get('lane_class') == 'bulk' and 'system.unsubscribe_url' not in tokens:
-        raise SendError(400, 'unsubscribe_link_missing')
-    if not version.html:
-        version.html, version.text = compose(version.document, head=set_head(template.set), preheader=version.preheader)
-        version.renderer_version = RENDERER_VERSION
-    version.checksum = checksum(version.subject, version.html, version.text)
+                validate_auth_template(definition, document, subject, preheader)
+            if definition and definition.get('lane_class') == 'bulk' and 'system.unsubscribe_url' not in tokens:
+                raise SendError(400, 'unsubscribe_link_missing')
+        except SendError as exc:
+            if language:
+                exc.extra = {**exc.extra, 'language': language}
+            raise
+    if not version.html or set(version.rendered or {}) != set(version.translations or {}):
+        _render_variants(template, version, definition)
+    version.checksum = _version_checksum(version)
     version.state = TemplateVersion.STATE_PUBLISHED
     version.published_at = timezone.now()
     version.save()
@@ -134,26 +168,33 @@ def create_version(
     document,
     subject: str,
     preheader: str,
+    translations=None,
     user_id: int | None = None,
 ) -> TemplateVersion:
-    """Validate, compose, and store a draft. The stored HTML is what publishing sends."""
+    """Validate, compose, and store a draft in every language. The stored HTML is what publishing sends."""
     if not subject:
         raise SendError(400, 'validation_failed', {'subject': ['required']})
-    document = _validated_content(_definition_for(template), document, subject, preheader)
-    html, text = compose(document, head=set_head(template.set), preheader=preheader)
-    return TemplateVersion.objects.create(
+    definition = _definition_for(template)
+    version = TemplateVersion(
         template=template,
         number=_next_number(template),
         state=TemplateVersion.STATE_DRAFT,
         subject=subject[:255],
         preheader=preheader[:255],
-        document=document,
-        html=html,
-        text=text,
-        renderer_version=RENDERER_VERSION,
-        checksum=checksum(subject, html, text),
+        document=_validated_content(definition, document, subject, preheader),
+        translations=clean_translations(translations, template.language),
         created_by_user_id=user_id,
     )
+    for language, localized, localized_subject, localized_preheader in list(_version_variants(definition, version))[1:]:
+        try:
+            _validated_content(definition, localized, localized_subject, localized_preheader)
+        except SendError as exc:
+            exc.extra = {**exc.extra, 'language': language}
+            raise
+    _render_variants(template, version, definition)
+    version.checksum = _version_checksum(version)
+    version.save()
+    return version
 
 
 def library_document_for(template: EmailTemplate, source: LibraryTemplate) -> dict:
@@ -337,15 +378,15 @@ def delete_rule(rule: EmailRule) -> None:
             template.delete()
 
 
-def _swap_suggested(definition: dict | None, version: TemplateVersion, language: str) -> tuple[str, str]:
-    """An unedited suggested subject follows the send language. The body stays as written."""
+def _swap_suggested(definition: dict | None, subject: str, preheader: str, language: str) -> tuple[str, str]:
+    """An unedited suggested subject follows the send language."""
     if definition is None or language not in definition['languages']:
-        return version.subject, version.preheader
+        return subject, preheader
     for pack in definition['languages'].values():
-        if version.subject == pack['subject'] and (version.preheader or '') == (pack.get('preheader') or ''):
+        if subject == pack['subject'] and (preheader or '') == (pack.get('preheader') or ''):
             chosen = definition['languages'][language]
             return chosen['subject'], chosen.get('preheader') or ''
-    return version.subject, version.preheader
+    return subject, preheader
 
 
 def default_content(definition: dict, language: str) -> dict:
@@ -378,10 +419,22 @@ def content_for_template(template: EmailTemplate, language: str) -> dict:
         if definition is None:
             raise SendError(404, 'template_not_found')
         return default_content(definition, requested)
-    if not version.html:
-        version.html, version.text = compose(version.document, head=set_head(template.set), preheader=version.preheader)
-        version.save(update_fields=['html', 'text'])
-    subject, preheader = _swap_suggested(definition, version, requested)
+    if not version.html or set(version.rendered or {}) != set(version.translations or {}):
+        _render_variants(template, version, definition)
+        version.save(update_fields=['html', 'text', 'rendered', 'renderer_version'])
+    entry = (version.translations or {}).get(requested) if requested != template.language else None
+    if entry is not None:
+        fallback_subject, fallback_preheader = _swap_suggested(definition, version.subject, version.preheader, requested)
+        rendered = version.rendered[requested]
+        return {
+            'subject': entry.get('subject') or fallback_subject,
+            'preheader': entry.get('preheader') or fallback_preheader,
+            'html': rendered['html'],
+            'text': rendered['text'],
+            'version': version.number,
+            'language': requested,
+        }
+    subject, preheader = _swap_suggested(definition, version.subject, version.preheader, requested)
     swapped = (subject, preheader) != (version.subject, version.preheader)
     return {
         'subject': subject,

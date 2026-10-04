@@ -147,7 +147,7 @@ class AdminContractTests(TestCase):
         row = next(item for item in listed if item['number'] == number)
         self.assertEqual(row['preheader'], 'Edited preheader')
         self.assertEqual(row['document'], paragraphs('Edited heading'))
-        self.assertEqual(set(row), {'number', 'state', 'subject', 'preheader', 'document', 'published_at'})
+        self.assertEqual(set(row), {'number', 'state', 'subject', 'preheader', 'document', 'translations', 'published_at'})
         one = owner.get(f'/api/v1/templates/{template_id}/versions/{number}')
         self.assertEqual(one.status_code, 200, one.content)
         self.assertEqual(one.json()['subject'], 'Edited subject')

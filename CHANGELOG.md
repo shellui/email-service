@@ -16,6 +16,7 @@ Notable changes to this project. Format: [Keep a Changelog](https://keepachangel
 - Catalog events carry `link_token` and `default_template`. Built-in auth rules and direct sends with no copy use the default design.
 - New settings `EMAIL_PUBLIC_URL`, `EMAIL_NODE_BINARY`, `EMAIL_COMPOSE_TIMEOUT_SECONDS`, `EMAIL_MAX_DOCUMENT_BYTES`. React is pinned to 18.3.1 to match the admin preview.
 - `{{ token|default:"…" }}` substitutes in composed HTML, where React Email writes the quotes as `&quot;`.
+- Template versions carry `translations`: per language, a subject, a preheader, and the text of blocks matched by `attrs.textId`, over one shared layout. Every language is validated, composed on save, and checked on publish. Sends use the send language's translation, falling back to the main text block by block. Migration `0006_template_translations`.
 
 ### Removed
 

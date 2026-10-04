@@ -104,6 +104,9 @@ class TemplateVersion(models.Model):
     document = models.JSONField(default=dict)
     html = models.TextField(blank=True)
     text = models.TextField(blank=True)
+    # Other languages, see ``apps.email.translations``. ``rendered`` maps each to its ``html`` and ``text``.
+    translations = models.JSONField(default=dict, blank=True)
+    rendered = models.JSONField(default=dict, blank=True)
     renderer_version = models.CharField(max_length=32, blank=True)
     checksum = models.CharField(max_length=64, blank=True)
     created_by_user_id = models.PositiveIntegerField(null=True, blank=True)

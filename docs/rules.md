@@ -18,7 +18,7 @@ The HTTP contract is also in [integration.md](integration.md). Catalog events ar
 | `enabled` | `false` skips this rule. Built-in rules cannot be set to `false`. |
 | `recipient_mode` | `hints` uses the event's recipients. `static` uses `static_recipients`. |
 | `static_recipients` | Email strings. On write, a string or `{"email": "…"}` is accepted. |
-| `language` | `en`, `fr`, or blank. Blank follows the recipient language, then the event language, then `en`. |
+| `language` | `en`, `fr`, or blank. Blank follows the recipient language, then the event language, then `en`. The copy sends that language's [translation](templates.md#languages) when it has one. |
 | `template_id` | The rule's copy: the company template this rule sends. |
 | `built_in` | Read-only. `true` for auth-lane rules created by the service. |
 | `created_at`, `updated_at` | ISO-8601 UTC timestamps with a `Z` suffix. |

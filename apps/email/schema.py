@@ -260,6 +260,9 @@ class TemplateVersionSerializer(serializers.Serializer):
     subject = serializers.CharField()
     preheader = serializers.CharField(allow_blank=True)
     document = serializers.JSONField()
+    translations = serializers.JSONField(
+        help_text='Other languages: {lang: {subject, preheader, blocks: {textId: {content, source}}}}. Same layout as document.',
+    )
     published_at = serializers.CharField(allow_null=True)
 
 
@@ -271,6 +274,10 @@ class TemplateVersionCreateRequestSerializer(serializers.Serializer):
     subject = serializers.CharField(required=False)
     preheader = serializers.CharField(required=False, allow_blank=True)
     document = serializers.JSONField(required=False)
+    translations = serializers.JSONField(
+        required=False,
+        help_text='Other languages of the copy. Kept from the latest version when omitted; a start over keeps their subjects only.',
+    )
     library_id = serializers.IntegerField(
         required=False,
         help_text='Start over from this library template. Subject and preheader stay unless sent.',

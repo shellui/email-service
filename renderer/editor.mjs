@@ -130,8 +130,21 @@ function serializer(head) {
   });
 }
 
+// Translations match blocks by this id. It is stored, never rendered.
+const TextId = Extension.create({
+  name: 'shelluiTextId',
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['paragraph', 'heading', 'button', 'codeBlock'],
+        attributes: { textId: { default: null, rendered: false, keepOnSplit: false } },
+      },
+    ];
+  },
+});
+
 export function extensions(head = '') {
-  return [StarterKit.configure({ Container: false }), Container, Image, serializer(head)];
+  return [StarterKit.configure({ Container: false }), Container, Image, TextId, serializer(head)];
 }
 
 export function createEditor({ content, head = '' }) {

@@ -45,9 +45,25 @@ Rendered bodies are not stored on the message and are not returned by status API
 - on auth-lane events, only the links the auth checks accept (see [security.md](security.md#links-in-auth-mail)), so the copy publishes as is;
 - the catalog subject and preheader in the rule's language (English when the rule has none).
 
-`POST /api/v1/templates/{id}/versions` adds a draft. Send `subject`, `preheader`, and `document`, or `library_id` to start over from another library template: the document is replaced (adapted to the event the same way) and the subject and preheader stay. The copy's `source_key` and `set` follow the new template. `201` `{number, state: "draft"}`.
+`POST /api/v1/templates/{id}/versions` adds a draft. Send `subject`, `preheader`, `document`, and optionally `translations` (see below; omitted, the latest version's are kept), or `library_id` to start over from another library template: the document is replaced (adapted to the event the same way), the subject and preheader stay, and translations keep only their subject and preheader. The copy's `source_key` and `set` follow the new template. `201` `{number, state: "draft"}`.
 
-`GET /api/v1/templates/{id}/versions` and `GET /api/v1/templates/{id}/versions/{number}` return `{number, state, subject, preheader, document, published_at}`. `POST /api/v1/templates/{id}/versions/{number}/publish` runs the lane checks and sets `active_version`.
+`GET /api/v1/templates/{id}/versions` and `GET /api/v1/templates/{id}/versions/{number}` return `{number, state, subject, preheader, document, translations, published_at}`. `POST /api/v1/templates/{id}/versions/{number}/publish` runs the lane checks on every language and sets `active_version`.
+
+## Languages
+
+A copy is one layout with text per language. `document`, `subject`, and `preheader` are in the copy's `language` (the main language, `en` by default). `translations` holds each other language:
+
+```json
+{"fr": {"subject": "Bienvenue", "preheader": "", "blocks": {"k3v9q2xa": {"content": [{"type": "text", "text": "Bonjour"}], "source": "1x9f0c"}}}}
+```
+
+- Text blocks (`paragraph`, `heading`, `button`, `codeBlock`) carry `attrs.textId`, a stable id the editor assigns. A translated block replaces that block's inline content (`text` and `hardBreak` nodes only) and nothing else, so images, columns, alignment, and button links are shared by every language.
+- A block with no translation keeps the main text. An empty subject or preheader falls back to the main one, or to the catalog suggestion for that language while the main one is unedited.
+- `source` is the admin's fingerprint of the main text the block was translated from. email-service stores it as is; the admin compares it to flag translations whose main text changed since.
+- Languages are `en` and `fr`, and never the main language: `400 language_not_available`. A malformed entry is `400 validation_failed` with `field_errors.translations`.
+- Each language is composed on save (stored in `rendered`) and validated like the main document. A failure in one language adds `language` to the error body.
+
+The admin edits every language in the same editor and publishes them together. Translators, or an AI pass later, only need `translations`: the block ids and main texts are in `document`.
 
 `POST /api/v1/templates/{id}/send-test` sends the posted `subject`, `preheader`, and `document` (composed on the fly) or, without a document, the latest draft, to the caller or to `to` for staff.
 
@@ -64,7 +80,7 @@ Event ingest sends each enabled rule's copy. Direct sends by catalog key use, in
 3. Its published English copy, then any published copy
 4. The event's `default_template` design with the catalog subject and preheader, composed on the fly
 
-An unedited catalog subject and preheader follow the send language. Once someone edits them, the stored text is what sends. The body is always the stored copy.
+A copy sends in the send language when it has a translation for it: that language's blocks, subject, and preheader, with the fallbacks above. Otherwise it sends the main language, where an unedited catalog subject and preheader still follow the send language.
 
 ## Variables
 

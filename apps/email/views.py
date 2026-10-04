@@ -118,6 +118,7 @@ from apps.email.service import (
 )
 from apps.email.stats import company_stats
 from apps.email.substitution import SubstitutionError, substitute
+from apps.email.translations import translated_inbox
 from apps.providers.registry import ACTIVE_PROVIDER_NAMES
 from apps.providers.webhooks import verify_svix
 
@@ -556,6 +557,7 @@ def _version_payload(version: TemplateVersion) -> dict:
         'subject': version.subject,
         'preheader': version.preheader,
         'document': version.document,
+        'translations': version.translations or {},
         'published_at': published_at,
     }
 
@@ -588,11 +590,13 @@ class TemplateVersionListView(APIView):
             latest = template.versions.order_by('-number').first()
             subject = str(data.get('subject') or (latest.subject if latest else ''))
             preheader = str(data['preheader'] or '') if 'preheader' in data else (latest.preheader if latest else '')
+            translations = data['translations'] if 'translations' in data else (latest.translations if latest else {})
             if data.get('library_id') not in (None, ''):
                 source = library_template(template.company_id, data.get('library_id'))
                 document = library_document_for(template, source)
                 template.source_key = source.key
                 template.set = source.set
+                translations = translated_inbox(translations)
             else:
                 document = data.get('document')
                 if not isinstance(document, dict):
@@ -602,6 +606,7 @@ class TemplateVersionListView(APIView):
                 document=document,
                 subject=subject,
                 preheader=preheader,
+                translations=translations,
                 user_id=getattr(request.user, 'user_id', None),
             )
             template.save(update_fields=['source_key', 'set'])
