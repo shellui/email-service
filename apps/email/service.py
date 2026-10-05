@@ -163,11 +163,12 @@ def assets_url() -> str:
     return f'{settings.EMAIL_PUBLIC_URL}/static/library'
 
 
-def _system_variables(message: Message) -> dict:
+def _system_variables(message: Message, variables: dict | None = None) -> dict:
     values = {'system.message_id': message.public_id, 'system.assets_url': assets_url()}
     if message.lane == LANE_AUTH:
         return values
-    url = unsubscribe_url(message.company_id, message.to_email, message.lane)
+    category = str((variables or {}).get('system.unsubscribe_category') or '') or message.lane
+    url = unsubscribe_url(message.company_id, message.to_email, category)
     values['system.unsubscribe_url'] = url
     values['system.preferences_url'] = url
     return values
@@ -847,7 +848,7 @@ def deliver_message(message_id) -> None:
         message.attempt_count += 1
         message.save(update_fields=['status', 'locked_until', 'attempt_count'])
         variables = decrypt_json(message.variables_ciphertext)
-        variables.update(_system_variables(message))
+        variables.update(_system_variables(message, variables))
         snapshot = {
             'attempt': message.attempt_count,
             'smtp_failover_used': message.smtp_failover_used,

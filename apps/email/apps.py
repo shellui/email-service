@@ -16,3 +16,8 @@ class EmailConfig(AppConfig):
 
     def ready(self):
         post_migrate.connect(_sync_library, sender=self, dispatch_uid='email-library-sync')
+        from corsheaders.signals import check_request_enabled
+
+        from apps.email.newsletters import cors_for_subscribe
+
+        check_request_enabled.connect(cors_for_subscribe, dispatch_uid='email-newsletter-cors')

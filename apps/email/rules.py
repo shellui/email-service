@@ -7,7 +7,13 @@ import secrets
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.email.catalog import LANE_AUTH, all_definitions, broadcast_definition, get_definition
+from apps.email.catalog import (
+    LANE_AUTH,
+    all_definitions,
+    broadcast_definition,
+    get_definition,
+    newsletter_confirmation_definition,
+)
 from apps.email.document import adapt_to_event, validate_document
 from apps.email.library import library_template, set_head
 from apps.email.models import EmailRule, EmailTemplate, LibraryTemplate, TemplateVersion
@@ -94,6 +100,8 @@ def template_summary(template: EmailTemplate) -> dict:
 def definition_for(template: EmailTemplate) -> dict | None:
     if template.kind == EmailTemplate.KIND_BROADCAST:
         return broadcast_definition()
+    if template.kind == EmailTemplate.KIND_NEWSLETTER_CONFIRMATION:
+        return newsletter_confirmation_definition()
     return get_definition(template.event_type or '')
 
 

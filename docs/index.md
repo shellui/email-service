@@ -14,6 +14,7 @@ Other Shellui services and the admin app implement against [integration.md](inte
 - [Templates](templates.md): event copies, editor documents, versions, and variables
 - [Rules](rules.md): company email rules and built-in auth mail
 - [Broadcasts](broadcasts.md): one email to many users, each in their language
+- [Newsletters](newsletters.md): public sign-up with double opt-in, lists, and sending issues
 - [Lanes](lanes.md): auth, transactional, and bulk
 - [Events](events.md): catalog events for identity, storage, and hosting
 - [Metrics](metrics.md): admin stats and Prometheus

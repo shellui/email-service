@@ -6,10 +6,14 @@ from django.utils import timezone
 
 from apps.actions.models import ActionOutbox, EventLog
 from apps.email.models import Message, MessageEvent, SendRequest
+from apps.email.newsletters import purge as purge_newsletters
 
 
 class Command(BaseCommand):
-    help = 'Delete expired messages, send requests, event log rows, and finished webhook deliveries.'
+    help = (
+        'Delete expired messages, send requests, event log rows, finished webhook deliveries, '
+        'and unconfirmed newsletter sign-ups.'
+    )
 
     def handle(self, *args, **options):
         now = timezone.now()
@@ -25,7 +29,9 @@ class Command(BaseCommand):
             status__in=[ActionOutbox.STATUS_DELIVERED, ActionOutbox.STATUS_DEAD],
             created_at__lt=log_before,
         ).delete()
+        pending_deleted, unsubscribed_cleared = purge_newsletters(now)
         self.stdout.write(
             f'messages={messages_deleted} send_requests={requests_deleted} '
-            f'event_log={logs_deleted} deliveries={deliveries_deleted}'
+            f'event_log={logs_deleted} deliveries={deliveries_deleted} '
+            f'newsletter_pending={pending_deleted} newsletter_cleared={unsubscribed_cleared}'
         )

@@ -117,6 +117,43 @@ def broadcast_definition() -> dict[str, Any]:
     }
 
 
+def newsletter_confirmation_definition() -> dict[str, Any]:
+    """The double opt-in email a newsletter sends. email-service sends it itself, so it is not an event."""
+    return {
+        'key': 'newsletter_confirmation',
+        'event_type': '',
+        'label': 'Newsletter confirmation',
+        'description': '',
+        'owner_service': '',
+        'lane_class': LANE_TRANSACTIONAL,
+        'default_lane': LANE_TRANSACTIONAL,
+        'category': 'transactional',
+        'default_enabled': True,
+        'default_ttl_seconds': None,
+        'variables': [
+            _COMPANY,
+            _var('list_name', 'string', example='Product news'),
+            _var(
+                'confirm_url',
+                'url',
+                required=True,
+                sensitive=True,
+                example='https://email.shellui.com/n/confirm/example',
+            ),
+            _var('first_name', 'string', example='Ada'),
+            _var('recipient_email', 'string', example='ada@example.com'),
+        ],
+        'languages': _localized(
+            subject_en='Confirm your subscription to {{ list_name }}',
+            subject_fr='Confirmez votre inscription à {{ list_name }}',
+            pre_en='One click and you are on the list.',
+            pre_fr='Un clic et vous êtes inscrit.',
+        ),
+        'link_token': 'confirm_url',
+        'default_template': 'barebone.activation',
+    }
+
+
 def all_definitions() -> list[dict[str, Any]]:
     """Catalog in stable event-id order."""
     rows = [

@@ -108,15 +108,36 @@ def _int_list(raw, field: str, *, limit: int | None = None) -> list[int]:
     return values
 
 
+def _empty_audience(mode: str) -> dict:
+    return {
+        'mode': mode,
+        'group_ids': [],
+        'roles': [],
+        'access': 'enabled',
+        **{field: '' for field in DATE_FIELDS},
+        'user_ids': [],
+        'emails': [],
+    }
+
+
 def clean_audience(raw) -> dict:
-    """``mode`` is ``filter`` (every member matching the filters) or ``pick`` (chosen users and addresses)."""
+    """``mode`` is ``filter`` (every member matching the filters), ``pick`` (chosen users and addresses)
+    or ``newsletter`` (confirmed subscribers of ``list_id``)."""
     if raw is None:
         raw = {}
     if not isinstance(raw, dict):
         raise SendError(400, 'validation_failed', {'audience': ['invalid']})
     mode = raw.get('mode') or 'filter'
-    if mode not in {'filter', 'pick'}:
+    if mode not in {'filter', 'pick', 'newsletter'}:
         raise _invalid('mode')
+    if mode == 'newsletter':
+        try:
+            list_id = int(raw.get('list_id'))
+        except (TypeError, ValueError):
+            raise _invalid('list_id', 'required')
+        if list_id <= 0:
+            raise _invalid('list_id')
+        return {**_empty_audience(mode), 'list_id': list_id}
     roles = raw.get('roles') or []
     if not isinstance(roles, list) or any(role not in ROLES for role in roles):
         raise _invalid('roles')
@@ -201,7 +222,19 @@ def _identity_page(authorization: str, params: dict) -> dict:
     return body
 
 
-def fetch_audience(authorization: str, audience: dict, *, main_language: str) -> list[dict]:
+def audience_newsletter(company_id: int, audience: dict):
+    """The company's list a newsletter audience points at, or None for other modes."""
+    if audience.get('mode') != 'newsletter':
+        return None
+    from apps.email.models import NewsletterList
+
+    newsletter = NewsletterList.objects.filter(pk=audience.get('list_id'), company_id=company_id).first()
+    if newsletter is None:
+        raise _invalid('list_id')
+    return newsletter
+
+
+def fetch_audience(authorization: str, audience: dict, *, main_language: str, company_id: int) -> list[dict]:
     """Recipients as ``{email, user_id, first_name, last_name, language, hmac}``, one per address."""
     limit = settings.EMAIL_BROADCAST_MAX_RECIPIENTS
     recipients: list[dict] = []
@@ -213,6 +246,16 @@ def fetch_audience(authorization: str, audience: dict, *, main_language: str) ->
             return
         seen.add(hmac_value)
         recipients.append({**row, 'hmac': hmac_value})
+
+    newsletter = audience_newsletter(company_id, audience)
+    if newsletter is not None:
+        from apps.email.newsletters import confirmed_recipients
+
+        for row in confirmed_recipients(newsletter):
+            add({**row, 'language': row['language'] or main_language})
+        if len(recipients) > limit:
+            raise SendError(400, 'audience_too_large', extra={'limit': limit})
+        return recipients
 
     params = _identity_params(audience)
     if params is not None:
@@ -252,7 +295,11 @@ def _hmacs_in_chunks(hmacs: list[str]):
         yield hmacs[start : start + 500]
 
 
-def unsubscribed_hmacs(company_id: int, hmacs: list[str]) -> set[str]:
+def unsubscribed_hmacs(company_id: int, hmacs: list[str], audience: dict | None = None) -> set[str]:
+    """Company-wide bulk unsubscribes. A newsletter audience is already only confirmed subscribers: a
+    company-wide unsubscribe marks them unsubscribed when it happens, and confirming again later wins."""
+    if audience and audience.get('mode') == 'newsletter':
+        return set()
     found: set[str] = set()
     for chunk in _hmacs_in_chunks(hmacs):
         found |= set(
@@ -340,9 +387,9 @@ def sender_summary(company_id: int) -> dict:
 def preview_audience(company_id: int, authorization: str, audience: dict, template: EmailTemplate) -> dict:
     main = template.language or 'en'
     available = template_languages(template)
-    recipients = fetch_audience(authorization, audience, main_language=main)
+    recipients = fetch_audience(authorization, audience, main_language=main, company_id=company_id)
     hmacs = [row['hmac'] for row in recipients]
-    unsubscribed = unsubscribed_hmacs(company_id, hmacs)
+    unsubscribed = unsubscribed_hmacs(company_id, hmacs, audience)
     suppressed = suppressed_hmacs(company_id, hmacs) - unsubscribed
     languages: dict[str, int] = {}
     sendable = []
@@ -419,11 +466,13 @@ def create_broadcast(company_id: int, data: dict, user_id: int | None) -> Broadc
             user_id=user_id,
         )
         publish_version(template, version)
+        audience = clean_audience(data.get('audience'))
+        audience_newsletter(company_id, audience)
         return Broadcast.objects.create(
             company_id=company_id,
             name=name[:120],
             template=template,
-            audience=clean_audience(data.get('audience')),
+            audience=audience,
             created_by_user_id=user_id,
         )
 
@@ -443,7 +492,9 @@ def update_broadcast(broadcast: Broadcast, data: dict) -> Broadcast:
         broadcast.template.save(update_fields=['name'])
         fields.append('name')
     if 'audience' in data:
-        broadcast.audience = clean_audience(data.get('audience'))
+        audience = clean_audience(data.get('audience'))
+        audience_newsletter(broadcast.company_id, audience)
+        broadcast.audience = audience
         fields.append('audience')
     broadcast.save(update_fields=fields)
     return broadcast
@@ -462,11 +513,11 @@ def send_broadcast(broadcast: Broadcast, authorization: str) -> Broadcast:
     audience = clean_audience(broadcast.audience)
     main = template.language or 'en'
     available = template_languages(template)
-    recipients = fetch_audience(authorization, audience, main_language=main)
+    recipients = fetch_audience(authorization, audience, main_language=main, company_id=broadcast.company_id)
     if not recipients:
         raise SendError(400, 'audience_empty')
     hmacs = [row['hmac'] for row in recipients]
-    unsubscribed = unsubscribed_hmacs(broadcast.company_id, hmacs)
+    unsubscribed = unsubscribed_hmacs(broadcast.company_id, hmacs, audience)
     suppressed = suppressed_hmacs(broadcast.company_id, hmacs)
     rows = []
     for row in recipients:
@@ -604,6 +655,11 @@ def _fail(broadcast: Broadcast, code: str) -> None:
 def _step_bulk_lane(broadcast: Broadcast, deadline: float) -> None:
     template = broadcast.template
     variables_base = apply_company_name(broadcast.company_id, {})
+    audience = broadcast.audience or {}
+    if audience.get('mode') == 'newsletter':
+        from apps.email.newsletters import unsubscribe_category
+
+        variables_base['system.unsubscribe_category'] = unsubscribe_category(audience['list_id'])
     queued_any = False
     while time.monotonic() < deadline:
         batch = list(
@@ -862,6 +918,8 @@ def apply_contact_unsubscribe(company_ids: list[int], data: dict) -> bool:
     address = str(data.get('email') or '').strip()
     if not EMAIL_RE.match(address) or not company_ids:
         return False
+    from apps.email.newsletters import unsubscribe_everywhere
+
     hmac_value = email_hmac(address)
     for company_id in company_ids:
         Unsubscribe.objects.get_or_create(
@@ -870,4 +928,5 @@ def apply_contact_unsubscribe(company_ids: list[int], data: dict) -> bool:
             category=LANE_BULK,
             defaults={'source': 'resend'},
         )
+    unsubscribe_everywhere(company_ids, hmac_value, source='resend')
     return True

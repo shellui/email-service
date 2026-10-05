@@ -524,7 +524,11 @@ class ServiceClientCreatedSerializer(serializers.Serializer):
 
 
 class BroadcastAudienceSerializer(serializers.Serializer):
-    mode = serializers.ChoiceField(choices=['filter', 'pick'], help_text='filter: members matching every filter. pick: chosen users and addresses.')
+    mode = serializers.ChoiceField(
+        choices=['filter', 'pick', 'newsletter'],
+        help_text='filter: members matching every filter. pick: chosen users and addresses. newsletter: confirmed subscribers of list_id.',
+    )
+    list_id = serializers.IntegerField(required=False, help_text='Newsletter list, for mode newsletter.')
     group_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
     roles = serializers.ListField(child=serializers.ChoiceField(choices=['owner', 'staff', 'member']), required=False)
     access = serializers.ChoiceField(choices=['enabled', 'disabled', 'any'], required=False)
@@ -601,3 +605,108 @@ class BroadcastPreviewSerializer(serializers.Serializer):
     suppressed = serializers.IntegerField()
     languages = serializers.DictField(child=serializers.IntegerField(), help_text='Recipients per send language.')
     samples = serializers.ListField(child=serializers.CharField(), help_text='A few masked addresses.')
+
+
+class NewsletterCountsSerializer(serializers.Serializer):
+    pending = serializers.IntegerField()
+    confirmed = serializers.IntegerField()
+    unsubscribed = serializers.IntegerField()
+
+
+class NewsletterSenderSerializer(serializers.Serializer):
+    from_email = serializers.CharField(allow_blank=True, help_text='From address of the confirmation email.')
+    error_code = serializers.CharField(allow_blank=True, help_text='Why confirmation emails cannot be sent. Empty when they can.')
+
+
+class NewsletterSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    description = serializers.CharField(allow_blank=True)
+    public_key = serializers.CharField(help_text='Public key used in the sign-up URL. Not a secret.')
+    default_language = serializers.CharField()
+    allowed_origins = serializers.ListField(
+        child=serializers.CharField(), help_text='Websites allowed to post the form. Empty means any.'
+    )
+    confirmed_redirect_url = serializers.CharField(allow_blank=True)
+    turnstile_site_key = serializers.CharField(allow_blank=True)
+    turnstile_configured = serializers.BooleanField()
+    confirmation_template_id = serializers.IntegerField()
+    subscribe_url = serializers.CharField()
+    counts = NewsletterCountsSerializer()
+    created_at = serializers.CharField()
+    updated_at = serializers.CharField()
+    sender = NewsletterSenderSerializer(required=False)
+
+
+class NewsletterListSerializer(serializers.Serializer):
+    newsletters = NewsletterSerializer(many=True)
+
+
+class NewsletterWriteSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False)
+    description = serializers.CharField(required=False, allow_blank=True)
+    default_language = serializers.CharField(required=False)
+    allowed_origins = serializers.ListField(child=serializers.CharField(), required=False)
+    confirmed_redirect_url = serializers.CharField(required=False, allow_blank=True)
+    turnstile_site_key = serializers.CharField(required=False, allow_blank=True)
+    turnstile_secret = serializers.CharField(required=False, allow_blank=True, help_text='Write only. Empty clears it.')
+
+
+class NewsletterSubscriberSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    email = serializers.CharField(help_text='Masked once the address is cleared after unsubscribing.')
+    first_name = serializers.CharField(allow_blank=True)
+    language = serializers.CharField()
+    status = serializers.ChoiceField(choices=['pending', 'confirmed', 'unsubscribed'])
+    source = serializers.ChoiceField(choices=['form', 'admin', 'import'])
+    created_at = serializers.CharField()
+    confirmed_at = serializers.CharField(allow_null=True)
+    unsubscribed_at = serializers.CharField(allow_null=True)
+
+
+class NewsletterSubscriberPageSerializer(serializers.Serializer):
+    count = serializers.IntegerField()
+    page = serializers.IntegerField()
+    page_size = serializers.IntegerField()
+    results = NewsletterSubscriberSerializer(many=True)
+
+
+class NewsletterSubscriberCreateSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    language = serializers.CharField(required=False, allow_blank=True)
+    mode = serializers.ChoiceField(
+        choices=['confirm', 'consented'],
+        required=False,
+        help_text='confirm (default) sends the confirmation email. consented adds the address as confirmed.',
+    )
+
+
+class NewsletterSubscriberAddedSerializer(serializers.Serializer):
+    outcome = serializers.ChoiceField(choices=['sent', 'existing', 'throttled', 'suppressed', 'added'])
+    subscriber = NewsletterSubscriberSerializer()
+
+
+class NewsletterImportRequestSerializer(serializers.Serializer):
+    csv = serializers.CharField(help_text='CSV text with an email column, and optional first_name and language.')
+    mode = serializers.ChoiceField(choices=['confirm', 'consented'], required=False)
+
+
+class NewsletterImportSerializer(serializers.Serializer):
+    added = serializers.IntegerField()
+    existing = serializers.IntegerField()
+    invalid = serializers.IntegerField()
+    skipped_unsubscribed = serializers.IntegerField()
+    skipped_suppressed = serializers.IntegerField()
+
+
+class NewsletterSubscribeRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    language = serializers.CharField(required=False, allow_blank=True)
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    website = serializers.CharField(required=False, allow_blank=True, help_text='Honeypot. Leave empty.')
+    turnstile_token = serializers.CharField(required=False, allow_blank=True)
+
+
+class NewsletterSubscribeResponseSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=['pending'])

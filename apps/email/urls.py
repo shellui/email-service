@@ -1,5 +1,15 @@
 from django.urls import path
 
+from apps.email.newsletter_views import (
+    NewsletterDetailView,
+    NewsletterExportView,
+    NewsletterImportView,
+    NewsletterListView,
+    NewsletterRotateKeyView,
+    NewsletterSubscribeView,
+    NewsletterSubscriberDetailView,
+    NewsletterSubscriberListView,
+)
 from apps.email.views import (
     BroadcastDetailView,
     BroadcastListView,
@@ -65,6 +75,38 @@ urlpatterns = [
     path('broadcasts/<int:broadcast_id>', BroadcastDetailView.as_view(), name='email-broadcast-detail'),
     path('broadcasts/<int:broadcast_id>/preview', BroadcastPreviewView.as_view(), name='email-broadcast-preview'),
     path('broadcasts/<int:broadcast_id>/send', BroadcastSendView.as_view(), name='email-broadcast-send'),
+    path('newsletters', NewsletterListView.as_view(), name='email-newsletters'),
+    path('newsletters/<int:newsletter_id>', NewsletterDetailView.as_view(), name='email-newsletter-detail'),
+    path(
+        'newsletters/<int:newsletter_id>/rotate-key',
+        NewsletterRotateKeyView.as_view(),
+        name='email-newsletter-rotate-key',
+    ),
+    path(
+        'newsletters/<int:newsletter_id>/subscribers',
+        NewsletterSubscriberListView.as_view(),
+        name='email-newsletter-subscribers',
+    ),
+    path(
+        'newsletters/<int:newsletter_id>/subscribers.csv',
+        NewsletterExportView.as_view(),
+        name='email-newsletter-export',
+    ),
+    path(
+        'newsletters/<int:newsletter_id>/subscribers/import',
+        NewsletterImportView.as_view(),
+        name='email-newsletter-import',
+    ),
+    path(
+        'newsletters/<int:newsletter_id>/subscribers/<int:subscriber_id>',
+        NewsletterSubscriberDetailView.as_view(),
+        name='email-newsletter-subscriber',
+    ),
+    path(
+        'public/newsletters/<str:public_key>/subscribe',
+        NewsletterSubscribeView.as_view(),
+        name='email-newsletter-subscribe',
+    ),
     path('rules', RuleListView.as_view(), name='email-rules'),
     path('rules/<int:rule_id>', RuleDetailView.as_view(), name='email-rule-detail'),
     path('provider', ProviderView.as_view(), name='email-provider'),

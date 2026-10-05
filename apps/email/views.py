@@ -7,7 +7,6 @@ import json
 from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
-from django.views.decorators.csrf import csrf_exempt
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.permissions import AllowAny
@@ -34,10 +33,10 @@ from apps.email.models import (
     EmailTemplate,
     LaneState,
     Message,
+    NewsletterSubscriber,
     ServiceClient,
     Suppression,
     TemplateVersion,
-    Unsubscribe,
     parse_message_id,
 )
 from apps.email.renderers import PrometheusTextRenderer
@@ -93,7 +92,7 @@ from apps.email.schema import (
     WebhookAckSerializer,
     WebhookEventSerializer,
 )
-from apps.email.unsubscribe import parse_unsubscribe_token, unsubscribe_token, unsubscribe_url
+from apps.email.unsubscribe import unsubscribe_token, unsubscribe_url
 from apps.providers.credentials import strip_internal_credentials
 from apps.email.document import validate_document
 from apps.email.library import SETS as LIBRARY_SETS
@@ -534,7 +533,7 @@ class TemplateListView(APIView):
             return error_response(exc, request)
         rows = (
             EmailTemplate.objects.filter(company_id=company_id)
-            .exclude(kind=EmailTemplate.KIND_BROADCAST)
+            .exclude(kind__in=EmailTemplate.OWNED_KINDS)
             .order_by('event_type', 'language', 'id')
         )
         if definition is not None:
@@ -1219,6 +1218,7 @@ class PrivacyEraseView(APIView):
         from apps.email.models import BroadcastRecipient
 
         BroadcastRecipient.objects.filter(broadcast__company_id=company_id, email_hmac=hmac_value).delete()
+        NewsletterSubscriber.objects.filter(list__company_id=company_id, email_hmac=hmac_value).delete()
         return Response({'deleted_messages': deleted, 'email_masked': mask_email(email)})
 
 
@@ -1329,35 +1329,6 @@ class ProviderWebhookView(APIView):
 
 def _unsubscribe_token(company_id: int, email: str, category: str) -> str:
     return unsubscribe_token(company_id, email, category)
-
-
-@csrf_exempt
-def unsubscribe_page(request, token):
-    parsed = parse_unsubscribe_token(token)
-    if parsed is None:
-        return HttpResponse('Unknown token.', status=404, content_type='text/plain')
-    company_id, category, hmac_value = parsed
-    if request.method == 'GET':
-        return HttpResponse(
-            '<!doctype html><title>Shellui</title><p>Confirm unsubscribe by submitting this page.</p>',
-            content_type='text/html',
-        )
-    if request.method != 'POST':
-        return HttpResponse(status=405)
-    Unsubscribe.objects.get_or_create(
-        company_id=company_id,
-        email_hmac=hmac_value,
-        category=category,
-        defaults={'source': 'one_click'},
-    )
-    from apps.actions.emit import emit_email_event
-
-    emit_email_event(
-        company_id=company_id,
-        event_type='email.unsubscribe.created',
-        data={'category': category, 'source': 'one_click'},
-    )
-    return HttpResponse(status=200)
 
 
 @extend_schema_view(

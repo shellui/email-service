@@ -619,7 +619,11 @@ Placeholders are `{{ token }}` or `{{ token|default:"fallback" }}`. `{%` is reje
 
 `GET/POST /api/v1/broadcasts`, `GET/PATCH/DELETE /api/v1/broadcasts/{id}`, `POST /api/v1/broadcasts/{id}/preview`, and `POST /api/v1/broadcasts/{id}/send`. Auth: staff or company owner. Preview and send relay the caller's JWT to identity, whose company must be the broadcast's. Shapes, audience filters, languages, and errors are in [broadcasts.md](broadcasts.md).
 
-Template summaries carry `kind` (`event` or `broadcast`). `GET /api/v1/templates` lists event templates only.
+Template summaries carry `kind` (`event`, `broadcast`, or `newsletter_confirmation`). `GET /api/v1/templates` lists event templates only.
+
+## Admin: newsletters
+
+`GET/POST /api/v1/newsletters`, `GET/PATCH/DELETE /api/v1/newsletters/{id}`, `POST /api/v1/newsletters/{id}/rotate-key`, `GET/POST /api/v1/newsletters/{id}/subscribers`, `DELETE /api/v1/newsletters/{id}/subscribers/{sid}`, `GET /api/v1/newsletters/{id}/subscribers.csv`, and `POST /api/v1/newsletters/{id}/subscribers/import`. Auth: staff or company owner. The public sign-up endpoint is `POST /api/v1/public/newsletters/{public_key}/subscribe`, with no auth. Broadcasts send to a list with the audience `{"mode": "newsletter", "list_id": 12}`. Shapes, abuse limits, unsubscribes, and errors are in [newsletters.md](newsletters.md).
 
 ## Admin: stats
 

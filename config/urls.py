@@ -6,7 +6,7 @@ from django.urls import include, path
 from django.views.decorators.clickjacking import xframe_options_exempt
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
-from apps.email.views import unsubscribe_page
+from apps.email.public_pages import confirm_page, unsubscribe_page
 
 from . import views
 
@@ -15,6 +15,7 @@ urlpatterns = [
     path('api/v1/', include('apps.email.urls')),
     path('api/v1/actions/', include('apps.actions.urls')),
     path('u/<str:token>', unsubscribe_page, name='email-unsubscribe'),
+    path('n/confirm/<str:token>', confirm_page, name='newsletter-confirm'),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path(
         'api/docs/',

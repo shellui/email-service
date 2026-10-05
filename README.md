@@ -14,6 +14,7 @@ The integration contract is [docs/integration.md](docs/integration.md).
 - Per-company credentials encrypted at rest. API responses return a masked hint and `configured`.
 - Admin API for rules, templates, stats, test sends, and suppressions
 - Broadcasts: one email to many company users, filtered by group, role, and activity, each in their own language. See [docs/broadcasts.md](docs/broadcasts.md).
+- Newsletters: lists anyone can join from a website form, with a confirmation email (double opt-in), rate limits, a honeypot, and optional Turnstile. Issues are broadcasts sent to a list. See [docs/newsletters.md](docs/newsletters.md).
 - Prometheus metrics at `GET /api/v1/metrics` (identity JWT, same scope as storage-service)
 - Shellui Actions outbound webhooks for `email.message.*`
 - OpenAPI at `/api/docs/` and `/api/docs/redoc/`

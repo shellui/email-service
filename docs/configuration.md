@@ -67,6 +67,21 @@ The web form stays closed when `DEBUG=false` and `SETUP_TOKEN` is empty. Set `SE
 
 See [broadcasts.md](broadcasts.md).
 
+## Newsletters
+
+| Variable | Default | Role |
+| --- | --- | --- |
+| `EMAIL_NEWSLETTER_IP_PER_HOUR` | `10` | Public sign-ups per IP per hour |
+| `EMAIL_NEWSLETTER_ADDRESS_PER_DAY` | `3` | Confirmation emails per address and list per day |
+| `EMAIL_NEWSLETTER_LIST_PER_HOUR` | `500` | Public sign-ups per list per hour |
+| `EMAIL_NEWSLETTER_RESEND_MINUTES` | `10` | Minimum wait before a pending address gets another confirmation email |
+| `EMAIL_NEWSLETTER_CONFIRM_HOURS` | `48` | How long a confirmation link works |
+| `EMAIL_NEWSLETTER_PENDING_DAYS` | `7` | Unconfirmed sign-ups are deleted, and addresses of unsubscribed people cleared, after this many days (`purge_expired_data`) |
+| `EMAIL_CLIENT_IP_HEADER` | empty | Header carrying the visitor IP behind a proxy, for example `CF-Connecting-IP`. Empty uses the connection address. |
+| `EMAIL_TURNSTILE_VERIFY_URL` | Cloudflare siteverify | Turnstile verification endpoint |
+
+See [newsletters.md](newsletters.md).
+
 ## Composing
 
 | Variable | Default | Role |

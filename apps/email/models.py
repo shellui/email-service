@@ -81,9 +81,12 @@ class EmailTemplate(models.Model):
 
     KIND_EVENT = 'event'
     KIND_BROADCAST = 'broadcast'
+    KIND_NEWSLETTER_CONFIRMATION = 'newsletter_confirmation'
+    # Content owned by a broadcast or a newsletter, kept out of the template list.
+    OWNED_KINDS = (KIND_BROADCAST, KIND_NEWSLETTER_CONFIRMATION)
 
     template_key = models.CharField(max_length=128, unique=True)
-    kind = models.CharField(max_length=16, default=KIND_EVENT)
+    kind = models.CharField(max_length=32, default=KIND_EVENT)
     company_id = models.PositiveIntegerField(db_index=True)
     language = models.CharField(max_length=8)
     name = models.CharField(max_length=120, blank=True)
@@ -222,6 +225,68 @@ class BroadcastRecipient(models.Model):
         ]
         indexes = [
             models.Index(fields=['broadcast', 'status'], name='email_bcast_recipient_idx'),
+        ]
+
+
+class NewsletterList(models.Model):
+    """A list people join from a public form, with double opt-in. Broadcasts send to its confirmed subscribers."""
+
+    company_id = models.PositiveIntegerField(db_index=True)
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=500, blank=True)
+    public_key = models.CharField(max_length=40, unique=True)
+    default_language = models.CharField(max_length=8, default='en')
+    # Empty means any website may post to the sign-up endpoint.
+    allowed_origins = models.JSONField(default=list, blank=True)
+    confirmed_redirect_url = models.CharField(max_length=500, blank=True)
+    turnstile_site_key = models.CharField(max_length=100, blank=True)
+    turnstile_secret_ciphertext = models.TextField(blank=True)
+    confirmation_template = models.OneToOneField(
+        EmailTemplate, related_name='newsletter', on_delete=models.PROTECT
+    )
+    created_by_user_id = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name', 'id']
+
+    def __str__(self) -> str:
+        return f'{self.company_id}:{self.name}'
+
+
+class NewsletterSubscriber(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_CONFIRMED = 'confirmed'
+    STATUS_UNSUBSCRIBED = 'unsubscribed'
+    STATUSES = (STATUS_PENDING, STATUS_CONFIRMED, STATUS_UNSUBSCRIBED)
+
+    SOURCE_FORM = 'form'
+    SOURCE_ADMIN = 'admin'
+    SOURCE_IMPORT = 'import'
+
+    list = models.ForeignKey(NewsletterList, related_name='subscribers', on_delete=models.CASCADE)
+    # ``{"email": ...}``, encrypted. Cleared some days after an unsubscribe; the HMAC stays.
+    email_ciphertext = models.TextField(blank=True)
+    email_hmac = models.CharField(max_length=64)
+    email_masked = models.CharField(max_length=255)
+    first_name = models.CharField(max_length=150, blank=True)
+    language = models.CharField(max_length=8)
+    status = models.CharField(max_length=16, default=STATUS_PENDING)
+    source = models.CharField(max_length=16, default=SOURCE_FORM)
+    confirm_token_hash = models.CharField(max_length=64, blank=True, db_index=True)
+    confirm_sent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    unsubscribed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        constraints = [
+            models.UniqueConstraint(fields=['list', 'email_hmac'], name='uniq_newsletter_subscriber'),
+        ]
+        indexes = [
+            models.Index(fields=['list', 'status'], name='email_nl_subscriber_idx'),
         ]
 
 

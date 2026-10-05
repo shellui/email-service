@@ -188,9 +188,14 @@ SPECTACULAR_SETTINGS = {
         {'name': 'privacy', 'description': 'Erasure of stored addresses.'},
         {'name': 'actions', 'description': 'Outbound Shellui Actions webhooks.'},
         {'name': 'service-clients', 'description': 'Service API keys issued to other Shellui services.'},
+        {'name': 'newsletters', 'description': 'Newsletter lists, subscribers, and the public sign-up endpoint.'},
         {'name': 'platform-metrics', 'description': 'Prometheus metrics.'},
         {'name': 'health', 'description': 'Service health checks.'},
     ],
+    'ENUM_NAME_OVERRIDES': {
+        'AudienceModeEnum': ['filter', 'pick', 'newsletter'],
+        'SubscriberAddModeEnum': ['confirm', 'consented'],
+    },
 }
 
 MIDDLEWARE = [
@@ -451,6 +456,17 @@ EMAIL_BROADCAST_MAX_RECIPIENTS = _env_int('EMAIL_BROADCAST_MAX_RECIPIENTS', 1000
 # Resend allows 10 requests per second per team, shared with every other call on the key.
 EMAIL_RESEND_BROADCAST_RPS = _env_int('EMAIL_RESEND_BROADCAST_RPS', 4)
 EMAIL_BROADCAST_STEP_SECONDS = _env_int('EMAIL_BROADCAST_STEP_SECONDS', 20)
+EMAIL_NEWSLETTER_IP_PER_HOUR = _env_int('EMAIL_NEWSLETTER_IP_PER_HOUR', 10)
+EMAIL_NEWSLETTER_ADDRESS_PER_DAY = _env_int('EMAIL_NEWSLETTER_ADDRESS_PER_DAY', 3)
+EMAIL_NEWSLETTER_LIST_PER_HOUR = _env_int('EMAIL_NEWSLETTER_LIST_PER_HOUR', 500)
+EMAIL_NEWSLETTER_RESEND_MINUTES = _env_int('EMAIL_NEWSLETTER_RESEND_MINUTES', 10)
+EMAIL_NEWSLETTER_CONFIRM_HOURS = _env_int('EMAIL_NEWSLETTER_CONFIRM_HOURS', 48)
+EMAIL_NEWSLETTER_PENDING_DAYS = _env_int('EMAIL_NEWSLETTER_PENDING_DAYS', 7)
+# Header carrying the visitor's IP behind a proxy (for example CF-Connecting-IP). Empty uses REMOTE_ADDR.
+EMAIL_CLIENT_IP_HEADER = os.getenv('EMAIL_CLIENT_IP_HEADER', '').strip()
+EMAIL_TURNSTILE_VERIFY_URL = os.getenv(
+    'EMAIL_TURNSTILE_VERIFY_URL', 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
+).strip()
 EMAIL_MAX_VARIABLES_BYTES = _env_int('EMAIL_MAX_VARIABLES_BYTES', 8192)
 EMAIL_COMPANY_TRANSACTIONAL_PER_HOUR = _env_int('EMAIL_COMPANY_TRANSACTIONAL_PER_HOUR', 1000)
 EMAIL_RECIPIENT_AUTH_LIMIT = _env_int('EMAIL_RECIPIENT_AUTH_LIMIT', 5)

@@ -32,6 +32,8 @@ States: `draft`, `queued`, `preparing` (recipients are being handed to the provi
 
 `pick` sends to `user_ids` (company members) and `emails` (addresses outside the directory, up to 1000).
 
+`newsletter` sends to the confirmed subscribers of one of the company's lists: `{"mode": "newsletter", "list_id": 12}`. It does not call identity. Each subscriber gets their sign-up language, and the bulk-lane unsubscribe link removes them from that list only. See [newsletters.md](newsletters.md).
+
 email-service relays the caller's identity JWT to `GET {IDENTITY_SERVICE_URL}/api/v1/users/audience`, so identity decides who the caller may see. The JWT company must be the broadcast's company (`403 company_mismatch` otherwise). Users without an email or with a deactivated account are never included. More than `EMAIL_BROADCAST_MAX_RECIPIENTS` returns `400 audience_too_large`.
 
 ## Languages
@@ -58,7 +60,7 @@ The delivery is picked from the company provider when the broadcast is sent.
 
 ## Unsubscribes and webhooks
 
-Both deliveries honor the company's bulk unsubscribes and the suppressions that apply to the bulk lane.
+Both deliveries honor the company's bulk unsubscribes and the suppressions that apply to the bulk lane. A bulk unsubscribe also unsubscribes the address from every newsletter list of the company.
 
 For Resend, subscribe the webhook to `email.*` and `contact.updated` events. Events carrying `broadcast_id` update the matching recipient (`sent`, `delivered`, `bounced`, `complained`, `failed`). A hard bounce suppresses the address for 30 days and a complaint suppresses it for bulk and transactional mail. `contact.updated` with `unsubscribed: true` (someone used Resend's unsubscribe link) records a bulk unsubscribe for the company of the webhook, or for every Shellui company on the platform webhook.
 

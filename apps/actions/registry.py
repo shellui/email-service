@@ -22,6 +22,8 @@ _EVENTS = (
     DomainEventType('email.message.expired', 'Message expired', 'The auth-lane TTL elapsed before handoff.'),
     DomainEventType('email.message.suppressed', 'Message suppressed', 'The address was suppressed.'),
     DomainEventType('email.unsubscribe.created', 'Unsubscribe created', 'A recipient unsubscribed.'),
+    DomainEventType('email.newsletter.confirmed', 'Newsletter confirmed', 'Someone confirmed a newsletter subscription.'),
+    DomainEventType('email.newsletter.unsubscribed', 'Newsletter unsubscribed', 'Someone left a newsletter.'),
 )
 
 _BY_ID = {event.id: event for event in _EVENTS}
