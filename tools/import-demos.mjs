@@ -3,7 +3,8 @@
  *
  *   node tools/import-demos.mjs
  *
- * Writes renderer/library/<set>/<name>.json and renderer/library/<set>/head.css.
+ * Writes renderer/library/<set>/<name>.json and renderer/library/<set>/head.css,
+ * with the fonts that CSS uses copied into static/library/fonts/.
  * Rerun by hand after updating renderer/demos/, then commit the output.
  */
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -13,6 +14,7 @@ import { build } from 'esbuild';
 import { jsx } from 'react/jsx-runtime';
 import { render } from 'react-email';
 import { composeDocument, compactDocument, createEditor, parseHtml } from '../renderer/editor.mjs';
+import { hostFonts } from './host-fonts.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const demosDir = join(root, 'renderer', 'demos');
@@ -225,7 +227,7 @@ export async function importDemos() {
         writeFileSync(join(setDir, `${name}.json`), `${JSON.stringify(seed)}\n`);
         written.push(key);
       }
-      writeFileSync(join(setDir, 'head.css'), `${headCss([...headRules])}\n`);
+      writeFileSync(join(setDir, 'head.css'), `${await hostFonts(headCss([...headRules]))}\n`);
     }
   } finally {
     rmSync(workDir, { recursive: true, force: true });

@@ -20,7 +20,9 @@ Built-ins are read-only (`409 library_built_in` on `PUT` or `DELETE`). Duplicate
 
 The demo copy stays as written, in English, and is meant to be edited. The import passes `{{ company_name }}` as each demo's company name and `{{ action_url }}` as its link, and points unsubscribe links at `{{ system.unsubscribe_url }}`. `company_name` is filled at send time. On a copy, `{{ action_url }}` becomes the event's link variable (`link_token` in the catalog), or `https://example.com` when the event has no link.
 
-Images are served by email-service from `static/library/` and referenced as `{{ system.assets_url }}/…` in the document. `system.assets_url` is `EMAIL_PUBLIC_URL` plus `/static/library` and is filled at send time.
+Images and fonts are served by email-service from `static/library/` and referenced as `{{ system.assets_url }}/…`, images in the document and fonts in the set's `head.css`. `system.assets_url` is `EMAIL_PUBLIC_URL` plus `/static/library` and is filled at send time. Sent mail loads nothing from another host, which receivers such as Gmail treat as a sign of trust when it matches the sending domain. Point `EMAIL_PUBLIC_URL` at your sending domain or a subdomain of it. WhiteNoise serves the fonts with `Access-Control-Allow-Origin: *`, which mail clients and the admin preview need for web fonts.
+
+The fonts are the sets' Google Fonts files (Inter, Geist, Instrument Serif, IBM Plex Sans Condensed, all under the SIL Open Font License), copied into `static/library/fonts/` with their Google path. `node tools/host-fonts.mjs` inlines any `fonts.googleapis.com` import of a `head.css`, downloads each `fonts.gstatic.com` file it uses, and rewrites the CSS to `{{ system.assets_url }}/fonts/…`. The demo import runs it on every import.
 
 ### Source
 

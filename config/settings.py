@@ -136,6 +136,8 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    # WhiteNoise serves static files in development too, with the CORS header web fonts need.
+    'whitenoise.runserver_nostatic',
     'django.contrib.staticfiles',
     'corsheaders',
     'rest_framework',
@@ -264,6 +266,7 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 if DEBUG:
     WHITENOISE_USE_FINDERS = True
     WHITENOISE_AUTOREFRESH = True
+WHITENOISE_MIMETYPES = {'.ttf': 'font/ttf'}
 
 STORAGES = {
     'default': {

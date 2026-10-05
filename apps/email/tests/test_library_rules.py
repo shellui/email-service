@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
+
+from django.conf import settings
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -9,9 +14,10 @@ from apps.authapi.principal import EmailPrincipal
 from apps.email.crypto import encrypt_json
 from apps.email.document import validate_document
 from apps.email.keys import issue_service_key
-from apps.email.library import seed_files
+from apps.email.library import SETS, seed_files, set_head
 from apps.email.models import CompanyProvider, EmailRule, EmailTemplate, EventSkip, LibraryTemplate, Message
-from apps.email.service import SendError
+from apps.email.service import SendError, assets_url
+from apps.email.substitution import substitute
 from apps.providers.registry import fake_provider
 
 LIBRARY_KEYS = {
@@ -68,6 +74,29 @@ class LibraryContentTests(TestCase):
         self.assertIn('{{ company_name }}', welcome.html)
         self.assertIn('{{ system.assets_url }}/', welcome.html)
         self.assertIn('<!DOCTYPE html', welcome.html)
+
+    def test_library_fonts_and_images_load_from_the_service(self):
+        static = Path(settings.BASE_DIR) / 'static' / 'library'
+        for set_key, _name in SETS:
+            head = set_head(set_key)
+            sources = re.findall(r'\{\{ system\.assets_url \}\}/([\w./-]+)', head)
+            with self.subTest(set=set_key):
+                self.assertNotRegex(head, r'https?://')
+                self.assertTrue(sources)
+                for source in sources:
+                    self.assertTrue((static / source).is_file(), source)
+        for seed in seed_files():
+            for source in re.findall(r'"src": "([^"]*)"', json.dumps(seed['document'])):
+                with self.subTest(key=seed['key'], src=source):
+                    self.assertTrue(source.startswith('{{ system.assets_url }}/'))
+                    self.assertTrue((static / source.split('}}/', 1)[1]).is_file())
+
+    @override_settings(EMAIL_PUBLIC_URL='https://mail.acme.com')
+    def test_sent_html_points_fonts_at_the_service(self):
+        welcome = LibraryTemplate.objects.get(key='barebone.welcome')
+        html, _missing = substitute(welcome.html, {'system.assets_url': assets_url()}, html=True)
+        self.assertIn("url('https://mail.acme.com/static/library/fonts/inter/v20/", html)
+        self.assertNotIn('fonts.g', html)
 
     def test_validate_document_rejects_unsafe_content(self):
         cases = {

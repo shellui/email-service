@@ -104,7 +104,7 @@ When a caller omits `company_name`, email-service uses the name a previous calle
 email-service fills these itself, and callers must not send them:
 
 - `system.message_id`.
-- `system.assets_url`, `EMAIL_PUBLIC_URL` plus `/static/library`, where library images load from.
+- `system.assets_url`, `EMAIL_PUBLIC_URL` plus `/static/library`, where library images and fonts load from.
 - On non-auth mail, `system.unsubscribe_url` and `system.preferences_url`, the signed `POST /u/{token}` URL for that recipient. Auth mail does not set them.
 
 Auth URL hosts are limited by `EMAIL_AUTH_LINK_HOSTS` (default `id.shellui.com`, plus `localhost` and `127.0.0.1` when `DEBUG=true`).
