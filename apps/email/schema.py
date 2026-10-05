@@ -251,6 +251,7 @@ class TemplateSummarySerializer(serializers.Serializer):
     template_key = serializers.CharField()
     name = serializers.CharField(allow_blank=True)
     event_type = serializers.CharField(allow_blank=True)
+    kind = serializers.ChoiceField(choices=['event', 'broadcast'], help_text='broadcast: the content of a broadcast.')
     language = serializers.CharField()
     company_id = serializers.IntegerField()
     active_version = serializers.IntegerField(allow_null=True)
@@ -520,3 +521,83 @@ class ServiceClientCreatedSerializer(serializers.Serializer):
     service = serializers.CharField()
     key = serializers.CharField()
     key_prefix = serializers.CharField()
+
+
+class BroadcastAudienceSerializer(serializers.Serializer):
+    mode = serializers.ChoiceField(choices=['filter', 'pick'], help_text='filter: members matching every filter. pick: chosen users and addresses.')
+    group_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
+    roles = serializers.ListField(child=serializers.ChoiceField(choices=['owner', 'staff', 'member']), required=False)
+    access = serializers.ChoiceField(choices=['enabled', 'disabled', 'any'], required=False)
+    joined_after = serializers.CharField(required=False, allow_blank=True, help_text='ISO date.')
+    joined_before = serializers.CharField(required=False, allow_blank=True, help_text='ISO date, inclusive.')
+    seen_after = serializers.CharField(required=False, allow_blank=True, help_text='ISO date.')
+    seen_before = serializers.CharField(required=False, allow_blank=True, help_text='ISO date, inclusive. Never-seen users match.')
+    user_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
+    emails = serializers.ListField(child=serializers.CharField(), required=False, help_text='Addresses outside the directory. They get the main language.')
+
+
+class BroadcastCountsSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    pending = serializers.IntegerField()
+    skipped_unsubscribed = serializers.IntegerField()
+    skipped_suppressed = serializers.IntegerField()
+    queued = serializers.IntegerField()
+    sent = serializers.IntegerField()
+    delivered = serializers.IntegerField()
+    bounced = serializers.IntegerField()
+    complained = serializers.IntegerField()
+    failed = serializers.IntegerField()
+
+
+class BroadcastSenderSerializer(serializers.Serializer):
+    from_email = serializers.CharField(allow_blank=True)
+    from_name = serializers.CharField(allow_blank=True)
+    delivery = serializers.CharField(allow_blank=True, help_text='resend or bulk_lane. Empty when there is no bulk sender.')
+    error_code = serializers.CharField(allow_blank=True)
+
+
+class BroadcastSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    state = serializers.ChoiceField(choices=['draft', 'queued', 'preparing', 'sending', 'sent', 'failed'])
+    delivery = serializers.CharField(allow_blank=True)
+    from_email = serializers.CharField(allow_blank=True)
+    template_id = serializers.IntegerField()
+    template_version = serializers.IntegerField(allow_null=True)
+    language = serializers.CharField()
+    audience = BroadcastAudienceSerializer()
+    counts = BroadcastCountsSerializer(allow_null=True)
+    last_error_code = serializers.CharField(allow_blank=True)
+    created_at = serializers.CharField()
+    updated_at = serializers.CharField()
+    sent_at = serializers.CharField(allow_null=True)
+    sender = BroadcastSenderSerializer(required=False)
+
+
+class BroadcastListSerializer(serializers.Serializer):
+    broadcasts = BroadcastSerializer(many=True)
+
+
+class BroadcastCreateSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    source_key = serializers.CharField(help_text='Library template to start from.')
+    language = serializers.CharField(required=False, help_text='Main language of the content. Default en.')
+    audience = BroadcastAudienceSerializer(required=False)
+
+
+class BroadcastPatchSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False)
+    audience = BroadcastAudienceSerializer(required=False)
+
+
+class BroadcastPreviewRequestSerializer(serializers.Serializer):
+    audience = BroadcastAudienceSerializer(required=False, help_text='Defaults to the saved audience.')
+
+
+class BroadcastPreviewSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    sendable = serializers.IntegerField()
+    unsubscribed = serializers.IntegerField()
+    suppressed = serializers.IntegerField()
+    languages = serializers.DictField(child=serializers.IntegerField(), help_text='Recipients per send language.')
+    samples = serializers.ListField(child=serializers.CharField(), help_text='A few masked addresses.')

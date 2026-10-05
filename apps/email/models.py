@@ -77,9 +77,13 @@ class LibraryTemplate(models.Model):
 
 
 class EmailTemplate(models.Model):
-    """A company's copy of a library template, sent by the rules that point at it."""
+    """A company's copy of a library template, sent by the rules or the broadcast that point at it."""
+
+    KIND_EVENT = 'event'
+    KIND_BROADCAST = 'broadcast'
 
     template_key = models.CharField(max_length=128, unique=True)
+    kind = models.CharField(max_length=16, default=KIND_EVENT)
     company_id = models.PositiveIntegerField(db_index=True)
     language = models.CharField(max_length=8)
     name = models.CharField(max_length=120, blank=True)
@@ -153,6 +157,71 @@ class EmailRule(models.Model):
         ]
         indexes = [
             models.Index(fields=['company_id', 'service', 'event_type'], name='email_rule_lookup_idx'),
+        ]
+
+
+class Broadcast(models.Model):
+    """One email sent once to a company audience. Content lives on ``template`` (kind ``broadcast``)."""
+
+    STATE_DRAFT = 'draft'
+    STATE_QUEUED = 'queued'
+    STATE_PREPARING = 'preparing'
+    STATE_SENDING = 'sending'
+    STATE_SENT = 'sent'
+    STATE_FAILED = 'failed'
+
+    DELIVERY_RESEND = 'resend'
+    DELIVERY_BULK_LANE = 'bulk_lane'
+
+    company_id = models.PositiveIntegerField(db_index=True)
+    name = models.CharField(max_length=120)
+    template = models.OneToOneField(EmailTemplate, related_name='broadcast', on_delete=models.PROTECT)
+    # See ``apps.email.broadcasts.clean_audience``.
+    audience = models.JSONField(default=dict, blank=True)
+    state = models.CharField(max_length=16, default=STATE_DRAFT)
+    delivery = models.CharField(max_length=16, blank=True)
+    from_email = models.EmailField(blank=True)
+    template_version = models.PositiveIntegerField(null=True, blank=True)
+    # Resend path: language mapped to ``{segment_id, broadcast_id}``.
+    resend_ids = models.JSONField(default=dict, blank=True)
+    # The Resend broadcast ids, space-separated, so webhooks find the broadcast with ``contains``.
+    resend_lookup = models.CharField(max_length=512, blank=True, db_index=True)
+    last_error_code = models.CharField(max_length=64, blank=True)
+    created_by_user_id = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+
+class BroadcastRecipient(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_UNSUBSCRIBED = 'skipped_unsubscribed'
+    STATUS_SUPPRESSED = 'skipped_suppressed'
+    STATUS_QUEUED = 'queued'
+    STATUS_SENT = 'sent'
+    STATUS_DELIVERED = 'delivered'
+    STATUS_BOUNCED = 'bounced'
+    STATUS_COMPLAINED = 'complained'
+    STATUS_FAILED = 'failed'
+
+    broadcast = models.ForeignKey(Broadcast, related_name='recipients', on_delete=models.CASCADE)
+    user_id = models.PositiveIntegerField(null=True, blank=True)
+    # The address and names, encrypted. Cleared once the provider has the message.
+    contact_ciphertext = models.TextField(blank=True)
+    email_hmac = models.CharField(max_length=64)
+    language = models.CharField(max_length=8)
+    status = models.CharField(max_length=24, default=STATUS_PENDING)
+    message = models.ForeignKey('Message', null=True, blank=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['broadcast', 'email_hmac'], name='uniq_broadcast_recipient'),
+        ]
+        indexes = [
+            models.Index(fields=['broadcast', 'status'], name='email_bcast_recipient_idx'),
         ]
 
 

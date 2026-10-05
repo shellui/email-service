@@ -7,7 +7,7 @@ import secrets
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.email.catalog import LANE_AUTH, all_definitions, get_definition
+from apps.email.catalog import LANE_AUTH, all_definitions, broadcast_definition, get_definition
 from apps.email.document import adapt_to_event, validate_document
 from apps.email.library import library_template, set_head
 from apps.email.models import EmailRule, EmailTemplate, LibraryTemplate, TemplateVersion
@@ -81,6 +81,7 @@ def template_summary(template: EmailTemplate) -> dict:
         'template_key': template.template_key,
         'name': template.name,
         'event_type': template.event_type,
+        'kind': template.kind,
         'language': template.language,
         'company_id': template.company_id,
         'active_version': template.active_version,
@@ -90,7 +91,9 @@ def template_summary(template: EmailTemplate) -> dict:
     }
 
 
-def _definition_for(template: EmailTemplate) -> dict | None:
+def definition_for(template: EmailTemplate) -> dict | None:
+    if template.kind == EmailTemplate.KIND_BROADCAST:
+        return broadcast_definition()
     return get_definition(template.event_type or '')
 
 
@@ -135,7 +138,7 @@ def _render_variants(template: EmailTemplate, version: TemplateVersion, definiti
 
 
 def publish_version(template: EmailTemplate, version: TemplateVersion) -> None:
-    definition = _definition_for(template)
+    definition = definition_for(template)
     for language, document, subject, preheader in _version_variants(definition, version):
         try:
             tokens = document_tokens(document, subject, preheader)
@@ -179,7 +182,7 @@ def create_version(
     """Validate, compose, and store a draft in every language. The stored HTML is what publishing sends."""
     if not subject:
         raise SendError(400, 'validation_failed', {'subject': ['required']})
-    definition = _definition_for(template)
+    definition = definition_for(template)
     version = TemplateVersion(
         template=template,
         number=_next_number(template),
@@ -205,7 +208,7 @@ def create_version(
 
 def library_document_for(template: EmailTemplate, source: LibraryTemplate) -> dict:
     """``source`` adapted to the copy's event, for "Start over from another template"."""
-    definition = _definition_for(template) or {}
+    definition = definition_for(template) or {}
     return adapt_to_event(source.document, definition)
 
 
@@ -417,7 +420,7 @@ def default_content(definition: dict, language: str) -> dict:
 
 
 def content_for_template(template: EmailTemplate, language: str) -> dict:
-    definition = _definition_for(template)
+    definition = definition_for(template)
     version = None
     if template.active_version:
         version = TemplateVersion.objects.filter(

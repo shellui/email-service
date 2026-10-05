@@ -13,9 +13,92 @@ The integration contract is [docs/integration.md](docs/integration.md).
 - Provider adapters: Resend (default) and SMTP. Mailjet is the next adapter. See [docs/providers.md](docs/providers.md).
 - Per-company credentials encrypted at rest. API responses return a masked hint and `configured`.
 - Admin API for rules, templates, stats, test sends, and suppressions
+- Broadcasts: one email to many company users, filtered by group, role, and activity, each in their own language. See [docs/broadcasts.md](docs/broadcasts.md).
 - Prometheus metrics at `GET /api/v1/metrics` (identity JWT, same scope as storage-service)
 - Shellui Actions outbound webhooks for `email.message.*`
 - OpenAPI at `/api/docs/` and `/api/docs/redoc/`
+
+## Resend setup (required before going live)
+
+> [!IMPORTANT]
+> An API key alone is not enough. Without the steps below, bounced and complained addresses keep receiving mail, delivery statuses and broadcast counts never move past "handed to the provider", broadcasts fail outright, and unsubscribes made on Resend's page are never recorded in email-service.
+
+Do this once for the platform Resend account Shellui sends from, and again for every company that brings its own Resend account (see [A company with its own Resend account](#a-company-with-its-own-resend-account)).
+
+### 1. Verify two sending domains
+
+In **Resend > Domains**, add both and publish the DNS records Resend shows (DKIM, plus SPF and MX for the return path). Resend refuses to send from a domain that is not verified.
+
+| Domain | Sends | Setting |
+| --- | --- | --- |
+| Main domain, for example `shellui.com` | Sign-in links, invitations, notifications | `DEFAULT_FROM_EMAIL=no-reply@shellui.com` |
+| News subdomain, for example `news.shellui.com` | Broadcasts and other bulk mail | `BULK_FROM_EMAIL=news@news.shellui.com` |
+
+The subdomain is Resend's advice: spam complaints about news then do not hurt the reputation of sign-in mail.
+
+### 2. Create a Full access API key
+
+In **Resend > API Keys**, create a key with **Full access** and put it in `RESEND_API_KEY`.
+
+> [!WARNING]
+> A **Sending access** key sends single emails but cannot create the segments, contacts, and broadcasts that Resend Broadcasts need. Every broadcast then fails with `provider_unauthorized`.
+
+### 3. Add the webhook
+
+In **Resend > Webhooks**, add an endpoint:
+
+- **URL:** `{PUBLIC_BASE_URL}/api/v1/provider-webhooks/resend/all`, for example `https://email.shellui.com/api/v1/provider-webhooks/resend/all`. The last segment is a free label stored on each event.
+- **Events:** `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained`, `email.failed`, `email.suppressed`, and **`contact.updated`**. `email.opened` and `email.clicked` are ignored, so leave them off.
+- **Signing secret:** copy the `whsec_…` value into `RESEND_WEBHOOK_SECRET`.
+
+| Events | What breaks without them |
+| --- | --- |
+| `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.failed`, `email.suppressed` | Message and broadcast statuses stop at "handed to the provider". Statistics and the Shellui Actions `email.message.*` events are missing. |
+| `email.bounced`, `email.complained` | Bad addresses and spam complaints are not suppressed and keep receiving mail, which hurts the domain's reputation. |
+| `contact.updated` | Someone who unsubscribes with the link in a Resend broadcast is not added to the email-service unsubscribe list. |
+
+Resend must reach that URL. A local email-service needs a tunnel, for example `cloudflared tunnel --url http://localhost:8003`, with the tunnel URL in the endpoint. Each delivery in the Resend webhook page shows the response: `200` is accepted, `401` means the signing secret does not match.
+
+### 4. Leave tracking off
+
+In each domain's settings, leave open and click tracking off. Click tracking rewrites every link through Resend, sign-in links included, and email-service ignores open and click events anyway.
+
+### 5. Check the plan limits
+
+Each broadcast adds its recipients as Resend contacts, in one segment per language named `<broadcast name> (<language>) #<id>`. Contacts count toward the Resend marketing plan limits and are not deleted after the send.
+
+### email-service settings
+
+```bash
+EMAIL_FALLBACK_PROVIDER=resend
+RESEND_API_KEY=re_...                        # Full access
+RESEND_WEBHOOK_SECRET=whsec_...
+DEFAULT_FROM_EMAIL=no-reply@shellui.com      # verified main domain
+BULK_FROM_EMAIL=news@news.shellui.com        # verified news subdomain
+BULK_FROM_NAME=Shellui
+EMAIL_PLATFORM_COMPANY_IDS=1                 # companies allowed to send from these addresses
+PUBLIC_BASE_URL=https://email.shellui.com    # webhook host and email-service unsubscribe links
+IDENTITY_SERVICE_URL=https://id.shellui.com  # broadcast audiences
+```
+
+Run the bulk worker (`run_email_worker --lane bulk`). Without it, broadcasts stay queued.
+
+### A company with its own Resend account
+
+The company repeats steps 1 to 5 on its own account, then:
+
+- Saves its Full access key, From address, and Bulk From address in the admin under **Email > Provider**, with provider **Resend**.
+- Points its Resend webhook at the URL with its company id: `https://email.shellui.com/api/v1/provider-webhooks/resend/all?company_id=42`. That URL only accepts the company's own signing secret, never the platform one.
+- Stores the signing secret through the API. The admin form has no field for it yet:
+
+```bash
+curl -X PUT "https://email.shellui.com/api/v1/provider?company_id=42" \
+  -H "Authorization: Bearer <identity JWT of a staff member or the company owner>" \
+  -H "Content-Type: application/json" \
+  -d '{"provider": "resend", "from_email": "no-reply@acme.com", "webhook_secret": "whsec_..."}'
+```
+
+`from_email` is required on every `PUT`. The stored API key is kept when `credentials` is omitted.
 
 ## Project structure
 
@@ -87,12 +170,14 @@ Local development can use `IDENTITY_SERVICE_URL=http://localhost:8000`. For iden
 HTTP and delivery are separate processes:
 
 ```bash
-uv run python manage.py run_email_worker
+uv run python manage.py run_email_worker --lane auth
+uv run python manage.py run_email_worker --lane transactional
+uv run python manage.py run_email_worker --lane bulk
 uv run python manage.py retry_webhooks
 uv run python manage.py purge_expired_data
 ```
 
-Schedule `retry_webhooks` every minute and `purge_expired_data` every hour. Leave `EMAIL_DELIVER_SYNC=false` outside tests.
+Keep one resident worker per lane. The bulk worker also sends broadcasts. Schedule `retry_webhooks` every minute and `purge_expired_data` every hour. Leave `EMAIL_DELIVER_SYNC=false` outside tests.
 
 ### Service key
 

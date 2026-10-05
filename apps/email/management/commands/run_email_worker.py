@@ -6,7 +6,7 @@ from apps.email.service import deliver_due
 
 
 class Command(BaseCommand):
-    help = 'Claim and send queued messages for one lane.'
+    help = 'Claim and send queued messages for one lane. The bulk worker also moves broadcasts forward.'
 
     def add_arguments(self, parser):
         parser.add_argument('--lane', required=True, choices=['auth', 'transactional', 'bulk'])
@@ -17,9 +17,14 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         lane = options['lane']
         while True:
+            broadcasts = 0
+            if lane == 'bulk':
+                from apps.email.broadcasts import process_broadcasts
+
+                broadcasts = process_broadcasts()
             count = deliver_due(lane, limit=options['batch_size'])
             if options['once']:
-                self.stdout.write(f'processed={count}')
+                self.stdout.write(f'processed={count} broadcasts={broadcasts}' if lane == 'bulk' else f'processed={count}')
                 return
             if count == 0:
                 time.sleep(options['poll_seconds'])

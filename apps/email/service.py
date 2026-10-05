@@ -868,7 +868,9 @@ def deliver_message(message_id) -> None:
             template_key=snapshot['template_key'],
         ).first()
         if template is not None:
-            definition = get_definition(template.event_type or '') or get_definition(template.template_key)
+            from apps.email.rules import definition_for
+
+            definition = definition_for(template) or get_definition(template.template_key)
     if definition is None and template is None:
         _finish_failed(message_id, 'template_not_found')
         return

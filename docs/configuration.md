@@ -36,7 +36,8 @@ The web form stays closed when `DEBUG=false` and `SETUP_TOKEN` is empty. Set `SE
 | `EMAIL_PUBLIC_URL` | `PUBLIC_BASE_URL` | Origin recipients load library images from (`{EMAIL_PUBLIC_URL}/static/library/`). It must be reachable from the internet. |
 | `DEFAULT_FROM_EMAIL` | `no-reply@shellui.com` | Auth and transactional fallback |
 | `DEFAULT_FROM_NAME` | `Shellui` | Display name |
-| `BULK_FROM_EMAIL` | `news@news.shellui.com` | Reserved for later bulk mail |
+| `BULK_FROM_EMAIL` | `news@news.shellui.com` | Broadcast sender for Shellui companies without a Bulk From |
+| `BULK_FROM_NAME` | `Shellui` | Display name for `BULK_FROM_EMAIL` |
 | `EMAIL_AUTH_LINK_HOSTS` | `id.shellui.com` plus localhost only when `DEBUG=true` | Hosts allowed in auth URL variables. `DEBUG=false` drops `localhost`, `127.0.0.1`, and `::1`. |
 | `EMAIL_PLATFORM_COMPANY_IDS` | empty | Company ids that may use the platform From for non-auth mail |
 | `EMAIL_ALLOW_COMPANY_SMTP` | `false` | Allow a company to store an SMTP relay |
@@ -54,6 +55,17 @@ The web form stays closed when `DEBUG=false` and `SETUP_TOKEN` is empty. Set `SE
 | `RESEND_API_KEY` | empty | Platform Resend key |
 | `RESEND_WEBHOOK_SECRET` | empty | Svix secret for the platform Resend account |
 | `EMAIL_HOST` and related | empty | Platform SMTP |
+
+## Broadcasts
+
+| Variable | Default | Role |
+| --- | --- | --- |
+| `IDENTITY_SERVICE_URL` | `http://localhost:8000` when `DEBUG=true`, otherwise empty | Identity origin. Broadcasts read their audience from `/api/v1/users/audience` with the caller's JWT. |
+| `EMAIL_BROADCAST_MAX_RECIPIENTS` | `10000` | Largest audience one broadcast may have |
+| `EMAIL_RESEND_BROADCAST_RPS` | `4` | Resend calls per second while preparing a broadcast. Resend allows 10 per team, shared with every other call on the key. |
+| `EMAIL_BROADCAST_STEP_SECONDS` | `20` | Time one worker pass spends on broadcasts before it returns to messages |
+
+See [broadcasts.md](broadcasts.md).
 
 ## Composing
 

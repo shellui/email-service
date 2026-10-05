@@ -615,6 +615,12 @@ When `document` is present it is the draft being edited, including one that has 
 
 Placeholders are `{{ token }}` or `{{ token|default:"fallback" }}`. `{%` is rejected (`template_tags_forbidden`). Allowed nodes and marks, link and image rules, and the size cap are in [templates.md](templates.md#document). A rejected document is `400 validation_failed` with `field_errors.document` set to `invalid`, `too_large`, `node_not_allowed`, `mark_not_allowed`, `unsafe_attribute`, `unsafe_link`, `unsafe_image`, or `render_failed`.
 
+## Admin: broadcasts
+
+`GET/POST /api/v1/broadcasts`, `GET/PATCH/DELETE /api/v1/broadcasts/{id}`, `POST /api/v1/broadcasts/{id}/preview`, and `POST /api/v1/broadcasts/{id}/send`. Auth: staff or company owner. Preview and send relay the caller's JWT to identity, whose company must be the broadcast's. Shapes, audience filters, languages, and errors are in [broadcasts.md](broadcasts.md).
+
+Template summaries carry `kind` (`event` or `broadcast`). `GET /api/v1/templates` lists event templates only.
+
 ## Admin: stats
 
 `GET /api/v1/stats?company_id=42&from=2026-09-01T00:00:00Z&to=2026-10-02T00:00:00Z&lane=&event_type=`
@@ -706,6 +712,8 @@ Prometheus text. See [metrics.md](metrics.md).
 No Bearer token. Svix headers `svix-id`, `svix-timestamp`, `svix-signature` are verified with `RESEND_WEBHOOK_SECRET` when `company_id` is omitted. When `?company_id=` is set, only that company's stored webhook secret is accepted. A missing company secret does not fall back to the platform secret. The request is `401 unauthorized`.
 
 Opens and clicks are ignored. Delivery, bounce, complaint, and delay update message status and emit Shellui Actions events. Point the Resend webhook at this URL. `stream` is recorded on the event and is not used to choose a lane.
+
+Events with `data.broadcast_id` update that broadcast's recipient instead. `contact.updated` with `unsubscribed: true` records a bulk unsubscribe. See [broadcasts.md](broadcasts.md#unsubscribes-and-webhooks).
 
 ## Unsubscribe
 

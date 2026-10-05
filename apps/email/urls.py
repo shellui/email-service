@@ -1,6 +1,10 @@
 from django.urls import path
 
 from apps.email.views import (
+    BroadcastDetailView,
+    BroadcastListView,
+    BroadcastPreviewView,
+    BroadcastSendView,
     CatalogView,
     EventIngestView,
     HealthView,
@@ -57,6 +61,10 @@ urlpatterns = [
         name='email-template-publish',
     ),
     path('templates/<int:template_id>/send-test', TemplateTestSendView.as_view(), name='email-template-test-send'),
+    path('broadcasts', BroadcastListView.as_view(), name='email-broadcasts'),
+    path('broadcasts/<int:broadcast_id>', BroadcastDetailView.as_view(), name='email-broadcast-detail'),
+    path('broadcasts/<int:broadcast_id>/preview', BroadcastPreviewView.as_view(), name='email-broadcast-preview'),
+    path('broadcasts/<int:broadcast_id>/send', BroadcastSendView.as_view(), name='email-broadcast-send'),
     path('rules', RuleListView.as_view(), name='email-rules'),
     path('rules/<int:rule_id>', RuleDetailView.as_view(), name='email-rule-detail'),
     path('provider', ProviderView.as_view(), name='email-provider'),

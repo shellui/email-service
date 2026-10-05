@@ -92,6 +92,31 @@ def _definition(
 _COMPANY = _var('company_name', 'string', example='Acme')
 
 
+def broadcast_definition() -> dict[str, Any]:
+    """What a broadcast's content may use: the bulk lane and each recipient's name. Not an event."""
+    return {
+        'key': 'broadcast',
+        'event_type': '',
+        'label': 'Broadcast',
+        'description': '',
+        'owner_service': '',
+        'lane_class': LANE_BULK,
+        'default_lane': LANE_BULK,
+        'category': 'bulk',
+        'default_enabled': False,
+        'default_ttl_seconds': None,
+        'variables': [
+            _COMPANY,
+            _var('first_name', 'string', example='Ada'),
+            _var('last_name', 'string', example='Lovelace'),
+            _var('recipient_email', 'string', example='ada@example.com'),
+        ],
+        'languages': {},
+        'link_token': '',
+        'default_template': DEFAULT_TEMPLATE,
+    }
+
+
 def all_definitions() -> list[dict[str, Any]]:
     """Catalog in stable event-id order."""
     rows = [

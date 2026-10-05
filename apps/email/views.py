@@ -19,7 +19,16 @@ from apps.authapi.service_auth import ServicePrincipal
 from apps.email.access import company_from_request, require_admin, require_staff
 from apps.email.catalog import all_definitions, get_definition
 from apps.email.crypto import decrypt_json, email_hmac, encrypt_json, mask_email, mask_secret
+from apps.email.broadcasts import (
+    broadcast_payload,
+    clean_audience,
+    create_broadcast,
+    preview_audience,
+    send_broadcast,
+    update_broadcast,
+)
 from apps.email.models import (
+    Broadcast,
     CompanyProvider,
     EmailRule,
     EmailTemplate,
@@ -35,6 +44,12 @@ from apps.email.renderers import PrometheusTextRenderer
 from apps.email.schema import (
     COMPANY_QUERY,
     BatchRequestSerializer,
+    BroadcastCreateSerializer,
+    BroadcastListSerializer,
+    BroadcastPatchSerializer,
+    BroadcastPreviewRequestSerializer,
+    BroadcastPreviewSerializer,
+    BroadcastSerializer,
     BatchResponseSerializer,
     CatalogSerializer,
     EmailRuleListSerializer,
@@ -97,6 +112,7 @@ from apps.email.rendering import compose, document_tokens
 from apps.email.rules import (
     create_rule,
     create_version,
+    definition_for,
     delete_rule,
     ensure_builtin_rules,
     fits_event,
@@ -485,6 +501,13 @@ def _company_template(request, template_id):
     return template, user
 
 
+def _require_editable(template: EmailTemplate) -> None:
+    if template.kind != EmailTemplate.KIND_BROADCAST:
+        return
+    if Broadcast.objects.filter(template=template).exclude(state=Broadcast.STATE_DRAFT).exists():
+        raise SendError(409, 'broadcast_not_draft')
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=['templates'],
@@ -509,7 +532,11 @@ class TemplateListView(APIView):
                     raise SendError(400, 'event_unknown')
         except SendError as exc:
             return error_response(exc, request)
-        rows = EmailTemplate.objects.filter(company_id=company_id).order_by('event_type', 'language', 'id')
+        rows = (
+            EmailTemplate.objects.filter(company_id=company_id)
+            .exclude(kind=EmailTemplate.KIND_BROADCAST)
+            .order_by('event_type', 'language', 'id')
+        )
         if definition is not None:
             rows = [row for row in rows if fits_event(row, definition)]
         return Response({'templates': [template_summary(row) for row in rows]})
@@ -588,6 +615,7 @@ class TemplateVersionListView(APIView):
     def post(self, request, template_id):
         try:
             template, _user = _company_template(request, template_id)
+            _require_editable(template)
             data = request.data if isinstance(request.data, dict) else {}
             latest = template.versions.order_by('-number').first()
             subject = str(data.get('subject') or (latest.subject if latest else ''))
@@ -634,6 +662,7 @@ class TemplatePublishView(APIView):
     def post(self, request, template_id, number):
         try:
             template, _user = _company_template(request, template_id)
+            _require_editable(template)
             version = TemplateVersion.objects.filter(template=template, number=number).first()
             if version is None:
                 raise SendError(404, 'template_not_found')
@@ -720,7 +749,7 @@ class TemplateTestSendView(APIView):
                         preheader=draft.preheader,
                         colors=theme_colors(draft.theme),
                     )
-            definition = get_definition(template.event_type or '')
+            definition = definition_for(template)
             variables = _example_variables(definition)
             if not definition or definition.get('lane_class') != 'auth':
                 category = (definition or {}).get('lane_class') or 'transactional'
@@ -1187,6 +1216,9 @@ class PrivacyEraseView(APIView):
 
         MessageEvent.objects.filter(message_id__in=message_ids).delete()
         deleted, _details = messages.delete()
+        from apps.email.models import BroadcastRecipient
+
+        BroadcastRecipient.objects.filter(broadcast__company_id=company_id, email_hmac=hmac_value).delete()
         return Response({'deleted_messages': deleted, 'email_masked': mask_email(email)})
 
 
@@ -1271,6 +1303,17 @@ class ProviderWebhookView(APIView):
             return error_response(SendError(400, 'validation_failed'), request)
         event_name = str(payload.get('type') or '')
         data = payload.get('data') or {}
+        if not isinstance(data, dict):
+            return error_response(SendError(400, 'validation_failed'), request)
+        from apps.email.broadcasts import apply_broadcast_event, apply_contact_unsubscribe
+
+        if event_name == 'contact.updated':
+            company_ids = [company_int] if company_id else list(settings.EMAIL_PLATFORM_COMPANY_IDS)
+            apply_contact_unsubscribe(company_ids, data)
+            return Response({'status': 'ok'})
+        if data.get('broadcast_id'):
+            apply_broadcast_event(event_name, data)
+            return Response({'status': 'ok'})
         provider_message_id = str(data.get('email_id') or data.get('id') or '')
         provider_event_id = headers.get('svix-id') or ''
         from apps.email.service import apply_provider_event
@@ -1381,3 +1424,152 @@ class ServiceClientListView(APIView):
             },
             status=201,
         )
+
+
+def _company_broadcast(request, broadcast_id):
+    broadcast = Broadcast.objects.select_related('template').filter(pk=broadcast_id).first()
+    if broadcast is None:
+        raise SendError(404, 'broadcast_not_found')
+    user = require_admin(request, broadcast.company_id)
+    return broadcast, user
+
+
+def _audience_authorization(request, user, company_id: int) -> str:
+    """Identity answers for the company on the token, so it must be the broadcast's company."""
+    token_company = getattr(user, 'company_id', None)
+    if token_company is None or int(token_company) != int(company_id):
+        raise SendError(403, 'company_mismatch')
+    return request.META.get('HTTP_AUTHORIZATION', '')
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['broadcasts'],
+        operation_id='api_v1_broadcasts_list',
+        parameters=[COMPANY_QUERY],
+        responses={200: BroadcastListSerializer, **_API_ERRORS},
+    ),
+    post=extend_schema(
+        tags=['broadcasts'],
+        operation_id='api_v1_broadcasts_create',
+        parameters=[COMPANY_QUERY],
+        request=BroadcastCreateSerializer,
+        responses={201: BroadcastSerializer, **_API_ERRORS},
+    ),
+)
+class BroadcastListView(APIView):
+    def get(self, request):
+        try:
+            company_id = company_from_request(request)
+            require_admin(request, company_id)
+        except SendError as exc:
+            return error_response(exc, request)
+        rows = Broadcast.objects.select_related('template').filter(company_id=company_id)
+        return Response({'broadcasts': [broadcast_payload(row) for row in rows]})
+
+    def post(self, request):
+        try:
+            company_id = company_from_request(request)
+            user = require_admin(request, company_id)
+            broadcast = create_broadcast(company_id, request.data, getattr(user, 'user_id', None))
+        except SubstitutionError:
+            return error_response(SendError(400, 'validation_failed', {'document': ['template_tags_forbidden']}), request)
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(broadcast_payload(broadcast, detail=True), status=201)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['broadcasts'],
+        operation_id='api_v1_broadcasts_retrieve',
+        responses={200: BroadcastSerializer, **_API_ERRORS},
+    ),
+    patch=extend_schema(
+        tags=['broadcasts'],
+        operation_id='api_v1_broadcasts_partial_update',
+        request=BroadcastPatchSerializer,
+        responses={200: BroadcastSerializer, **_API_ERRORS},
+    ),
+    delete=extend_schema(
+        tags=['broadcasts'],
+        operation_id='api_v1_broadcasts_destroy',
+        responses={204: None, **_API_ERRORS},
+    ),
+)
+class BroadcastDetailView(APIView):
+    def get(self, request, broadcast_id):
+        try:
+            broadcast, _user = _company_broadcast(request, broadcast_id)
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(broadcast_payload(broadcast, detail=True))
+
+    def patch(self, request, broadcast_id):
+        try:
+            broadcast, _user = _company_broadcast(request, broadcast_id)
+            update_broadcast(broadcast, request.data)
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(broadcast_payload(broadcast, detail=True))
+
+    def delete(self, request, broadcast_id):
+        from django.db import transaction
+
+        try:
+            broadcast, _user = _company_broadcast(request, broadcast_id)
+            if broadcast.state != Broadcast.STATE_DRAFT:
+                raise SendError(409, 'broadcast_not_draft')
+        except SendError as exc:
+            return error_response(exc, request)
+        with transaction.atomic():
+            template = broadcast.template
+            broadcast.delete()
+            template.delete()
+        return Response(status=204)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=['broadcasts'],
+        operation_id='api_v1_broadcasts_preview',
+        description='Who would get the broadcast now: counts per send language and skips. Asks identity with your token.',
+        request=BroadcastPreviewRequestSerializer,
+        responses={200: BroadcastPreviewSerializer, **_API_ERRORS},
+    ),
+)
+class BroadcastPreviewView(APIView):
+    def post(self, request, broadcast_id):
+        try:
+            broadcast, user = _company_broadcast(request, broadcast_id)
+            authorization = _audience_authorization(request, user, broadcast.company_id)
+            data = request.data if isinstance(request.data, dict) else {}
+            audience = clean_audience(data['audience'] if 'audience' in data else broadcast.audience)
+            preview = preview_audience(broadcast.company_id, authorization, audience, broadcast.template)
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(preview)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=['broadcasts'],
+        operation_id='api_v1_broadcasts_send',
+        description=(
+            'Snapshot the saved audience and send the published content. Each recipient gets their '
+            'language when the content has it, else the main language. Unsubscribed and suppressed '
+            'addresses are skipped.'
+        ),
+        request=None,
+        responses={202: BroadcastSerializer, **_API_ERRORS},
+    ),
+)
+class BroadcastSendView(APIView):
+    def post(self, request, broadcast_id):
+        try:
+            broadcast, user = _company_broadcast(request, broadcast_id)
+            authorization = _audience_authorization(request, user, broadcast.company_id)
+            broadcast = send_broadcast(broadcast, authorization)
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(broadcast_payload(broadcast, detail=True), status=202)

@@ -15,7 +15,7 @@ Publishing to Docker Hub is manual. There is no CI workflow that pushes the imag
 
 The image contains application code, Node with the React Email compose script (`renderer/compose.mjs`), and collected static files, including the library images under `/static/library/`. Gunicorn listens on port 8000. Secrets come from the environment at start (see `.env.example`).
 
-Delivery is not inside Gunicorn. Run `manage.py run_email_worker` beside the web process, plus `retry_webhooks` and `purge_expired_data`.
+Delivery is not inside Gunicorn. Run `manage.py run_email_worker --lane <auth|transactional|bulk>` beside the web process, one per lane, plus `retry_webhooks` and `purge_expired_data`.
 
 ## Pre-release checklist
 
@@ -107,4 +107,19 @@ Compose:
 docker compose up -d
 ```
 
-Then start a worker with the same image and command `python manage.py run_email_worker`.
+Then start three workers with the same image, one per lane: `python manage.py run_email_worker --lane auth`, `--lane transactional`, and `--lane bulk`. Broadcasts only move forward on the bulk worker.
+
+## Resend checklist (before the first real send)
+
+> [!IMPORTANT]
+> Mail looks fine on day one without these, then quietly degrades: bounces are not suppressed, statuses stay at "handed to the provider", broadcasts fail, and Resend unsubscribes are lost. The full steps are in [README: Resend setup](README.md#resend-setup-required-before-going-live).
+
+- [ ] Main domain (`DEFAULT_FROM_EMAIL`) and news subdomain (`BULK_FROM_EMAIL`) are both **verified** in Resend > Domains.
+- [ ] `RESEND_API_KEY` is a **Full access** key. A Sending access key makes every broadcast fail with `provider_unauthorized`.
+- [ ] A Resend webhook points at `{PUBLIC_BASE_URL}/api/v1/provider-webhooks/resend/all`.
+- [ ] The webhook sends `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained`, `email.failed`, `email.suppressed`, and **`contact.updated`**.
+- [ ] Its signing secret is in `RESEND_WEBHOOK_SECRET`, and Resend's webhook page shows `200` responses (`401` means the secret does not match).
+- [ ] Open and click tracking are off on both domains.
+- [ ] `EMAIL_PLATFORM_COMPANY_IDS`, `PUBLIC_BASE_URL`, and `IDENTITY_SERVICE_URL` are set.
+- [ ] The bulk worker is running.
+- [ ] Companies with their own Resend account have done the same on their account, with `?company_id=<id>` on the webhook URL.
