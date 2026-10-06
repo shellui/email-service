@@ -204,8 +204,33 @@ Identity must call this endpoint for:
 
 - `identity.auth.magic_link.requested` (`ttl_seconds` 120 unless the product needs a shorter life)
 - `identity.user.invited` (`ttl_seconds` up to 300)
+- `identity.auth.magic_link.staff_blocked` (`ttl_seconds` up to 300), see [Built-in auth emails](#built-in-auth-emails)
 
 Do not put magic-link tokens in logs. The service encrypts variables until the provider accepts the message, then deletes them. Rendered HTML is not stored on the message row.
+
+### Built-in auth emails
+
+Some auth emails only use copy that Shellui writes, in English and French (`apps/email/builtin_auth.py`). Their definition in `apps/email/catalog.py` has `company_editable: false`. A company cannot edit them or pick another design, they get no built-in rule, `POST /api/v1/rules` refuses them (`400 auth_event_rule_forbidden`), `POST /api/v1/events` never sends them (`skipped_reason: no_rule`), and `GET /api/v1/catalog` does not list them. Direct `/send` takes exactly one `to` address, under the same auth-lane rate limits and suppression rules as magic links.
+
+`identity.auth.magic_link.staff_blocked` is the only one today. Identity sends it instead of a magic link when a staff account (`is_staff` or `is_superuser`) asks for one, so the person knows why no link arrived. It carries no sign-in link or token. Variables:
+
+| Variable | Required | Content |
+| --- | --- | --- |
+| `company_name` | yes | Company the request was for. Filled from the stored name when omitted |
+| `sign_in_url` | no | Plain link to the sign-in page the request came from (`https`, or `http://localhost` when `DEBUG=true`). Not a credential. Without it, the email has no button |
+
+English copy: subject `[Shellui] Sign in to {{ company_name }} with your password or SSO`, heading "No sign-in link for staff accounts", one paragraph ("Someone asked for a sign-in link for this address on {{ company_name }}. For security, staff accounts can't sign in with an email link. Sign in with your password or SSO instead. If you didn't ask for this, you can ignore this email."), and a "Go to sign-in" button to `sign_in_url` when it is set.
+
+```json
+{
+  "company_id": 42,
+  "template_key": "identity.auth.magic_link.staff_blocked",
+  "language": "en",
+  "ttl_seconds": 300,
+  "to": [{"email": "ada@shellui.com"}],
+  "variables": {"company_name": "Acme", "sign_in_url": "https://app.acme.com/"}
+}
+```
 
 ### Batch
 
@@ -548,7 +573,7 @@ Email rules are a list, like Shellui Actions webhook rules. The old per-event to
 | `language_not_available` | `language` is not `en` or `fr` for that event |
 | `validation_failed` | `content.library_id` missing (`field_errors.content: ["library_id_required"]`), `recipient_mode` not `hints` or `static`, or `static_recipients` is not a list of addresses |
 
-Built-in rules exist for every catalog event with `lane_class: auth` (`identity.auth.magic_link.requested` and `identity.user.invited` today). They are created on the first rules list or the first event for that company, and a second create is a no-op. They cannot be deleted or disabled. Their copy starts from the event's `default_template` and can be edited or started over from another library template. `enabled: true` on a built-in rule is accepted. Other patch fields (`language`, `recipient_mode`, `static_recipients`) still apply.
+Built-in rules exist for every catalog event with `lane_class: auth` (`identity.auth.magic_link.requested` and `identity.user.invited` today), except [built-in auth emails](#built-in-auth-emails) such as `identity.auth.magic_link.staff_blocked`, which have no rule and no company copy. They are created on the first rules list or the first event for that company, and a second create is a no-op. They cannot be deleted or disabled. Their copy starts from the event's `default_template` and can be edited or started over from another library template. `enabled: true` on a built-in rule is accepted. Other patch fields (`language`, `recipient_mode`, `static_recipients`) still apply.
 
 ## Admin: templates
 

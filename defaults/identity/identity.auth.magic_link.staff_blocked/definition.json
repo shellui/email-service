@@ -1,0 +1,29 @@
+{
+  "key": "identity.auth.magic_link.staff_blocked",
+  "owner_service": "identity",
+  "lane_class": "auth",
+  "default_lane": "auth",
+  "category": "auth",
+  "default_enabled": true,
+  "default_ttl_seconds": 300,
+  "variables": [
+    {
+      "token": "company_name",
+      "type": "string",
+      "required": true,
+      "description": "email.var.company_name",
+      "example": "Acme",
+      "is_url": false
+    },
+    {
+      "token": "sign_in_url",
+      "type": "url",
+      "required": false,
+      "description": "email.var.sign_in_url",
+      "example": "https://app.acme.com/",
+      "is_url": true
+    }
+  ],
+  "link_token": "",
+  "default_template": "barebone.text-only"
+}

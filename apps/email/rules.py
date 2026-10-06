@@ -14,6 +14,7 @@ from apps.email.catalog import (
     get_definition,
     newsletter_confirmation_definition,
 )
+from apps.email.builtin_auth import builtin_content, is_builtin_only
 from apps.email.document import adapt_to_event, validate_document
 from apps.email.library import library_template, set_head
 from apps.email.models import EmailRule, EmailTemplate, LibraryTemplate, TemplateVersion
@@ -235,6 +236,9 @@ def create_copy(
     user_id: int | None = None,
 ) -> EmailTemplate:
     """A published copy of ``source``. It keeps the source's theme, or else takes ``theme``."""
+    if is_builtin_only(definition):
+        # Shellui writes this copy. A company never gets one to edit.
+        raise SendError(400, 'auth_event_rule_forbidden', {'event_type': ['built_in_copy']})
     pack = _suggested(definition, language)
     template = EmailTemplate.objects.create(
         template_key='company.' + secrets.token_hex(6),
@@ -304,7 +308,7 @@ def rules_allowed(definition: dict) -> bool:
 
 def ensure_builtin_rules(company_id: int) -> None:
     for definition in all_definitions():
-        if definition['lane_class'] != LANE_AUTH:
+        if definition['lane_class'] != LANE_AUTH or is_builtin_only(definition):
             continue
         event_type = definition['event_type']
         if EmailRule.objects.filter(company_id=company_id, event_type=event_type, built_in=True).exists():
@@ -507,12 +511,15 @@ def _auth_copy_passes(template: EmailTemplate, definition: dict) -> bool:
     return True
 
 
-def content_for_event(company_id: int, definition: dict, language: str) -> dict:
+def content_for_event(company_id: int, definition: dict, language: str, variables: dict | None = None) -> dict:
     """Direct sends use the company's copy for the event when there is one.
 
     An auth-lane send only uses the built-in rule's copy, which publish checked,
-    or the default design. Never another company copy on the event.
+    or the default design. Never another company copy on the event. An event with
+    ``company_editable: False`` only ever uses the copy in ``apps.email.builtin_auth``.
     """
+    if is_builtin_only(definition):
+        return builtin_content(definition, language, variables)
     if not rules_allowed(definition):
         builtin = (
             EmailRule.objects.filter(company_id=company_id, event_type=definition['event_type'], built_in=True)

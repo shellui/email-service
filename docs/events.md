@@ -16,10 +16,13 @@ Each event has a suggested subject and preheader in English and French, its vari
 
 Login events `identity.auth.login.succeeded` and `identity.auth.login.failed` are not listed. Identity marks them `webhook: false`.
 
+`identity.auth.magic_link.staff_blocked` is the exception to built-in rules: see [Built-in auth emails](integration.md#built-in-auth-emails).
+
 | Event | Lane | Catalog `default_enabled` | Why it is in the catalog |
 | --- | --- | --- | --- |
 | `identity.auth.magic_link.requested` | auth | enabled | Sign-in. TTL 120s. Built-in rule. `/send` still works. |
 | `identity.user.invited` | auth | enabled | Invitation. TTL 300s. Built-in rule. `/send` still works. |
+| `identity.auth.magic_link.staff_blocked` | auth | enabled | Sent to a staff account instead of a magic link. TTL 300s. Built-in copy only: no rule, not editable, `/send` only. Not listed by `GET /api/v1/catalog`. |
 | `identity.user.invitation_revoked` | transactional | enabled | The previous invitation must be known to be dead. Sends only after a company rule. |
 | `identity.scim.provisioning_conflict` | transactional | enabled | An admin has to resolve a directory conflict. Sends only after a company rule. |
 | `hosting.deployment.failed` | transactional | enabled | A failed release is operational. Sends only after a company rule. |

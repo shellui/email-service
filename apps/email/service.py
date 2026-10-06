@@ -187,7 +187,9 @@ def _list_unsubscribe_headers(lane: str, variables: dict) -> dict[str, str]:
     }
 
 
-def resolve_content(company_id: int, template_key: str, language: str) -> tuple[dict, dict]:
+def resolve_content(
+    company_id: int, template_key: str, language: str, variables: dict | None = None
+) -> tuple[dict, dict]:
     from apps.email.rules import content_for_event
 
     definition = get_definition(template_key)
@@ -195,7 +197,7 @@ def resolve_content(company_id: int, template_key: str, language: str) -> tuple[
         raise SendError(404, 'template_not_found')
     if language not in definition['languages'] and language != 'en':
         raise SendError(400, 'language_not_available')
-    return definition, content_for_event(company_id, definition, language)
+    return definition, content_for_event(company_id, definition, language, variables)
 
 
 def _validate_variables(definition: dict, variables: dict, *, field_prefix: str) -> dict:
@@ -635,6 +637,9 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
         # sends them, to the event's own recipient. A company rule never does.
         rules_qs = rules_qs.filter(built_in=True)
     rules = list(rules_qs.select_related('template').order_by('created_at', 'id'))
+    if definition.get('company_editable', True) is False:
+        # Built-in copy only (``apps.email.builtin_auth``): direct send, never a rule.
+        rules = []
     if not rules:
         return _skip_event(
             principal,
@@ -894,6 +899,7 @@ def deliver_message(message_id) -> None:
                 snapshot['company_id'],
                 snapshot['template_key'],
                 snapshot['language'],
+                snapshot['variables'],
             )
     except SendError as exc:
         _finish_failed(message_id, exc.code)

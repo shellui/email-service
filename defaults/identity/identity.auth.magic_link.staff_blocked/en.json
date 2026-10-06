@@ -1,0 +1,4 @@
+{
+  "subject": "[Shellui] Sign in to {{ company_name }} with your password or SSO",
+  "preheader": "Staff accounts can't use email sign-in links."
+}

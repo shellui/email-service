@@ -71,6 +71,8 @@ Ingest (`POST /api/v1/events`) uses `unknown_event` for a bad event id.
 
 Every catalog event with `lane_class: auth` gets one built-in rule per company. Today that is `identity.auth.magic_link.requested` and `identity.user.invited`. Password reset and email verification are not in the catalog, so they have no built-in rule. A future auth-lane catalog event is covered the same way, with no extra setting.
 
+`identity.auth.magic_link.staff_blocked` gets no rule at all. Its copy is Shellui's own (`company_editable: false`), so no company can edit it, and only direct `/send` delivers it. See [Built-in auth emails](integration.md#built-in-auth-emails).
+
 Creation is lazy and idempotent: the first `GET /api/v1/rules` or the first `POST /api/v1/events` for that company. A second call does not add another built-in row. The copy starts from the event's `default_template` (`barebone.activation` for magic links, `barebone.welcome` for invitations), with the English catalog subject and preheader. `language` on the rule is blank, so an unedited subject and preheader follow the event language.
 
 A built-in rule cannot be deleted or disabled, and its recipients cannot change: `recipient_mode` stays `hints` and `static_recipients` stays empty (`409 rule_built_in`). The sign-in message only goes to the address identity sent. Edit its copy through the version API, or start it over from another library template. `language` can still be patched.

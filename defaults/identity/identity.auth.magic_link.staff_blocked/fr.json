@@ -1,0 +1,4 @@
+{
+  "subject": "[Shellui] Connectez-vous à {{ company_name }} avec votre mot de passe ou le SSO",
+  "preheader": "Les comptes staff ne peuvent pas utiliser de lien de connexion par e-mail."
+}

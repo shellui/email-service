@@ -68,6 +68,7 @@ def _definition(
     default_ttl_seconds: int | None = None,
     description: str = '',
     default_template: str = DEFAULT_TEMPLATE,
+    company_editable: bool = True,
 ) -> dict[str, Any]:
     service = key.split('.', 1)[0]
     link_token = next((item['token'] for item in variables if item['type'] == 'url' and item.get('required')), '')
@@ -86,6 +87,7 @@ def _definition(
         'languages': languages,
         'link_token': link_token,
         'default_template': default_template,
+        'company_editable': company_editable,
     }
 
 
@@ -114,6 +116,7 @@ def broadcast_definition() -> dict[str, Any]:
         'languages': {},
         'link_token': '',
         'default_template': DEFAULT_TEMPLATE,
+        'company_editable': True,
     }
 
 
@@ -282,6 +285,29 @@ def all_definitions() -> list[dict[str, Any]]:
                 pre_fr='Votre lien de connexion pour {{ company_name }}.',
             ),
             default_template='barebone.activation',
+        ),
+        _definition(
+            key='identity.auth.magic_link.staff_blocked',
+            label='Magic link refused for a staff account',
+            description=(
+                'Sent instead of a sign-in link when a staff account asks for one. No link or token. '
+                'Built-in copy: companies cannot edit it or add rules on it.'
+            ),
+            lane_class=LANE_AUTH,
+            default_enabled=True,
+            category='auth',
+            default_ttl_seconds=300,
+            variables=[
+                _var('company_name', 'string', required=True, example='Acme'),
+                _var('sign_in_url', 'url', example='https://app.acme.com/'),
+            ],
+            languages=_localized(
+                subject_en='[Shellui] Sign in to {{ company_name }} with your password or SSO',
+                subject_fr='[Shellui] Connectez-vous à {{ company_name }} avec votre mot de passe ou le SSO',
+                pre_en="Staff accounts can't use email sign-in links.",
+                pre_fr='Les comptes staff ne peuvent pas utiliser de lien de connexion par e-mail.',
+            ),
+            company_editable=False,
         ),
         _definition(
             key='identity.group.created',

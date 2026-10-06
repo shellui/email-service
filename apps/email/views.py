@@ -373,6 +373,9 @@ class CatalogView(APIView):
         if isinstance(user, ServicePrincipal) or getattr(user, 'is_staff', False) or getattr(user, 'is_company_owner', False):
             events = []
             for row in all_definitions():
+                if not row.get('company_editable', True):
+                    # Built-in copy that only identity sends directly. Not offered to editors.
+                    continue
                 events.append(
                     {
                         'service': row['owner_service'],
