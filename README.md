@@ -82,7 +82,7 @@ PUBLIC_BASE_URL=https://email.shellui.com    # webhook host and email-service un
 IDENTITY_SERVICE_URL=https://id.shellui.com  # broadcast audiences
 ```
 
-Run the bulk worker (`run_email_worker --lane bulk`). Without it, broadcasts stay queued.
+The bulk lane worker (`run_email_worker --lane bulk`, started by the container) sends broadcasts. Without it, broadcasts stay queued.
 
 ### A company with its own Resend account
 
@@ -168,17 +168,16 @@ Local development can use `IDENTITY_SERVICE_URL=http://localhost:8000`. For iden
 
 ### Workers
 
-HTTP and delivery are separate processes:
+The Docker image runs the lane workers and the scheduled jobs for you. With `uv run` locally, start them yourself:
 
 ```bash
 uv run python manage.py run_email_worker --lane auth
 uv run python manage.py run_email_worker --lane transactional
 uv run python manage.py run_email_worker --lane bulk
-uv run python manage.py retry_webhooks
-uv run python manage.py purge_expired_data
+uv run celery -A config worker --beat --pool threads   # needs REDIS_URL
 ```
 
-Keep one resident worker per lane. The bulk worker also sends broadcasts. Schedule `retry_webhooks` every minute and `purge_expired_data` every hour. Leave `EMAIL_DELIVER_SYNC=false` outside tests.
+The bulk worker also sends broadcasts. The Celery worker runs `retry_webhooks` and `sweep_email_queue` every minute and `purge_expired_data` every hour, see [docs/scheduled-jobs.md](docs/scheduled-jobs.md). Leave `EMAIL_DELIVER_SYNC=false` outside tests.
 
 ### Service key
 
@@ -197,7 +196,7 @@ docker compose up --build
 
 Host port: `8003` (container listens on `8000`). Identity uses 8000, storage 8001, and hosting 8002.
 
-The container applies migrations on start, then runs gunicorn. Workers use the same image with their own command, for example `docker run … shellui/email-service python manage.py run_email_worker --lane auth`.
+The container applies migrations on start, then runs gunicorn, one delivery worker per lane, and the scheduled jobs (Celery worker with beat, needs `REDIS_URL`). One container sends mail with no cron and no extra workers. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) to split the workers into their own container.
 
 ## Release
 

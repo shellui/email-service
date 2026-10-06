@@ -28,7 +28,7 @@ Auth mail also has a company-wide cap (`EMAIL_COMPANY_AUTH_LIMIT`, default 30 pe
 
 `python manage.py run_email_worker` polls every second and claims due rows. On Postgres it also issues `NOTIFY email_lane_{lane}` when a message is queued. The worker does not `LISTEN`. The notify is reserved for a later wake-up. SQLite (local) has no notify.
 
-`python manage.py sweep_email_queue` runs one pass. Use it from cron if you do not keep a resident worker.
+`python manage.py sweep_email_queue` expires overdue messages and releases send leases left by a worker that stopped mid-send. The container runs it every minute, see [Workers and scheduled jobs](scheduled-jobs.md).
 
 The bulk worker (`--lane bulk`) and the sweep also move [broadcasts](broadcasts.md) forward.
 

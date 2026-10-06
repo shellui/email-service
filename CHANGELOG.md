@@ -35,7 +35,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Broadcasts:** one email to an identity audience filtered by groups, role, access, and activity, each recipient in their own language, through Resend Broadcasts or the bulk lane. See [docs/broadcasts.md](docs/broadcasts.md).
 - **Newsletters:** public sign-up lists with double opt-in, rate limits, a honeypot, optional Cloudflare Turnstile, CSV import and export, and per-list unsubscribe. See [docs/newsletters.md](docs/newsletters.md).
 - **Providers:** Resend (default) and SMTP, with per-company credentials encrypted at rest, masked responses, a test send, and a platform fallback for Shellui's own mail. See [docs/providers.md](docs/providers.md).
-- **Delivery lanes:** separate auth, transactional, and bulk workers (`run_email_worker --lane`), plus `retry_webhooks` and `purge_expired_data` for retries and data retention. See [docs/lanes.md](docs/lanes.md).
+- **Delivery lanes:** separate auth, transactional, and bulk queues, each sent by its own worker (`run_email_worker --lane`). See [docs/lanes.md](docs/lanes.md).
+- **All-in-one container:** the image applies migrations, then runs gunicorn, the three lane workers, and a Celery scheduler (`retry_webhooks` and `sweep_email_queue` every minute, `purge_expired_data` hourly, Redis-locked across replicas), each switchable off or movable to a `worker` container. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
 - **Provider webhooks:** Resend delivery, bounce, complaint, and unsubscribe events update message status and the suppression list.
 - **Shellui Actions:** outbound webhooks for `email.message.*`, unsubscribes, and newsletter events. See [docs/actions.md](docs/actions.md).
 - **Admin API:** rules, templates, library, stats, suppressions, and privacy erase, documented in OpenAPI at `/api/docs/`.

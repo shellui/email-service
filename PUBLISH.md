@@ -19,10 +19,11 @@ The image command selects what runs:
 
 | Command | Starts |
 | --- | --- |
-| `web` (default) | Database migrations, then gunicorn on port 8000 |
-| anything else | That command, for example `python manage.py run_email_worker --lane auth` |
+| `web` (default) | Database migrations, then gunicorn on port 8000, one delivery worker per lane (`auth`, `transactional`, `bulk`), and a Celery worker with beat for the scheduled jobs |
+| `worker` | The lane workers and the scheduled jobs only, for a dedicated worker container |
+| anything else | That command, for example `python manage.py create_service_key …` |
 
-Delivery is not inside gunicorn. Run one `run_email_worker` container per lane (`auth`, `transactional`, `bulk`) with the same image and environment, and schedule `retry_webhooks` every minute and `purge_expired_data` every hour.
+One container sends mail with no cron and no extra workers. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
 
 ## Pre-release checklist
 
@@ -63,13 +64,7 @@ docker stop email-release-smoke
 
 The container runs the migrations on SQLite, then answers `{"status": "ok", "version": "…"}`. `GET /api/v1/health` does not open the database, so check the logs for `Applying …` lines or errors too.
 
-Check that the worker command starts with the same image:
-
-```bash
-docker run --rm -e SECRET_KEY=x -e DEBUG=true \
-  -e IDENTITY_JWKS_URL=http://localhost:8000/.well-known/jwks.json \
-  "shellui/email-service:${VERSION}" python manage.py run_email_worker --help
-```
+The logs also show `starting the auth lane worker` (and the other two lanes). Without `REDIS_URL` they show a warning that the scheduled jobs are not running, which is expected for this test.
 
 ## Publish to Docker Hub
 
@@ -122,7 +117,7 @@ Set the production variables from `.env.example`. These are required with `DEBUG
 | --- | --- |
 | `SECRET_KEY` | Django secret |
 | `POSTGRES_DATABASE_URL` | Postgres. SQLite is not allowed in production |
-| `REDIS_URL` | Rate limits |
+| `REDIS_URL` | Rate limits and the broker for the scheduled jobs |
 | `IDENTITY_ISSUER`, `IDENTITY_AUDIENCE` | Must match identity-service `JWT_ISSUER` and `JWT_AUDIENCE` |
 | `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` | A pinned copy of identity `/.well-known/jwks.json`, not a runtime URL. Update it when identity rotates its signing key |
 | `EMAIL_CREDENTIALS_KEY`, `EMAIL_VARIABLES_KEY` | Fernet keys for provider credentials and stored variables |
@@ -143,18 +138,16 @@ Also set `ALLOWED_HOSTS`, `PUBLIC_BASE_URL`, `IDENTITY_SERVICE_URL`, `EMAIL_AUTH
 docker pull shellui/email-service:0.1.0
 ```
 
-Start the web container with the default command. It applies migrations, which also sync the built-in library designs, then starts gunicorn. Then start three workers with the same image and environment, one per lane:
-
 ```bash
-docker run -d --name email-worker-auth --env-file .env shellui/email-service:0.1.0 \
-  python manage.py run_email_worker --lane auth
-docker run -d --name email-worker-transactional --env-file .env shellui/email-service:0.1.0 \
-  python manage.py run_email_worker --lane transactional
-docker run -d --name email-worker-bulk --env-file .env shellui/email-service:0.1.0 \
-  python manage.py run_email_worker --lane bulk
+docker volume create email-service-data
+
+docker run -d --name email-service -p 8003:8000 \
+  -v email-service-data:/app/data \
+  --env-file .env \
+  shellui/email-service:0.1.0
 ```
 
-Broadcasts only move forward on the bulk worker. Schedule `python manage.py retry_webhooks` every minute and `python manage.py purge_expired_data` every hour, for example as Coolify Scheduled Tasks on the web container.
+The container applies migrations, which also sync the built-in library designs, then starts gunicorn, the three lane workers, and the scheduled jobs (`retry_webhooks` and `sweep_email_queue` every minute, `purge_expired_data` every hour). There is no cron to set up. If you had Coolify Scheduled Tasks for these commands, remove them. To run the workers in their own container, see [docs/scheduled-jobs.md](docs/scheduled-jobs.md#run-the-workers-in-their-own-container).
 
 ### Connect identity-service
 
@@ -180,7 +173,7 @@ Broadcasts only move forward on the bulk worker. Schedule `python manage.py retr
 - [ ] Its signing secret is in `RESEND_WEBHOOK_SECRET`, and Resend's webhook page shows `200` responses (`401` means the secret does not match).
 - [ ] Open and click tracking are off on both domains.
 - [ ] `EMAIL_PLATFORM_COMPANY_IDS`, `PUBLIC_BASE_URL`, and `IDENTITY_SERVICE_URL` are set.
-- [ ] The bulk worker is running.
+- [ ] The container logs show `starting the bulk lane worker` (or the dedicated worker container is running).
 - [ ] Companies with their own Resend account have done the same on their account, with `?company_id={id}` on the webhook URL.
 
 ## Rollback

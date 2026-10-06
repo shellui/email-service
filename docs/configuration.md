@@ -6,7 +6,7 @@ Copy `.env.example` to `.env`. Production (`DEBUG=false`) refuses to boot withou
 - `IDENTITY_ISSUER` and `IDENTITY_AUDIENCE`
 - `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` (a pinned document, not a runtime JWKS URL)
 - `POSTGRES_DATABASE_URL`
-- `REDIS_URL` (rate limits)
+- `REDIS_URL` (rate limits and the scheduled jobs)
 - `EMAIL_CREDENTIALS_KEY`, `EMAIL_VARIABLES_KEY`, `EMAIL_HASH_PEPPER` (Fernet keys and the HMAC pepper)
 
 Generate a Fernet key:
@@ -106,9 +106,15 @@ See [newsletters.md](newsletters.md).
 | `ACTIONS_WEBHOOK_TIMEOUT_SECONDS` | `5` |
 | `ACTIONS_OUTBOX_MAX_ATTEMPTS` | `8` |
 
-Processes:
+## Workers and scheduled jobs
 
-- Gunicorn serves HTTP (the image entrypoint).
-- `manage.py run_email_worker` sends queued mail.
-- `manage.py retry_webhooks` every minute.
-- `manage.py purge_expired_data` every hour.
+The image runs gunicorn, one `run_email_worker` per lane, and a Celery worker with beat for `retry_webhooks`, `sweep_email_queue`, and `purge_expired_data` in one container.
+
+| Variable | Default |
+| --- | --- |
+| `SCHEDULER_ENABLED` | `true` |
+| `EMAIL_WORKERS_ENABLED` | `true` |
+| `CELERY_BROKER_URL` | `REDIS_URL` |
+| `CELERY_WORKER_CONCURRENCY` | `2` |
+
+See [Workers and scheduled jobs](scheduled-jobs.md).

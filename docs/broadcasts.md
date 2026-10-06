@@ -56,7 +56,7 @@ The delivery is picked from the company provider when the broadcast is sent.
 
 **`bulk_lane`** (every other provider): one bulk-lane message per recipient in their language, with one-click `List-Unsubscribe` headers. The worker retries like transactional mail.
 
-`run_email_worker --lane bulk` moves broadcasts forward on every poll. `sweep_email_queue` does the same, for deployments that run it from cron.
+`run_email_worker --lane bulk` moves broadcasts forward on every poll, and the `sweep_email_queue` job does the same every minute. See [Workers and scheduled jobs](scheduled-jobs.md).
 
 ## Unsubscribes and webhooks
 

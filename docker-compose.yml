@@ -13,7 +13,12 @@ services:
       ALLOWED_HOSTS: "${ALLOWED_HOSTS:-}"
       CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-}"
       POSTGRES_DATABASE_URL: "${POSTGRES_DATABASE_URL:-}"
-      REDIS_URL: "${REDIS_URL:-}"
+      REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
+      CELERY_BROKER_URL: "${CELERY_BROKER_URL:-}"
+      # Lane workers and scheduled jobs run in this container. See docs/scheduled-jobs.md.
+      SCHEDULER_ENABLED: "${SCHEDULER_ENABLED:-true}"
+      EMAIL_WORKERS_ENABLED: "${EMAIL_WORKERS_ENABLED:-true}"
+      CELERY_WORKER_CONCURRENCY: "${CELERY_WORKER_CONCURRENCY:-2}"
       SQLITE_PATH: "/app/data/db.sqlite3"
       IDENTITY_SERVICE_URL: "${IDENTITY_SERVICE_URL:-http://host.docker.internal:8000}"
       IDENTITY_JWKS: "${IDENTITY_JWKS:-}"
@@ -40,7 +45,32 @@ services:
       SENTRY_TRACES_SAMPLE_RATE: "${SENTRY_TRACES_SAMPLE_RATE:-0}"
     volumes:
       - email-service-data:/app/data
+    depends_on:
+      - redis
     restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    container_name: email-service-redis
+    restart: unless-stopped
+
+  # Optional: run the lane workers and scheduled jobs in their own container. Set
+  # SCHEDULER_ENABLED=false and EMAIL_WORKERS_ENABLED=false on email-service, then
+  # uncomment. Same image and environment, command "worker".
+  # email-worker:
+  #   image: shellui/email-service:local
+  #   command: worker
+  #   environment:
+  #     SECRET_KEY: "${SECRET_KEY}"
+  #     DEBUG: "${DEBUG:-true}"
+  #     REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
+  #     SQLITE_PATH: "/app/data/db.sqlite3"
+  #     RESEND_API_KEY: "${RESEND_API_KEY:-}"
+  #   volumes:
+  #     - email-service-data:/app/data
+  #   depends_on:
+  #     - redis
+  #   restart: unless-stopped
 
 volumes:
   email-service-data:

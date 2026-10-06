@@ -9,6 +9,7 @@ const sidebars = {
     "library",
     "rules",
     "lanes",
+    "scheduled-jobs",
     "events",
     "metrics",
     "actions",

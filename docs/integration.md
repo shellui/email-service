@@ -810,4 +810,4 @@ If the service client has `callback_url`, the same envelope is also POSTed there
 
 n8n notes: [n8n.md](n8n.md).
 
-Run `python manage.py retry_webhooks` every minute and `python manage.py run_email_worker` as a resident process (or a frequent cron calling `sweep_email_queue`). `python manage.py purge_expired_data` hourly. Message rows are kept `EMAIL_MESSAGE_RETENTION_DAYS` (30). Event log rows and finished deliveries are kept `EVENT_LOG_RETENTION_DAYS` (7). Idempotency rows expire after 24 hours.
+The container runs the lane workers, `retry_webhooks` and `sweep_email_queue` every minute, and `purge_expired_data` every hour. See [Workers and scheduled jobs](scheduled-jobs.md). Message rows are kept `EMAIL_MESSAGE_RETENTION_DAYS` (30). Event log rows and finished deliveries are kept `EVENT_LOG_RETENTION_DAYS` (7). Idempotency rows expire after 24 hours.

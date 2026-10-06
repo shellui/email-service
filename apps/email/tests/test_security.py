@@ -439,4 +439,5 @@ class ImageUserTests(TestCase):
         entry = (ROOT / 'tools' / 'docker-entrypoint.sh').read_text(encoding='utf-8')
         self.assertIn('\nUSER appuser\n', dockerfile)
         self.assertNotIn('runuser', entry)
-        self.assertIn('exec gunicorn', entry)
+        self.assertNotIn('setpriv', entry)
+        self.assertNotIn('sudo', entry)

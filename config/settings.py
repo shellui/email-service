@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import tomllib
+from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
@@ -70,6 +71,40 @@ def _caches_config(redis_url: str) -> dict:
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
             'LOCATION': 'email-service',
         }
+    }
+
+
+def _celery_broker_url(redis_url: str, override: str) -> str:
+    """Broker for the scheduled jobs: ``CELERY_BROKER_URL`` when set, else ``REDIS_URL``."""
+    return (override or '').strip() or (redis_url or '').strip()
+
+
+def scheduled_jobs_beat_schedule() -> dict:
+    """
+    Celery beat entries for the scheduled jobs.
+
+    ``expires`` drops a message that waited longer than its period (worker down or
+    busy), so a backlog never turns into a burst of runs.
+    """
+    from celery.schedules import crontab
+
+    return {
+        'retry-webhooks': {
+            'task': 'actions.retry_webhooks',
+            'schedule': timedelta(seconds=60),
+            'options': {'expires': 55},
+        },
+        'sweep-email-queue': {
+            'task': 'email.sweep_email_queue',
+            'schedule': timedelta(seconds=60),
+            'options': {'expires': 55},
+        },
+        'purge-expired-data': {
+            'task': 'actions.purge_expired_data',
+            # Hourly at minute 17: off the top of the hour, where many jobs start.
+            'schedule': crontab(minute=17),
+            'options': {'expires': 3000},
+        },
     }
 
 
@@ -232,6 +267,27 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 REDIS_URL = os.getenv('REDIS_URL', '').strip()
 CACHES = _caches_config(REDIS_URL)
+
+# See docs/scheduled-jobs.md. The broker is REDIS_URL unless CELERY_BROKER_URL is set.
+# SCHEDULER_ENABLED and EMAIL_WORKERS_ENABLED are read by the entrypoint; they are here
+# so tests and checks see them.
+SCHEDULER_ENABLED = _env_bool('SCHEDULER_ENABLED', True)
+EMAIL_WORKERS_ENABLED = _env_bool('EMAIL_WORKERS_ENABLED', True)
+CELERY_BROKER_URL = _celery_broker_url(REDIS_URL, os.getenv('CELERY_BROKER_URL', ''))
+CELERY_TASK_DEFAULT_QUEUE = 'email-service'
+SCHEDULER_LOCK_PREFIX = 'email-service:scheduler'
+CELERY_TIMEZONE = 'UTC'
+CELERY_ENABLE_UTC = True
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_RESULT_EXPIRES = None
+CELERY_RESULT_BACKEND = None
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+CELERY_WORKER_REDIRECT_STDOUTS = False
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BEAT_SCHEDULE = scheduled_jobs_beat_schedule()
 
 POSTGRES_DATABASE_URL = os.getenv('POSTGRES_DATABASE_URL', '').strip()
 POSTGRES_SSL_REQUIRE = _env_bool('POSTGRES_SSL_REQUIRE', not DEBUG)
@@ -577,6 +633,24 @@ LOGGING = {
         'config': {'handlers': ['console'], 'level': LOG_LEVEL, 'propagate': False},
         'gunicorn.error': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
         'gunicorn.access': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        # Celery's own DEBUG output is internals only, so it stops at INFO.
+        'celery': {
+            'handlers': ['console'],
+            'level': 'INFO' if LOG_LEVEL == 'DEBUG' else LOG_LEVEL,
+            'propagate': False,
+        },
+        # "Task received" and "Task succeeded" lines every minute are noise. Failures
+        # are still logged as errors. LOG_LEVEL=DEBUG shows them.
+        'celery.app.trace': {
+            'handlers': ['console'],
+            'level': 'INFO' if LOG_LEVEL == 'DEBUG' else 'WARNING',
+            'propagate': False,
+        },
+        'celery.worker.strategy': {
+            'handlers': ['console'],
+            'level': 'INFO' if LOG_LEVEL == 'DEBUG' else 'WARNING',
+            'propagate': False,
+        },
     },
 }
 
@@ -589,6 +663,7 @@ SENTRY_TRACES_SAMPLE_RATE = _env_float('SENTRY_TRACES_SAMPLE_RATE', 0.0)
 
 if SENTRY_DSN:
     import sentry_sdk
+    from sentry_sdk.integrations.celery import CeleryIntegration
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.logging import LoggingIntegration
 
@@ -598,6 +673,7 @@ if SENTRY_DSN:
         dsn=SENTRY_DSN,
         integrations=[
             DjangoIntegration(),
+            CeleryIntegration(),
             LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
         ],
         environment=SENTRY_ENVIRONMENT,
