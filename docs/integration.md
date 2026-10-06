@@ -219,7 +219,7 @@ Some auth emails only use copy that Shellui writes, in English and French (`apps
 | `company_name` | yes | Company the request was for. Filled from the stored name when omitted |
 | `sign_in_url` | no | Plain link to the sign-in page the request came from (`https`, or `http://localhost` when `DEBUG=true`). Not a credential. Without it, the email has no button |
 
-English copy: subject `[Shellui] Sign in to {{ company_name }} with your password or SSO`, heading "No sign-in link for staff accounts", one paragraph ("Someone asked for a sign-in link for this address on {{ company_name }}. For security, staff accounts can't sign in with an email link. Sign in with your password or SSO instead. If you didn't ask for this, you can ignore this email."), and a "Go to sign-in" button to `sign_in_url` when it is set.
+English copy: subject `[Shellui] Sign in to {{ company_name }} with your password or SSO`, heading "No sign-in link for staff accounts", one paragraph (`Someone asked for a sign-in link for this address on {{ company_name }}. For security, staff accounts can't sign in with an email link. Sign in with your password or SSO instead. If you didn't ask for this, you can ignore this email.`), and a "Go to sign-in" button to `sign_in_url` when it is set.
 
 ```json
 {
