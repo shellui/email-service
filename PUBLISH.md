@@ -1,6 +1,6 @@
 # Publish and deploy
 
-How to build and run the `shellui/email-service` Docker image.
+How to build, publish, and run the `shellui/email-service` Docker image on Docker Hub.
 
 Publishing to Docker Hub is manual. There is no CI workflow that pushes the image.
 
@@ -13,71 +13,88 @@ Publishing to Docker Hub is manual. There is no CI workflow that pushes the imag
 | Listen port | `8000` (Compose maps host `${EMAIL_SERVICE_PORT:-8003}`) |
 | Data volume | `/app/data` |
 
-The image contains application code, Node with the React Email compose script (`renderer/compose.mjs`), and collected static files, including the library images under `/static/library/`. Gunicorn listens on port 8000. Secrets come from the environment at start (see `.env.example`).
+The image contains application code, Node with the React Email compose script (`renderer/compose.mjs`), and collected static files, including the library images and fonts under `/static/library/`. Secrets come from the environment at start (see `.env.example`).
 
-Delivery is not inside Gunicorn. Run `manage.py run_email_worker --lane <auth|transactional|bulk>` beside the web process, one per lane, plus `retry_webhooks` and `purge_expired_data`.
+The image command selects what runs:
+
+| Command | Starts |
+| --- | --- |
+| `web` (default) | Database migrations, then gunicorn on port 8000 |
+| anything else | That command, for example `python manage.py run_email_worker --lane auth` |
+
+Delivery is not inside gunicorn. Run one `run_email_worker` container per lane (`auth`, `transactional`, `bulk`) with the same image and environment, and schedule `retry_webhooks` every minute and `purge_expired_data` every hour.
 
 ## Pre-release checklist
 
 ```bash
 ./tools/pre-release-check.sh
+./tools/pre-release-check.sh --image shellui/email-service:release-check
 ```
 
-The script checks that `uv.lock` exists, `.env` is not tracked, and `manage.py check` passes.
+The script checks that `uv.lock` exists, `.env` is not tracked, and `manage.py check` passes. With `--image`, it also builds the image.
 
-GitHub Actions [`.github/workflows/pre-release.yml`](.github/workflows/pre-release.yml) runs on pull requests targeting `main`.
-
-CI on `main` is [`.github/workflows/ci.yml`](.github/workflows/ci.yml): tests, CSS drift, gitleaks, pip-audit, link check, and a Docker build.
+GitHub Actions [`.github/workflows/pre-release.yml`](.github/workflows/pre-release.yml) runs it on pull requests targeting `main`. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs tests, the CSS drift check, gitleaks, pip-audit, the link check, and a Docker build.
 
 ### Version alignment
 
-For a release, keep these on the same version:
+Keep these on the release version:
 
-- `version` in `pyproject.toml`
+- `version` in `pyproject.toml` (returned by `GET /api/v1/health`)
 - a dated entry in `CHANGELOG.md` (`## [x.y.z] - YYYY-MM-DD`)
-- optional git tag `vX.Y.Z`
+- the git tag `vX.Y.Z`
+- CI green on the release commit
 
 ### Smoke test
 
 ```bash
-export SECRET_KEY="$(uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
-export EMAIL_CREDENTIALS_KEY="$(uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")"
-export EMAIL_VARIABLES_KEY="$(uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")"
-export EMAIL_HASH_PEPPER="$(uv run python -c "import secrets; print(secrets.token_urlsafe(32))")"
-
 VERSION=0.1.0
 docker build -t "shellui/email-service:${VERSION}" .
 
 docker run --rm -d --name email-release-smoke -p 18003:8000 \
-  -e SECRET_KEY \
-  -e EMAIL_CREDENTIALS_KEY \
-  -e EMAIL_VARIABLES_KEY \
-  -e EMAIL_HASH_PEPPER \
-  -e ALLOWED_HOSTS=localhost,127.0.0.1 \
-  -e IDENTITY_JWKS='{"keys":[]}' \
-  -e IDENTITY_ISSUER=https://pre-release.test \
-  -e IDENTITY_AUDIENCE=shellui \
-  -e SECURE_SSL_REDIRECT=false \
-  -e POSTGRES_SSL_REQUIRE=false \
-  -e REDIS_URL=redis://127.0.0.1:6379/0 \
-  -e POSTGRES_DATABASE_URL=postgres://email:email@127.0.0.1:5432/email \
+  -e SECRET_KEY=smoke-test-only \
+  -e DEBUG=true \
+  -e IDENTITY_JWKS_URL=http://localhost:8000/.well-known/jwks.json \
   "shellui/email-service:${VERSION}"
-```
 
-`GET /api/v1/health` does not open Postgres. A full boot with `DEBUG=false` still requires the variables above to be set, and a real `POSTGRES_DATABASE_URL` plus `REDIS_URL` before traffic. For a local health check without those services, run the container with `DEBUG=true` and SQLite.
-
-```bash
+sleep 10
 curl -sS http://127.0.0.1:18003/api/v1/health
 docker stop email-release-smoke
 ```
 
+The container runs the migrations on SQLite, then answers `{"status": "ok", "version": "…"}`. `GET /api/v1/health` does not open the database, so check the logs for `Applying …` lines or errors too.
+
+Check that the worker command starts with the same image:
+
+```bash
+docker run --rm -e SECRET_KEY=x -e DEBUG=true \
+  -e IDENTITY_JWKS_URL=http://localhost:8000/.well-known/jwks.json \
+  "shellui/email-service:${VERSION}" python manage.py run_email_worker --help
+```
+
 ## Publish to Docker Hub
 
-Log in with an account that can push to the `shellui` organization. From a clean tree:
+### Prerequisites
+
+1. The `shellui/email-service` repository exists on Docker Hub, and your account can push to the `shellui` organization.
+2. Docker CLI logged in: `docker login`.
+3. A clean git tree at the release commit on `main`.
+
+### Tags
+
+| Tag | Purpose |
+| --- | --- |
+| `x.y.z` | Exact release (pin in production) |
+| `latest` | Newest published release |
+
+### Build and push (multi-arch)
+
+On Apple Silicon a plain `docker build` produces `linux/arm64` only, and most servers expect `linux/amd64`. Publish both with buildx:
 
 ```bash
 VERSION=0.1.0
 IMAGE=shellui/email-service
+
+docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
 
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
@@ -85,6 +102,8 @@ docker buildx build \
   -t "${IMAGE}:latest" \
   --push .
 ```
+
+### Git tag
 
 ```bash
 git tag -a "v${VERSION}" -m "Release ${VERSION}"
@@ -95,19 +114,59 @@ Pushes to `main` run [`.github/workflows/deploy-docs.yml`](.github/workflows/dep
 
 ## Deploy
 
+### Production settings
+
+Set the production variables from `.env.example`. These are required with `DEBUG=false`. Run `./tools/prod-config-check.sh` with the production environment loaded: it fails when one of them is missing, except the JWKS.
+
+| Variable | Notes |
+| --- | --- |
+| `SECRET_KEY` | Django secret |
+| `POSTGRES_DATABASE_URL` | Postgres. SQLite is not allowed in production |
+| `REDIS_URL` | Rate limits |
+| `IDENTITY_ISSUER`, `IDENTITY_AUDIENCE` | Must match identity-service `JWT_ISSUER` and `JWT_AUDIENCE` |
+| `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` | A pinned copy of identity `/.well-known/jwks.json`, not a runtime URL. Update it when identity rotates its signing key |
+| `EMAIL_CREDENTIALS_KEY`, `EMAIL_VARIABLES_KEY` | Fernet keys for provider credentials and stored variables |
+| `EMAIL_HASH_PEPPER` | HMAC pepper for address hashes |
+
+Generate the keys once and keep them: changing a Fernet key makes stored credentials unreadable.
+
+```bash
+uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Also set `ALLOWED_HOSTS`, `PUBLIC_BASE_URL`, `IDENTITY_SERVICE_URL`, `EMAIL_AUTH_LINK_HOSTS` (the identity host, for example `id.shellui.com`), and the platform provider (`RESEND_API_KEY`, `DEFAULT_FROM_EMAIL`, `BULK_FROM_EMAIL`). See [docs/configuration.md](docs/configuration.md).
+
+### Run the containers
+
 ```bash
 docker pull shellui/email-service:0.1.0
 ```
 
-Set the production variables in `.env.example`, including Fernet keys, identity issuer and audience, Postgres, and Redis. Put a pinned JWKS document in `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE`.
-
-Compose:
+Start the web container with the default command. It applies migrations, which also sync the built-in library designs, then starts gunicorn. Then start three workers with the same image and environment, one per lane:
 
 ```bash
-docker compose up -d
+docker run -d --name email-worker-auth --env-file .env shellui/email-service:0.1.0 \
+  python manage.py run_email_worker --lane auth
+docker run -d --name email-worker-transactional --env-file .env shellui/email-service:0.1.0 \
+  python manage.py run_email_worker --lane transactional
+docker run -d --name email-worker-bulk --env-file .env shellui/email-service:0.1.0 \
+  python manage.py run_email_worker --lane bulk
 ```
 
-Then start three workers with the same image, one per lane: `python manage.py run_email_worker --lane auth`, `--lane transactional`, and `--lane bulk`. Broadcasts only move forward on the bulk worker.
+Broadcasts only move forward on the bulk worker. Schedule `python manage.py retry_webhooks` every minute and `python manage.py purge_expired_data` every hour, for example as Coolify Scheduled Tasks on the web container.
+
+### Connect identity-service
+
+1. Create a service key on email-service:
+
+   ```bash
+   python manage.py create_service_key --service identity --lanes auth,transactional --prefixes identity.
+   ```
+
+2. On identity-service, set `EMAIL_SERVICE_API_KEY` to the printed `esk_` value, and `EMAIL_SERVICE_URL` when email-service is not at `https://email.shellui.com`.
+3. Check that `EMAIL_AUTH_LINK_HOSTS` on email-service contains the host of identity `JWT_ISSUER`, otherwise magic links are refused with `auth_link_host_not_allowed`.
+4. Request a magic link for a non-staff address and check that it arrives.
 
 ## Resend checklist (before the first real send)
 
@@ -122,4 +181,8 @@ Then start three workers with the same image, one per lane: `python manage.py ru
 - [ ] Open and click tracking are off on both domains.
 - [ ] `EMAIL_PLATFORM_COMPANY_IDS`, `PUBLIC_BASE_URL`, and `IDENTITY_SERVICE_URL` are set.
 - [ ] The bulk worker is running.
-- [ ] Companies with their own Resend account have done the same on their account, with `?company_id=<id>` on the webhook URL.
+- [ ] Companies with their own Resend account have done the same on their account, with `?company_id={id}` on the webhook URL.
+
+## Rollback
+
+Pull and run a previous tag or digest. Data in Postgres is independent of the image tag; test migrations before downgrading.

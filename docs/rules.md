@@ -77,7 +77,7 @@ Creation is lazy and idempotent: the first `GET /api/v1/rules` or the first `POS
 
 A built-in rule cannot be deleted or disabled, and its recipients cannot change: `recipient_mode` stays `hints` and `static_recipients` stays empty (`409 rule_built_in`). The sign-in message only goes to the address identity sent. Edit its copy through the version API, or start it over from another library template. `language` can still be patched.
 
-A company cannot create a rule on an auth-lane event. `POST /api/v1/rules` returns `400 auth_event_rule_forbidden`. Rules written on one before that check are disabled by migration `0011_auth_rules_locked`, are never read for auth-lane mail, and can only be deleted. The catalog marks these events with `rules_allowed: false`.
+A company cannot create a rule on an auth-lane event. `POST /api/v1/rules` returns `400 auth_event_rule_forbidden`. The catalog marks these events with `rules_allowed: false`.
 
 On `POST /api/v1/events`, an auth-lane event uses the built-in rule only, with the event's recipient, and accepts exactly one (`400 auth_single_recipient` otherwise). Direct `/send` on an auth-lane template takes exactly one `to` address too, and `/send/batch` exactly one item. Direct sends use the built-in rule's copy, or the default design. A copy that fails today's [auth checks](templates.md) at send time falls back to the default design.
 
@@ -92,7 +92,3 @@ Enabled rules and no address: `202`, `rule_enabled: true`, `skipped_reason: no_r
 A matching non-auth rule with a recipient still needs a company provider (`409 platform_sender_not_allowed`), unless the company is in `EMAIL_PLATFORM_COMPANY_IDS`. Auth-lane rules keep the platform fallback From `no-reply@shellui.com`.
 
 Direct `POST /api/v1/send` does not read rules.
-
-## Migration
-
-Migration `0005_library_templates` deletes every rule, company template, and version, because block documents do not convert to editor documents. There was no production data. Built-in auth rules come back on the next rules list or event, and companies create their other rules again from the library.

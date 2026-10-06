@@ -302,7 +302,7 @@ When no enabled rule matches, `202`:
 }
 ```
 
-`skipped.no_rule` counts that row. Catalog `default_enabled` is not consulted. Events that used to send with no company row (`hosting.deployment.failed`, `identity.user.invitation_revoked`, `identity.scim.provisioning_conflict`) now return `no_rule` until the company creates a rule. Auth-lane events send because their built-in rules exist. See [rules.md](rules.md) and [events.md](events.md).
+`skipped.no_rule` counts that row. Catalog `default_enabled` is not consulted. Every non-auth event returns `no_rule` until the company creates a rule. Auth-lane events send because their built-in rules exist. See [rules.md](rules.md) and [events.md](events.md).
 
 When at least one enabled rule has a recipient, `202`:
 
@@ -685,7 +685,7 @@ Default window: the last 30 days.
 
 `sent` counts provider-accepted messages. A `delivered` or `bounced` row is also included in `sent`, so `sent` is a superset of the later provider statuses. `by_event` keys are `event_type` (the catalog id).
 
-`skipped` counts accepted `POST /api/v1/events` calls that queued no message. `no_recipients` is an enabled rule with no resolvable address. `no_rule` is an event with no enabled rule. `rule_disabled` stays in the object for older rows and is no longer written. `from`, `to`, `event_type`, and `lane` filter these rows the same way they filter messages. `lane` uses the catalog lane of the event.
+`skipped` counts accepted `POST /api/v1/events` calls that queued no message. `no_recipients` is an enabled rule with no resolvable address. `no_rule` is an event with no enabled rule. `rule_disabled` is always `0`. `from`, `to`, `event_type`, and `lane` filter these rows the same way they filter messages. `lane` uses the catalog lane of the event.
 
 ## Admin: suppressions, lanes, privacy, clients
 

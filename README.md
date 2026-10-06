@@ -6,7 +6,7 @@ The integration contract is [docs/integration.md](docs/integration.md).
 
 ## Features
 
-- Direct send (`POST /api/v1/send`) for auth mail: magic links and invitations, with TTL and idempotency
+- Direct send (`POST /api/v1/send`) for auth mail: magic links, invitations, and the staff notice, with TTL and idempotency. Each sign-in link goes to one recipient only.
 - Event ingest (`POST /api/v1/events`): every enabled email rule for that company, service, and event queues a message. Auth-lane events have a built-in rule.
 - Template library: 40 React Email demo designs in five sets (Barebone, Matte, Protocol, Arcane, Studio), plus company templates. See [docs/library.md](docs/library.md) and `renderer/demos/LICENSE`.
 - Each email rule sends its own editable copy of a library design, with suggested English and French subjects for identity, storage, and hosting events
@@ -197,7 +197,11 @@ docker compose up --build
 
 Host port: `8003` (container listens on `8000`). Identity uses 8000, storage 8001, and hosting 8002.
 
-Publishing the image is manual. See [PUBLISH.md](PUBLISH.md).
+The container applies migrations on start, then runs gunicorn. Workers use the same image with their own command, for example `docker run … shellui/email-service python manage.py run_email_worker --lane auth`.
+
+## Release
+
+Releases are published by hand to Docker Hub as `shellui/email-service:<version>` and `latest`, for `linux/amd64` and `linux/arm64`. [PUBLISH.md](PUBLISH.md) has the pre-release checklist, the build and push commands, the production settings, and how to connect identity-service. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## Documentation site
 

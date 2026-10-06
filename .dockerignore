@@ -11,6 +11,8 @@ __pycache__/
 staticfiles/
 data/
 docs/
+node_modules/
+**/node_modules/
 tools/docusaurus/node_modules/
 tools/docusaurus/.docusaurus/
 tools/docusaurus/build/
