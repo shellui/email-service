@@ -302,8 +302,8 @@ def all_definitions() -> list[dict[str, Any]]:
                 _var('sign_in_url', 'url', example='https://app.acme.com/'),
             ],
             languages=_localized(
-                subject_en='[Shellui] Sign in to {{ company_name }} with your password or SSO',
-                subject_fr='[Shellui] Connectez-vous à {{ company_name }} avec votre mot de passe ou le SSO',
+                subject_en='[Shellui] Sign in to {{ company_name }} with your usual sign-in method',
+                subject_fr='[Shellui] Connectez-vous à {{ company_name }} avec votre méthode de connexion habituelle',
                 pre_en="Staff accounts can't use email sign-in links.",
                 pre_fr='Les comptes staff ne peuvent pas utiliser de lien de connexion par e-mail.',
             ),

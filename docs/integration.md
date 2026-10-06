@@ -79,7 +79,7 @@ JSON errors never contain translated sentences. Shape:
 | `renderer_unavailable` | 503 | Node or `renderer/compose.mjs` could not run, or timed out |
 | `rule_built_in` | 409 | A built-in auth rule cannot be deleted, disabled, or sent to other recipients |
 | `auth_event_rule_forbidden` | 400 | A company rule on an auth-lane event |
-| `auth_single_recipient` | 400 | An auth-lane `/send` with more than one `to`, or an auth-lane event with more than one recipient |
+| `auth_single_recipient` | 400 | An auth-lane `/send` with more than one `to`, an auth-lane `/send/batch` with more than one item, or an auth-lane event with more than one recipient |
 | `auth_link_misplaced` | 400 | An auth-lane copy puts a link variable outside a link target or visible text, for example in an image `src`, a `style`, or an `alt` |
 | `template_in_use` | 409 | `DELETE /api/v1/templates/{id}` while an email rule still points at that copy |
 | `template_lane_mismatch` | 400 | Requested lane does not match the template's lane class |
@@ -219,7 +219,7 @@ Some auth emails only use copy that Shellui writes, in English and French (`apps
 | `company_name` | yes | Company the request was for. Filled from the stored name when omitted |
 | `sign_in_url` | no | Plain link to the sign-in page the request came from (`https`, or `http://localhost` when `DEBUG=true`). Not a credential. Without it, the email has no button |
 
-English copy: subject `[Shellui] Sign in to {{ company_name }} with your password or SSO`, heading "No sign-in link for staff accounts", one paragraph (`Someone asked for a sign-in link for this address on {{ company_name }}. For security, staff accounts can't sign in with an email link. Sign in with your password or SSO instead. If you didn't ask for this, you can ignore this email.`), and a "Go to sign-in" button to `sign_in_url` when it is set.
+English copy: subject `[Shellui] Sign in to {{ company_name }} with your usual sign-in method`, heading "No sign-in link for staff accounts", one paragraph (`Someone asked for a sign-in link for this address on {{ company_name }}. For security, staff accounts can't sign in with an email link. Sign in with your usual sign-in method instead. If you didn't ask for this, you can ignore this email.`), and a "Go to sign-in" button to `sign_in_url` when it is set.
 
 ```json
 {
@@ -236,7 +236,7 @@ English copy: subject `[Shellui] Sign in to {{ company_name }} with your passwor
 
 `POST /api/v1/send/batch`
 
-Same auth and lane rules. Up to 500 items. One bad item does not fail the batch.
+Same auth and lane rules. Up to 500 items. One bad item does not fail the batch. An auth-lane template (magic link, invitation, staff notice) takes exactly one item with one `to` address, like `/send`. More returns `400 auth_single_recipient` and nothing is queued.
 
 ```json
 {

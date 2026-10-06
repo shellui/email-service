@@ -23,15 +23,7 @@ from apps.providers.registry import fake_provider
 SIGN_IN = 'https://app.acme.com/'
 
 
-@override_settings(
-    EMAIL_DELIVER_SYNC=True,
-    EMAIL_FALLBACK_PROVIDER='fake',
-    EMAIL_ALLOW_FAKE_PROVIDER=True,
-    EMAIL_AUTH_LINK_HOSTS=['id.shellui.com'],
-    EMAIL_PUBLIC_URL='https://mail.shellui.test',
-    DEBUG=True,
-)
-class StaffBlockedNoticeTests(TestCase):
+class _NoticeSetup(TestCase):
     def setUp(self):
         cache.clear()
         fake_provider().sent.clear()
@@ -72,6 +64,23 @@ class StaffBlockedNoticeTests(TestCase):
             format='json',
         )
 
+    def _batch(self, template_key, items):
+        return self._identity().post(
+            '/api/v1/send/batch',
+            {'company_id': 40, 'template_key': template_key, 'language': 'en', 'items': items},
+            format='json',
+        )
+
+
+@override_settings(
+    EMAIL_DELIVER_SYNC=True,
+    EMAIL_FALLBACK_PROVIDER='fake',
+    EMAIL_ALLOW_FAKE_PROVIDER=True,
+    EMAIL_AUTH_LINK_HOSTS=['id.shellui.com'],
+    EMAIL_PUBLIC_URL='https://mail.shellui.test',
+    DEBUG=True,
+)
+class StaffBlockedNoticeTests(_NoticeSetup):
     def test_catalog_definition_is_auth_lane_and_not_company_editable(self):
         definition = get_definition(STAFF_BLOCKED)
         self.assertEqual(definition['lane_class'], 'auth')
@@ -90,10 +99,11 @@ class StaffBlockedNoticeTests(TestCase):
         self.assertEqual(len(fake_provider().sent), 1)
         message = fake_provider().sent[0]
         self.assertEqual(message.to_email, 'staff@shellui.com')
-        self.assertEqual(message.subject, '[Shellui] Sign in to Acme with your password or SSO')
+        self.assertEqual(message.subject, '[Shellui] Sign in to Acme with your usual sign-in method')
         self.assertIn('No sign-in link for staff accounts', message.html)
         self.assertIn("staff accounts can&#x27;t sign in with an email link", message.html.replace('&#39;', '&#x27;'))
-        self.assertIn('Sign in with your password or SSO instead.', message.text)
+        self.assertIn('Sign in with your usual sign-in method instead.', message.text)
+        self.assertNotIn('password', message.text.lower())
         self.assertIn(f'href="{SIGN_IN}"', message.html)
         self.assertIn('Go to sign-in', message.html)
         for body in (message.html, message.text, message.subject):
@@ -107,9 +117,10 @@ class StaffBlockedNoticeTests(TestCase):
         sent = self._send(language='fr')
         self.assertEqual(sent.status_code, 202, sent.content)
         message = fake_provider().sent[0]
-        self.assertEqual(message.subject, '[Shellui] Connectez-vous à Acme avec votre mot de passe ou le SSO')
+        self.assertEqual(message.subject, '[Shellui] Connectez-vous à Acme avec votre méthode de connexion habituelle')
         self.assertIn('Pas de lien de connexion pour les comptes staff', message.html)
         self.assertIn('Aller à la connexion', message.html)
+        self.assertIn('Connectez-vous avec votre méthode de connexion habituelle.', message.text)
 
     def test_exactly_one_recipient(self):
         refused = self._send(to=[{'email': 'staff@shellui.com'}, {'email': 'owner@acme.com'}])
@@ -222,3 +233,78 @@ class StaffBlockedNoticeTests(TestCase):
                 validate_auth_template(
                     definition, builtin_document(definition, language), pack['subject'], pack['preheader']
                 )
+
+
+AUTH_VARIABLES = {
+    'identity.auth.magic_link.requested': {
+        'company_name': 'Acme',
+        'magic_link_url': 'https://id.shellui.com/api/v1/magic-link/verify?token=batch-secret',
+    },
+    'identity.user.invited': {'company_name': 'Acme', 'invitation_url': 'https://app.acme.com/'},
+    STAFF_BLOCKED: {'company_name': 'Acme', 'sign_in_url': SIGN_IN},
+}
+
+
+@override_settings(
+    EMAIL_DELIVER_SYNC=True,
+    EMAIL_FALLBACK_PROVIDER='fake',
+    EMAIL_ALLOW_FAKE_PROVIDER=True,
+    EMAIL_AUTH_LINK_HOSTS=['id.shellui.com'],
+    EMAIL_PUBLIC_URL='https://mail.shellui.test',
+    DEBUG=True,
+)
+class AuthBatchSingleRecipientTests(_NoticeSetup):
+    """``/send/batch`` takes one item with one address for auth mail, like ``/send``."""
+
+    def test_auth_batch_with_several_items_is_refused(self):
+        for template_key, variables in AUTH_VARIABLES.items():
+            with self.subTest(template_key=template_key):
+                cache.clear()
+                refused = self._batch(
+                    template_key,
+                    [
+                        {'to': {'email': 'staff@shellui.com'}, 'variables': variables},
+                        {'to': {'email': 'owner@acme.com'}, 'variables': variables},
+                    ],
+                )
+                self.assertEqual(refused.status_code, 400, refused.content)
+                self.assertEqual(refused.json()['error_code'], 'auth_single_recipient')
+                self.assertEqual(refused.json()['field_errors'], {'items': ['single_recipient']})
+        self.assertEqual(fake_provider().sent, [])
+        self.assertFalse(Message.objects.exists())
+
+    def test_auth_batch_item_with_a_list_of_addresses_is_refused(self):
+        refused = self._batch(
+            STAFF_BLOCKED,
+            [{'to': [{'email': 'staff@shellui.com'}, {'email': 'owner@acme.com'}], 'variables': AUTH_VARIABLES[STAFF_BLOCKED]}],
+        )
+        self.assertEqual(refused.status_code, 400, refused.content)
+        self.assertEqual(refused.json()['error_code'], 'auth_single_recipient')
+        self.assertFalse(Message.objects.exists())
+
+    def test_auth_batch_with_one_item_sends_to_that_address(self):
+        for template_key, variables in AUTH_VARIABLES.items():
+            with self.subTest(template_key=template_key):
+                cache.clear()
+                fake_provider().sent.clear()
+                sent = self._batch(template_key, [{'to': {'email': 'staff@shellui.com'}, 'variables': variables}])
+                self.assertEqual(sent.status_code, 202, sent.content)
+                self.assertEqual(len(sent.json()['accepted']), 1)
+                self.assertEqual([m.to_email for m in fake_provider().sent], ['staff@shellui.com'])
+
+    def test_empty_auth_batch_is_still_a_validation_error(self):
+        refused = self._batch(STAFF_BLOCKED, [])
+        self.assertEqual(refused.status_code, 400, refused.content)
+        self.assertEqual(refused.json()['error_code'], 'validation_failed')
+
+    def test_transactional_batch_still_takes_several_items(self):
+        variables = {'company_name': 'Acme'}
+        sent = self._batch(
+            'identity.user.invitation_revoked',
+            [
+                {'to': {'email': 'a@acme.com'}, 'variables': {**variables, 'recipient_email': 'a@acme.com'}},
+                {'to': {'email': 'b@acme.com'}, 'variables': {**variables, 'recipient_email': 'b@acme.com'}},
+            ],
+        )
+        self.assertEqual(sent.status_code, 202, sent.content)
+        self.assertEqual(len(sent.json()['accepted']), 2)

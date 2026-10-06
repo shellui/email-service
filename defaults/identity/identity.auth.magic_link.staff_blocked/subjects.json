@@ -1,4 +1,4 @@
 {
-  "en": "[Shellui] Sign in to {{ company_name }} with your password or SSO",
-  "fr": "[Shellui] Connectez-vous à {{ company_name }} avec votre mot de passe ou le SSO"
+  "en": "[Shellui] Sign in to {{ company_name }} with your usual sign-in method",
+  "fr": "[Shellui] Connectez-vous à {{ company_name }} avec votre méthode de connexion habituelle"
 }

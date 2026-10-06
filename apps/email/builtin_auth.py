@@ -33,7 +33,7 @@ COPY = {
             'paragraph': (
                 'Someone asked for a sign-in link for this address on {{ company_name }}. '
                 "For security, staff accounts can't sign in with an email link. "
-                'Sign in with your password or SSO instead. '
+                'Sign in with your usual sign-in method instead. '
                 "If you didn't ask for this, you can ignore this email."
             ),
             'button': 'Go to sign-in',
@@ -43,7 +43,7 @@ COPY = {
             'paragraph': (
                 "Quelqu'un a demandé un lien de connexion pour cette adresse sur {{ company_name }}. "
                 'Par sécurité, les comptes staff ne peuvent pas se connecter avec un lien envoyé par e-mail. '
-                'Connectez-vous avec votre mot de passe ou le SSO. '
+                'Connectez-vous avec votre méthode de connexion habituelle. '
                 "Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail."
             ),
             'button': 'Aller à la connexion',

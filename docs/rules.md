@@ -79,7 +79,7 @@ A built-in rule cannot be deleted or disabled, and its recipients cannot change:
 
 A company cannot create a rule on an auth-lane event. `POST /api/v1/rules` returns `400 auth_event_rule_forbidden`. Rules written on one before that check are disabled by migration `0011_auth_rules_locked`, are never read for auth-lane mail, and can only be deleted. The catalog marks these events with `rules_allowed: false`.
 
-On `POST /api/v1/events`, an auth-lane event uses the built-in rule only, with the event's recipient, and accepts exactly one (`400 auth_single_recipient` otherwise). Direct `/send` on an auth-lane template takes exactly one `to` address too. Direct sends use the built-in rule's copy, or the default design. A copy that fails today's [auth checks](templates.md) at send time falls back to the default design.
+On `POST /api/v1/events`, an auth-lane event uses the built-in rule only, with the event's recipient, and accepts exactly one (`400 auth_single_recipient` otherwise). Direct `/send` on an auth-lane template takes exactly one `to` address too, and `/send/batch` exactly one item. Direct sends use the built-in rule's copy, or the default design. A copy that fails today's [auth checks](templates.md) at send time falls back to the default design.
 
 ## Sending
 

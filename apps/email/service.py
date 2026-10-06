@@ -516,6 +516,15 @@ def accept_batch(principal, body: dict) -> tuple[int, dict]:
         raise SendError(400, 'validation_failed', {'items': ['required']})
     if len(items) > settings.EMAIL_MAX_BATCH_ITEMS:
         raise SendError(400, 'validation_failed', {'items': ['too_many']})
+    if lane == LANE_AUTH:
+        # Same rule as /send: one auth message, one address. A batch of auth items
+        # would send the same sign-in or invitation mail to several addresses.
+        if len(items) != 1:
+            raise SendError(400, 'auth_single_recipient', {'items': ['single_recipient']})
+        only = items[0]
+        to = only.get('to') if isinstance(only, dict) else None
+        if isinstance(to, list) and len(to) != 1:
+            raise SendError(400, 'auth_single_recipient', {'items.0.to': ['single_recipient']})
     idem = str(body.get('idempotency_key') or '')
     replay = _idempotent(principal.service, company_id, idem, body)
     if replay:
