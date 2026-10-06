@@ -90,11 +90,20 @@ def _post_pinned(resolved, body: bytes, headers: dict, timeout: float):
         session.close()
 
 
-def deliver_one(row_id) -> None:
+OUTCOME_DELIVERED = 'delivered'
+OUTCOME_RETRIED = 'retried'
+OUTCOME_DEAD = 'dead'
+
+
+def deliver_one(row_id, *, scheduled_job_run_id: int | None = None) -> str | None:
+    """
+    Attempt one delivery. Returns ``delivered``, ``retried`` (will be tried again), ``dead``
+    (given up), or None when another worker already handled the row.
+    """
     with transaction.atomic():
         row = ActionOutbox.objects.select_for_update().get(pk=row_id)
         if row.status not in {ActionOutbox.STATUS_PENDING, ActionOutbox.STATUS_FAILED}:
-            return
+            return None
         row.attempt_count += 1
         row.locked_until = timezone.now() + timedelta(seconds=settings.ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS)
         row.save(update_fields=['attempt_count', 'locked_until', 'updated_at'])
@@ -163,6 +172,7 @@ def deliver_one(row_id) -> None:
             error_code=error_code,
             attempt_number=attempt_number,
             duration_ms=duration_ms,
+            scheduled_job_run_id=scheduled_job_run_id,
         )
         if not error_code:
             row.status = ActionOutbox.STATUS_DELIVERED
@@ -179,9 +189,20 @@ def deliver_one(row_id) -> None:
             row.last_error = error_code or 'delivery_failed'
             row.locked_until = None
         row.save()
+    if row.status == ActionOutbox.STATUS_DELIVERED:
+        return OUTCOME_DELIVERED
+    if row.status == ActionOutbox.STATUS_FAILED:
+        return OUTCOME_RETRIED
+    return OUTCOME_DEAD
 
 
 def deliver_due(*, limit: int = 50) -> int:
+    return deliver_due_stats(limit=limit)['processed']
+
+
+def deliver_due_stats(*, limit: int = 50, scheduled_job_run_id: int | None = None) -> dict[str, int]:
+    """Deliver due rows. Counts: ``processed``, ``delivered``, ``retried``, ``dead``."""
+    stats = {'processed': 0, OUTCOME_DELIVERED: 0, OUTCOME_RETRIED: 0, OUTCOME_DEAD: 0}
     now = timezone.now()
     ids = list(
         ActionOutbox.objects.filter(
@@ -192,8 +213,12 @@ def deliver_due(*, limit: int = 50) -> int:
         .values_list('id', flat=True)[:limit]
     )
     for row_id in ids:
-        deliver_one(row_id)
-    return len(ids)
+        outcome = deliver_one(row_id, scheduled_job_run_id=scheduled_job_run_id)
+        if outcome is None:
+            continue
+        stats['processed'] += 1
+        stats[outcome] += 1
+    return stats
 
 
 def rotate_secret_value(new_secret: str | None = None) -> str:

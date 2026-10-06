@@ -12,7 +12,7 @@ Grouped by `by_lane`, `by_event` (catalog `event_type`), and `by_day`. Query `fr
 
 `sent` includes every status the provider accepted. A later `delivered` or `bounced` row still counts as `sent`.
 
-`skipped` counts accepted events that queued no message: `no_recipients`, `no_rule`, and `rule_disabled` (older rows only; new skips use `no_rule`).
+`skipped` counts accepted events that queued no message: `no_recipients`, `no_rule`, and `rule_disabled` (always 0).
 
 ## Prometheus
 
@@ -33,3 +33,5 @@ Gauges, computed from the database at scrape time:
 | `shellui_email_auth_ttl_expiries` | none | Auth messages that expired before handoff |
 
 Empty lanes are reported as 0 for depth and age so a scrape still lists `auth`, `transactional`, and `bulk`.
+
+The global scrape (no `company_id`, staff or `access_global_metrics`) also includes the scheduled job and lane worker metrics (`shellui_email_scheduled_job_*`, `shellui_email_scheduler_*`, `shellui_email_lane_worker_*`). See [Workers and scheduled jobs](scheduled-jobs.md#prometheus-metrics).

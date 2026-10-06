@@ -15,8 +15,12 @@ class Command(BaseCommand):
         parser.add_argument('--batch-size', type=int, default=20)
 
     def handle(self, *args, **options):
+        from apps.email.worker_heartbeat import HeartbeatThrottle
+
         lane = options['lane']
+        heartbeat = HeartbeatThrottle(lane)
         while True:
+            heartbeat.beat()
             broadcasts = 0
             if lane == 'bulk':
                 from apps.email.broadcasts import process_broadcasts

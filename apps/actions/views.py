@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from django.utils import timezone
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -25,7 +26,7 @@ from apps.actions.serializers import (
     EventLogRetentionSerializer,
     EventLogTypesSerializer,
 )
-from apps.email.access import company_from_request, require_admin
+from apps.email.access import company_from_request, require_admin, require_staff
 from apps.email.crypto import decrypt_text
 from apps.email.schema import COMPANY_QUERY, ErrorSerializer
 from apps.email.service import SendError
@@ -370,18 +371,36 @@ def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False) -> d
     get=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_event_log_list',
-        parameters=[COMPANY_QUERY],
+        parameters=[
+            COMPANY_QUERY,
+            OpenApiParameter(
+                name='scope',
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                enum=['platform'],
+                description=(
+                    'Staff only: `platform` lists events without a company '
+                    '(`email.scheduled_job.succeeded`, `email.scheduled_job.failed`).'
+                ),
+            ),
+        ],
         responses={200: EventLogListSerializer, **_API_ERRORS},
     ),
 )
 class EventLogListView(APIView):
     def get(self, request):
         try:
-            company_id = company_from_request(request)
-            require_admin(request, company_id)
+            if request.query_params.get('scope') == 'platform':
+                require_staff(request)
+                rows = EventLog.objects.filter(company_id__isnull=True)
+            else:
+                company_id = company_from_request(request)
+                require_admin(request, company_id)
+                rows = EventLog.objects.filter(company_id=company_id)
         except SendError as exc:
             return error_response(exc, request)
-        rows = EventLog.objects.filter(company_id=company_id).order_by('-created_at')[:100]
+        rows = rows.order_by('-created_at')[:100]
         return Response(
             {
                 'events': [
@@ -410,7 +429,10 @@ class EventLogDetailView(APIView):
         if row is None:
             return error_response(SendError(404, 'not_found'), request)
         try:
-            require_admin(request, row.company_id)
+            if row.company_id is None:
+                require_staff(request)
+            else:
+                require_admin(request, row.company_id)
         except SendError as exc:
             return error_response(exc, request)
         return Response(

@@ -37,6 +37,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Providers:** Resend (default) and SMTP, with per-company credentials encrypted at rest, masked responses, a test send, and a platform fallback for Shellui's own mail. See [docs/providers.md](docs/providers.md).
 - **Delivery lanes:** separate auth, transactional, and bulk queues, each sent by its own worker (`run_email_worker --lane`). See [docs/lanes.md](docs/lanes.md).
 - **All-in-one container:** the image applies migrations, then runs gunicorn, the three lane workers, and a Celery scheduler (`retry_webhooks` and `sweep_email_queue` every minute, `purge_expired_data` hourly, Redis-locked across replicas), each switchable off or movable to a `worker` container. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
+- **Job and worker monitoring:** every scheduled job run is recorded with its counts and a sanitized error, writes a staff-only `email.scheduled_job.succeeded` or `.failed` event, and feeds per-job health (`GET /api/v1/scheduled-jobs`) and Prometheus metrics, with a heartbeat per lane worker. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md#monitoring).
 - **Provider webhooks:** Resend delivery, bounce, complaint, and unsubscribe events update message status and the suppression list.
 - **Shellui Actions:** outbound webhooks for `email.message.*`, unsubscribes, and newsletter events. See [docs/actions.md](docs/actions.md).
 - **Admin API:** rules, templates, library, stats, suppressions, and privacy erase, documented in OpenAPI at `/api/docs/`.

@@ -736,7 +736,19 @@ Response: `{deleted_messages, email_masked}`. Deletes message rows and their eve
 
 `GET /api/v1/metrics` requires an identity JWT. Staff, or a token with the `pat_agm` claim (`access_global_metrics`), receives every company. Owners receive their company. `?company_id=` is allowed for staff and for the matching owner.
 
-Prometheus text. See [metrics.md](metrics.md).
+Prometheus text. See [metrics.md](metrics.md). The scrape for every company also includes the scheduled job and lane worker metrics.
+
+## Scheduled jobs (staff)
+
+Django staff only (`401` without a token, `403` for everyone else, company owners included):
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/api/v1/scheduled-jobs` |
+| `GET` | `/api/v1/scheduled-jobs/{job}/runs` |
+| `GET` | `/api/v1/scheduled-jobs/runs/{id}` |
+
+Health of `retry_webhooks`, `sweep_email_queue`, and `purge_expired_data`, the beat and lane worker heartbeats, and recent runs. Each run also writes a platform event, listed with `GET /api/v1/actions/event-log?scope=platform`. See [Workers and scheduled jobs](scheduled-jobs.md#monitoring).
 
 ## Provider webhooks (Resend)
 

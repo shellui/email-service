@@ -95,7 +95,7 @@ class EventLogListSerializer(serializers.Serializer):
 
 class EventLogDetailSerializer(serializers.Serializer):
     id = serializers.IntegerField()
-    company_id = serializers.IntegerField()
+    company_id = serializers.IntegerField(allow_null=True)
     event_type = serializers.CharField()
     data = serializers.JSONField()
     created_at = serializers.CharField()
@@ -112,3 +112,82 @@ class EventLogRetentionSerializer(serializers.Serializer):
 
 class ActionTestQueuedSerializer(serializers.Serializer):
     status = serializers.CharField()
+
+
+class ScheduledJobRunSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    job = serializers.CharField()
+    trigger = serializers.ChoiceField(choices=['celery', 'command'])
+    status = serializers.ChoiceField(choices=['running', 'succeeded', 'failed'])
+    started_at = serializers.CharField(allow_null=True)
+    finished_at = serializers.CharField(allow_null=True)
+    duration_ms = serializers.IntegerField(allow_null=True)
+    counts = serializers.DictField(child=serializers.IntegerField())
+    error_key = serializers.CharField(allow_null=True)
+    error_class = serializers.CharField(allow_null=True)
+    error_message = serializers.CharField(allow_null=True)
+    host = serializers.CharField()
+    request_id = serializers.CharField()
+    event_log_id = serializers.IntegerField(allow_null=True)
+
+
+class ScheduledJobWindowSerializer(serializers.Serializer):
+    succeeded = serializers.IntegerField()
+    failed = serializers.IntegerField()
+
+
+class ScheduledJobEntrySerializer(serializers.Serializer):
+    job = serializers.CharField()
+    health = serializers.ChoiceField(choices=['healthy', 'overdue', 'failing', 'disabled'])
+    overdue = serializers.BooleanField()
+    interval_seconds = serializers.IntegerField()
+    overdue_after_seconds = serializers.IntegerField()
+    last_run = ScheduledJobRunSerializer(allow_null=True)
+    last_success_at = serializers.CharField(allow_null=True)
+    last_failure_at = serializers.CharField(allow_null=True)
+    last_skipped_at = serializers.CharField(allow_null=True)
+    last_duration_ms = serializers.IntegerField(allow_null=True)
+    last_counts = serializers.DictField(child=serializers.IntegerField())
+    next_expected_at = serializers.CharField()
+    last_24h = ScheduledJobWindowSerializer()
+    skipped_locked_total = serializers.IntegerField()
+
+
+class LaneWorkerSerializer(serializers.Serializer):
+    lane = serializers.ChoiceField(choices=['auth', 'transactional', 'bulk'])
+    last_seen_at = serializers.CharField(allow_null=True)
+    stale = serializers.BooleanField()
+
+
+class ScheduledJobsOverviewSerializer(serializers.Serializer):
+    generated_at = serializers.CharField()
+    scheduler_enabled = serializers.BooleanField()
+    redis_reachable = serializers.BooleanField(allow_null=True)
+    beat_last_seen_at = serializers.CharField(allow_null=True)
+    beat_stale = serializers.BooleanField()
+    jobs = ScheduledJobEntrySerializer(many=True)
+    workers_enabled = serializers.BooleanField()
+    workers = LaneWorkerSerializer(many=True)
+
+
+class ScheduledJobRunListSerializer(serializers.Serializer):
+    job = serializers.CharField()
+    results = ScheduledJobRunSerializer(many=True)
+
+
+class ScheduledJobDeliveryAttemptSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    delivery_id = serializers.CharField()
+    company_id = serializers.IntegerField()
+    event_type = serializers.CharField()
+    status = serializers.CharField()
+    http_status = serializers.IntegerField(allow_null=True)
+    error_code = serializers.CharField()
+    attempt_number = serializers.IntegerField()
+    duration_ms = serializers.IntegerField(allow_null=True)
+    created_at = serializers.CharField()
+
+
+class ScheduledJobRunDetailSerializer(ScheduledJobRunSerializer):
+    webhook_delivery_attempts = ScheduledJobDeliveryAttemptSerializer(many=True)
+    webhook_delivery_attempts_truncated = serializers.BooleanField()

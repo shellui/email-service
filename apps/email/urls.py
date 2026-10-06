@@ -1,5 +1,10 @@
 from django.urls import path
 
+from apps.actions.scheduled_job_views import (
+    ScheduledJobRunDetailView,
+    ScheduledJobRunsView,
+    ScheduledJobsView,
+)
 from apps.email.newsletter_views import (
     NewsletterDetailView,
     NewsletterExportView,
@@ -48,6 +53,9 @@ from apps.email.views import (
 urlpatterns = [
     path('health', HealthView.as_view(), name='email-health'),
     path('metrics', MetricsView.as_view(), name='email-metrics'),
+    path('scheduled-jobs', ScheduledJobsView.as_view(), name='email-scheduled-jobs'),
+    path('scheduled-jobs/runs/<int:pk>', ScheduledJobRunDetailView.as_view(), name='email-scheduled-job-run-detail'),
+    path('scheduled-jobs/<str:job>/runs', ScheduledJobRunsView.as_view(), name='email-scheduled-job-runs'),
     path('send', SendView.as_view(), name='email-send'),
     path('send/batch', SendBatchView.as_view(), name='email-send-batch'),
     path('events', EventIngestView.as_view(), name='email-events'),

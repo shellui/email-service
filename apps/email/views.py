@@ -1260,7 +1260,10 @@ class MetricsView(APIView):
                 return error_response(exc, request)
             body = metrics_http_body(company_id=company_id)
         elif getattr(user, 'is_staff', False) or getattr(user, 'access_global_metrics', False):
-            body = metrics_http_body()
+            # Platform metrics (scheduled jobs, lane workers) are global only, never in a company scrape.
+            from apps.actions.scheduled_job_metrics import scheduled_jobs_metrics_body
+
+            body = metrics_http_body() + scheduled_jobs_metrics_body()
         elif getattr(user, 'is_company_owner', False) and user.company_id is not None:
             body = metrics_http_body(company_id=int(user.company_id))
         else:
