@@ -91,7 +91,7 @@ git tag -a "v${VERSION}" -m "Release ${VERSION}"
 git push origin "v${VERSION}"
 ```
 
-Pushes to `main` run [`.github/workflows/deploy-docs.yml`](.github/workflows/deploy-docs.yml) and publish the docs site. The Pages CNAME is `email.docs.shellui.com`. The API host `email.shellui.com` is not a GitHub Pages name.
+Docs are not published from this repository. [shellui/shellui](https://github.com/shellui/shellui) builds `docs/` (with the sidebar in `docs/sidebars.js`) into [https://docs.shellui.com/email](https://docs.shellui.com/email). The **Docs build** job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) checks on every pull request that the docs still build.
 
 ## Deploy
 

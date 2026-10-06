@@ -114,12 +114,8 @@ Host port: `8003` (container listens on `8000`). Identity uses 8000, storage 800
 
 Publishing the image is manual. See [PUBLISH.md](PUBLISH.md).
 
-## Documentation site
+## Documentation
 
-Guides in `docs/` are built with Docusaurus:
+Guides live in `docs/`, with the sidebar in `docs/sidebars.js`. They are published at [https://docs.shellui.com/email](https://docs.shellui.com/email) by [shellui/shellui](https://github.com/shellui/shellui), which builds the docs of every Shellui service into one site. This repository no longer builds or deploys its own docs site.
 
-```bash
-./tools/generate-docs.sh
-```
-
-GitHub Pages uses the CNAME `email.docs.shellui.com` so it does not take over the API host `email.shellui.com`.
+Preview the docs with live reload: clone `shellui` next to this repository, then run `pnpm install` and `DOCS_SERVICES=email pnpm docs:start` in `../shellui`. See [Build the docs site](https://github.com/shellui/shellui/blob/develop/docs/docs-site.md). CI runs the same build on every pull request (the **Docs build** job), so a broken link or invalid page fails the check.

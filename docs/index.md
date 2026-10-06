@@ -1,6 +1,6 @@
 # email-service documentation
 
-`email-service` sends Shellui mail. The HTTP API lives at `https://email.shellui.com`. This docs site is published separately so the API host stays an API.
+`email-service` sends Shellui mail. The HTTP API lives at `https://email.shellui.com`. These docs are published at [docs.shellui.com/email](https://docs.shellui.com/email), so the API host stays an API.
 
 ## Contract
 
