@@ -206,4 +206,4 @@ Releases are published by hand to Docker Hub as `shellui/email-service:<version>
 
 Guides live in `docs/`, with the sidebar in `docs/sidebars.js`. They are published at [https://docs.shellui.com/email](https://docs.shellui.com/email) by [shellui/shellui](https://github.com/shellui/shellui), which builds the docs of every Shellui service into one site. This repository no longer builds or deploys its own docs site.
 
-Preview the docs with live reload: clone `shellui` next to this repository, then run `pnpm install` and `DOCS_SERVICES=email pnpm docs:start` in `../shellui`. See [Build the docs site](https://github.com/shellui/shellui/blob/develop/docs/docs-site.md). CI runs the same build on every pull request (the **Docs build** job), so a broken link or invalid page fails the check.
+Preview the docs with live reload: clone `shellui` next to this repository, then run `pnpm install` and `DOCS_SERVICES=email pnpm docs:start` in `../shellui`. See [Build the docs site](https://github.com/shellui/shellui/blob/main/docs/docs-site.md). CI runs the same build on every pull request (the **Docs build** job), so a broken link or invalid page fails the check.
