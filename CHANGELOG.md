@@ -53,3 +53,4 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 📚 Documentation
 
 - **Integration contract:** [docs/integration.md](docs/integration.md) describes the API other Shellui services call, with guides for configuration, security, and the Resend setup required before going live.
+- **Docs site:** the guides in `docs/` are published at [docs.shellui.com/email](https://docs.shellui.com/email) by [shellui/shellui](https://github.com/shellui/shellui), and CI builds them and fails on broken links.

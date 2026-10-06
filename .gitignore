@@ -14,9 +14,6 @@ data/
 
 # Node / docs
 node_modules/
-tools/docusaurus/build/
-tools/docusaurus/.docusaurus/
-tools/docusaurus/node_modules/
 
 # Env & secrets
 .env

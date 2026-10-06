@@ -557,9 +557,9 @@ if DEBUG:
 SHELLUI_WEBSITE_URL = os.getenv('SHELLUI_WEBSITE_URL', 'https://shellui.com').strip()
 SHELLUI_DOCS_URL = os.getenv('SHELLUI_DOCS_URL', 'https://docs.shellui.com').strip()
 SHELLUI_PLAYGROUND_URL = os.getenv('SHELLUI_PLAYGROUND_URL', 'https://playground.shellui.com').strip()
-SHELLUI_EMAIL_DOCS_URL = os.getenv('SHELLUI_EMAIL_DOCS_URL', 'https://email.docs.shellui.com').strip()
+SHELLUI_EMAIL_DOCS_URL = os.getenv('SHELLUI_EMAIL_DOCS_URL', 'https://docs.shellui.com/email').strip()
 SHELLUI_IDENTITY_DOCS_URL = os.getenv(
-    'SHELLUI_IDENTITY_DOCS_URL', 'https://identity.docs.shellui.com'
+    'SHELLUI_IDENTITY_DOCS_URL', 'https://docs.shellui.com/identity'
 ).strip()
 SHELLUI_GITHUB_EMAIL_URL = os.getenv(
     'SHELLUI_GITHUB_EMAIL_URL', 'https://github.com/shellui/email-service'
