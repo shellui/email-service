@@ -12,6 +12,10 @@ Notable changes to this project. Format: [Keep a Changelog](https://keepachangel
 - Company templates have `name`, optional `event_type`, and a generated `company.<hex>` key when created from a rule.
 - Themes: `barebone`, `matte`, `protocol`, `arcane`, `studio`. `GET /api/v1/themes`, `GET /api/v1/themes/{key}/preview`, `GET/PUT /api/v1/settings`. Versions stored as `shellui` migrate to `barebone`.
 
+### Documentation
+
+- Docs move to [docs.shellui.com/email](https://docs.shellui.com/email), built and published by [shellui/shellui](https://github.com/shellui/shellui). This repository no longer deploys a docs site: `deploy-docs.yml`, `tools/docusaurus/`, `tools/generate-docs.sh` and the root `CNAME` are removed, and the sidebar moved to `docs/sidebars.js`. CI gains a **Docs build** job that builds `docs/` with the shellui docs site and fails on broken links.
+
 ## [0.1.0] - 2026-10-02
 
 ### Feature
