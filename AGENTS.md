@@ -25,7 +25,7 @@ When writing or reviewing user-facing copy in this repo, follow https://shellui.
 `email-service` sends mail for Shellui products. Other services integrate through [docs/integration.md](docs/integration.md). That file is the contract. Do not invent a second client shape in a sibling repo.
 
 - Direct `POST /api/v1/send` is for messages the caller must send (identity magic links and invitations, `auth` lane). It does not consult email rules.
-- `POST /api/v1/events` queues one message per enabled email rule. Auth-lane events have a built-in rule that cannot be deleted or disabled. No matching rule returns `skipped_reason: no_rule`. Catalog `default_enabled` does not send mail.
+- `POST /api/v1/events` queues one message per enabled email rule. Auth-lane events have a built-in rule that cannot be deleted, disabled, or sent to other recipients, and companies cannot add rules on them. A sign-in link goes to exactly one address: the one in the request. No matching rule returns `skipped_reason: no_rule`. Catalog `default_enabled` does not send mail.
 - Provider code stays behind `apps/providers`. Resend and SMTP are active. Mailjet is one new adapter module. See [docs/providers.md](docs/providers.md).
 - API JSON uses `error_code` and optional `field_errors`. Do not put translated sentences in JSON.
 - Catalog events (subjects, preheaders, variables, `link_token`, `default_template`) live in `apps/email/catalog.py` and are exported under `defaults/`.

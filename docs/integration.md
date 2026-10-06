@@ -77,7 +77,10 @@ JSON errors never contain translated sentences. Shape:
 | `library_built_in` | 409 | `PUT` or `DELETE` on a built-in library template |
 | `library_not_synced` | 503 | An event's default design is missing because migrations have not run |
 | `renderer_unavailable` | 503 | Node or `renderer/compose.mjs` could not run, or timed out |
-| `rule_built_in` | 409 | A built-in auth rule cannot be deleted or disabled |
+| `rule_built_in` | 409 | A built-in auth rule cannot be deleted, disabled, or sent to other recipients |
+| `auth_event_rule_forbidden` | 400 | A company rule on an auth-lane event |
+| `auth_single_recipient` | 400 | An auth-lane `/send` with more than one `to`, or an auth-lane event with more than one recipient |
+| `auth_link_misplaced` | 400 | An auth-lane copy puts a link variable outside a link target or visible text, for example in an image `src`, a `style`, or an `alt` |
 | `template_in_use` | 409 | `DELETE /api/v1/templates/{id}` while an email rule still points at that copy |
 | `template_lane_mismatch` | 400 | Requested lane does not match the template's lane class |
 | `lane_requires_campaign` | 400 | `bulk` is not accepted on `/send`. Campaigns are not in this version. |
@@ -261,7 +264,7 @@ Auth: service key. `service` must equal the key's service name.
 }
 ```
 
-On accept, email-service creates any missing built-in auth rules for that company, then loads every enabled rule for the company, service, and `event_type`. Each rule queues one message per resolved recipient. A company can have several rules on one event (the event recipient and a static ops address, for example). There is no platform rule and no catalog on/off fallback.
+On accept, email-service creates any missing built-in auth rules for that company, then loads every enabled rule for the company, service, and `event_type`. Each rule queues one message per resolved recipient. An auth-lane event only uses its built-in rule, sends to the event's recipient, and takes exactly one (`400 auth_single_recipient`). A company can have several rules on one event (the event recipient and a static ops address, for example). There is no platform rule and no catalog on/off fallback.
 
 When no enabled rule matches, `202`:
 
@@ -331,7 +334,7 @@ Non-auth mail (`POST /api/v1/send` on a transactional template, and `POST /api/v
 
 A company that is not in `EMAIL_PLATFORM_COMPANY_IDS` cannot set `from_email` or `bulk_from_email` to `DEFAULT_FROM_EMAIL` or `BULK_FROM_EMAIL` (`403 platform_sender_not_allowed`).
 
-Auth-lane copies must still contain every required URL variable (`magic_link_url` or `invitation_url`). Every link in the document (link marks, button `href`, linked images) must be a declared URL variable, `{{ system.message_id }}`, or a literal `https` URL whose host is on `EMAIL_AUTH_LINK_HOSTS`. Otherwise publish returns `auth_link_missing` or `auth_link_host_not_allowed`. Subject, preheader, and document text must not contain a literal URL. The required link variable may appear there. A literal URL returns `auth_literal_link`.
+Auth-lane copies must still contain every required URL variable (`magic_link_url` or `invitation_url`). Every link in the document (link marks, button `href`, linked images) must be a declared URL variable, `{{ system.message_id }}`, or a literal `https` URL whose host is on `EMAIL_AUTH_LINK_HOSTS`. Otherwise publish returns `auth_link_missing` or `auth_link_host_not_allowed`. Subject, preheader, and document text must not contain a literal URL. The required link variable may appear there. A literal URL returns `auth_literal_link`. A link variable anywhere else in the document (an image `src`, a `style`, an `alt`, any other attribute) returns `auth_link_misplaced`, because a mail client or image proxy would request that URL and hand the link to its host.
 
 ## Message status
 
@@ -385,6 +388,7 @@ Auth: service key, staff, or company owner.
       "variables": [],
       "link_token": "magic_link_url",
       "default_template": "barebone.activation",
+      "rules_allowed": false,
       "suggested": {
         "en": {"subject": "[Shellui] Sign in to {{ company_name }}", "preheader": "Your sign-in link."},
         "fr": {"subject": "[Shellui] Connexion à {{ company_name }}", "preheader": "Votre lien de connexion."}
@@ -394,7 +398,7 @@ Auth: service key, staff, or company owner.
 }
 ```
 
-`auth_link_hosts` is the read-only `EMAIL_AUTH_LINK_HOSTS` list. The editor uses it to check a button `href` before publish. `variables[]` items: `token`, `type` (`string` or `url`), `required`, `description` (an i18n key `email.var.<token>`), `example`, `is_url`, and optionally `sensitive` and `allowed_hosts_setting`. A variable with `allowed_hosts_setting: "EMAIL_AUTH_LINK_HOSTS"` must use one of those hosts.
+`auth_link_hosts` is the read-only `EMAIL_AUTH_LINK_HOSTS` list. The editor uses it to check a button `href` before publish. `rules_allowed` is `false` for auth-lane events: the rule editor must not offer them, and `POST /api/v1/rules` refuses them. `variables[]` items: `token`, `type` (`string` or `url`), `required`, `description` (an i18n key `email.var.<token>`), `example`, `is_url`, and optionally `sensitive` and `allowed_hosts_setting`. A variable with `allowed_hosts_setting: "EMAIL_AUTH_LINK_HOSTS"` must use one of those hosts.
 
 `link_token` is the URL variable a design's main link (`{{ action_url }}`) becomes on a copy of this event, empty when the event has no link. `default_template` is the library key used for built-in rules and for direct sends before the company has a copy. Designs are on `GET /api/v1/library` (admin JWT).
 

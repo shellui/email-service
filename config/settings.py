@@ -592,6 +592,8 @@ if SENTRY_DSN:
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.logging import LoggingIntegration
 
+    from config.sentry_scrub import sentry_options
+
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[
@@ -601,6 +603,6 @@ if SENTRY_DSN:
         environment=SENTRY_ENVIRONMENT,
         release=SENTRY_RELEASE,
         traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
-        send_default_pii=False,
         attach_stacktrace=True,
+        **sentry_options(),
     )

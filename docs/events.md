@@ -4,7 +4,7 @@
 
 `default_enabled` is catalog metadata. It does not send mail. A company receives event mail only when an enabled email rule exists. See [rules.md](rules.md).
 
-Auth-lane events get a built-in rule for every company, created on the first rules list or the first event. Those two events send on `POST /api/v1/events` without anyone creating a rule, and the rule cannot be deleted or turned off. Direct `/send` still works and does not consult rules. Identity can keep calling `/send` for magic links and invitations.
+Auth-lane events get a built-in rule for every company, created on the first rules list or the first event. Those two events send on `POST /api/v1/events` without anyone creating a rule, and the rule cannot be deleted, turned off, or pointed at other recipients. A company cannot add its own rule on them (`rules_allowed: false` in the catalog). Direct `/send` still works and does not consult rules. Identity can keep calling `/send` for magic links and invitations.
 
 Every other event, including ones marked enabled below, returns `202` with `skipped_reason: no_rule` until the company creates a rule. That includes `hosting.deployment.failed`, `identity.user.invitation_revoked`, and `identity.scim.provisioning_conflict`, which used to send with no rule row.
 

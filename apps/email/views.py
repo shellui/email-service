@@ -118,6 +118,7 @@ from apps.email.rules import (
     library_document_for,
     publish_version,
     rule_payload,
+    rules_allowed,
     template_summary,
     update_rule,
 )
@@ -386,6 +387,7 @@ class CatalogView(APIView):
                         'variables': row['variables'],
                         'link_token': row['link_token'],
                         'default_template': row['default_template'],
+                        'rules_allowed': rules_allowed(row),
                         'suggested': {
                             language: {
                                 'subject': pack['subject'],

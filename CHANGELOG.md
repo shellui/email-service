@@ -4,6 +4,12 @@ Notable changes to this project. Format: [Keep a Changelog](https://keepachangel
 
 ## [Unreleased]
 
+### Security
+
+- A sign-in or invitation link only goes to the address in the request. `POST /api/v1/rules` refuses auth-lane events (`400 auth_event_rule_forbidden`), built-in rules can no longer switch to `static` recipients or list addresses (`409 rule_built_in`), and the catalog marks auth-lane events `rules_allowed: false`. `POST /api/v1/events` sends an auth-lane event through its built-in rule only, to the event's recipient, and auth-lane events and `/send` take exactly one recipient (`400 auth_single_recipient`). Migration `0011_auth_rules_locked` resets built-in rules to `hints` and disables company rules already written on auth-lane events.
+- Auth-lane copies cannot put a link variable in an image `src`, a `style`, an `alt`, or any attribute other than a link target (`400 auth_link_misplaced`). Before, a company owner could publish an image whose URL carried `{{ magic_link_url }}`, so the mail client or image proxy of whoever signed in sent the live sign-in link to a host the owner chose. Direct sends use only the built-in copy, check it again at send time, and fall back to the default design.
+- Sentry no longer receives request bodies, frame locals, or query strings, so a `/send` body or the rendered HTML of a sign-in email cannot end up in an error event.
+
 ### Changed
 
 - Email rules are a list per company. Several rules may share one event. The per-event toggle is removed.

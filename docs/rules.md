@@ -4,7 +4,7 @@ A company email rule is one send instruction, the same idea as a Shellui Actions
 
 There is no on/off row per catalog event. A company creates the rules it wants. Several rules may share one event (the person on the event, plus a static ops address).
 
-Auth-lane events are the exception. Login depends on them, and magic link is the default sign-in method, so a built-in rule exists for every company without anyone creating it.
+Auth-lane events are the exception. Login depends on them, and magic link is the default sign-in method, so a built-in rule exists for every company without anyone creating it. Their mail carries a sign-in or invitation link, so a company cannot add its own rule on them (`400 auth_event_rule_forbidden`), and the built-in rule always sends to the event's recipient.
 
 The HTTP contract is also in [integration.md](integration.md). Catalog events are in [events.md](events.md). Designs are in [library.md](library.md) and copies in [templates.md](templates.md).
 
@@ -16,7 +16,7 @@ The HTTP contract is also in [integration.md](integration.md). Catalog events ar
 | `service` | Owner service of the event (`identity`, `storage`, `hosting`). |
 | `event_type` | Catalog event id. |
 | `enabled` | `false` skips this rule. Built-in rules cannot be set to `false`. |
-| `recipient_mode` | `hints` uses the event's recipients. `static` uses `static_recipients`. |
+| `recipient_mode` | `hints` uses the event's recipients. `static` uses `static_recipients`. Built-in rules are always `hints`. |
 | `static_recipients` | Email strings. On write, a string or `{"email": "…"}` is accepted. |
 | `language` | `en`, `fr`, or blank. Blank follows the recipient language, then the event language, then `en`. The copy sends that language's [translation](templates.md#languages) when it has one. |
 | `template_id` | The rule's copy: the company template this rule sends. |
@@ -58,7 +58,8 @@ JSON uses `error_code` only. No translated sentence.
 | --- | --- | --- |
 | `event_unknown` | 400 | `event_type` is not in the catalog, or `service` is not the owner |
 | `library_not_found` | 404 | `content.library_id` is not a built-in or one of this company's templates |
-| `rule_built_in` | 409 | Delete, or `{"enabled": false}`, on a built-in rule |
+| `rule_built_in` | 409 | Delete, `{"enabled": false}`, `recipient_mode: static`, or a non-empty `static_recipients` on a built-in rule |
+| `auth_event_rule_forbidden` | 400 | `POST` on an auth-lane event (`field_errors.event_type: ["auth_event"]`), or `PATCH` on a company rule written on one before this check |
 | `language_not_available` | 400 | Language is not `en` or `fr` |
 | `not_found` | 404 | Rule id is not in this company |
 | `validation_failed` | 400 | `content.library_id` is missing (`library_id_required`), `recipient_mode` is not `hints` or `static`, or `static_recipients` is not a list of addresses |
@@ -72,7 +73,11 @@ Every catalog event with `lane_class: auth` gets one built-in rule per company. 
 
 Creation is lazy and idempotent: the first `GET /api/v1/rules` or the first `POST /api/v1/events` for that company. A second call does not add another built-in row. The copy starts from the event's `default_template` (`barebone.activation` for magic links, `barebone.welcome` for invitations), with the English catalog subject and preheader. `language` on the rule is blank, so an unedited subject and preheader follow the event language.
 
-A built-in rule cannot be deleted or disabled. Edit its copy through the version API, or start it over from another library template. `language`, `recipient_mode`, and `static_recipients` can still be patched. Leaving `recipient_mode` as `hints` keeps the sign-in message on the address identity sent.
+A built-in rule cannot be deleted or disabled, and its recipients cannot change: `recipient_mode` stays `hints` and `static_recipients` stays empty (`409 rule_built_in`). The sign-in message only goes to the address identity sent. Edit its copy through the version API, or start it over from another library template. `language` can still be patched.
+
+A company cannot create a rule on an auth-lane event. `POST /api/v1/rules` returns `400 auth_event_rule_forbidden`. Rules written on one before that check are disabled by migration `0011_auth_rules_locked`, are never read for auth-lane mail, and can only be deleted. The catalog marks these events with `rules_allowed: false`.
+
+On `POST /api/v1/events`, an auth-lane event uses the built-in rule only, with the event's recipient, and accepts exactly one (`400 auth_single_recipient` otherwise). Direct `/send` on an auth-lane template takes exactly one `to` address too. Direct sends use the built-in rule's copy, or the default design. A copy that fails today's [auth checks](templates.md) at send time falls back to the default design.
 
 ## Sending
 

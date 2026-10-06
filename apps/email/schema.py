@@ -183,6 +183,7 @@ class CatalogEventSerializer(serializers.Serializer):
     variables = CatalogVariableSerializer(many=True)
     link_token = serializers.CharField(allow_null=True)
     default_template = serializers.CharField()
+    rules_allowed = serializers.BooleanField()
     suggested = serializers.DictField(child=CatalogLanguageSerializer())
 
 

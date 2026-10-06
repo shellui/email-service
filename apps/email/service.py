@@ -399,6 +399,9 @@ def accept_send(principal, body: dict) -> tuple[int, dict]:
         raise SendError(400, 'validation_failed', {'to': ['required']})
     if len(recipients_raw) > settings.EMAIL_MAX_RECIPIENTS:
         raise SendError(400, 'validation_failed', {'to': ['too_many']})
+    if lane == LANE_AUTH and len(recipients_raw) != 1:
+        # One sign-in link, one address: the one that asked for it.
+        raise SendError(400, 'auth_single_recipient', {'to': ['single_recipient']})
     idem = str(body.get('idempotency_key') or '')
     replay = _idempotent(principal.service, company_id, idem, body)
     if replay:
@@ -591,8 +594,8 @@ def accept_batch(principal, body: dict) -> tuple[int, dict]:
     return 202, response
 
 
-def _rule_recipients(rule: EmailRule, body: dict) -> list:
-    if rule.recipient_mode == EmailRule.MODE_STATIC:
+def _rule_recipients(rule: EmailRule, body: dict, *, auth: bool = False) -> list:
+    if rule.recipient_mode == EmailRule.MODE_STATIC and not auth:
         return [{'email': item} if isinstance(item, str) else item for item in (rule.static_recipients or [])]
     raw = body.get('recipients') if body.get('recipients') is not None else []
     if not isinstance(raw, list):
@@ -620,16 +623,18 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
     replay = _idempotent(principal.service, company_id, idem, body)
     if replay:
         return replay
-    rules = list(
-        EmailRule.objects.filter(
-            company_id=company_id,
-            service=service,
-            event_type=event_type,
-            enabled=True,
-        )
-        .select_related('template')
-        .order_by('created_at', 'id')
+    auth = definition['lane_class'] == LANE_AUTH
+    rules_qs = EmailRule.objects.filter(
+        company_id=company_id,
+        service=service,
+        event_type=event_type,
+        enabled=True,
     )
+    if auth:
+        # Auth-lane events carry a sign-in or invitation link. Only the built-in rule
+        # sends them, to the event's own recipient. A company rule never does.
+        rules_qs = rules_qs.filter(built_in=True)
+    rules = list(rules_qs.select_related('template').order_by('created_at', 'id'))
     if not rules:
         return _skip_event(
             principal,
@@ -646,11 +651,13 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
         raise SendError(400, 'validation_failed', {'payload': ['invalid']})
     planned = []
     for rule in rules:
-        recipients_raw = _rule_recipients(rule, body)
+        recipients_raw = _rule_recipients(rule, body, auth=auth)
         if len(recipients_raw) > settings.EMAIL_MAX_RECIPIENTS:
             raise SendError(400, 'validation_failed', {'recipients': ['too_many']})
         for index, raw in enumerate(recipients_raw):
             planned.append((rule, index, raw))
+    if auth and len(planned) > 1:
+        raise SendError(400, 'auth_single_recipient', {'recipients': ['single_recipient']})
     if not planned:
         return _skip_event(
             principal,

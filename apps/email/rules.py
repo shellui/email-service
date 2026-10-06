@@ -297,6 +297,11 @@ def _mode(raw) -> str:
     return mode
 
 
+def rules_allowed(definition: dict) -> bool:
+    """Auth-lane events carry a sign-in or invitation link. Only their built-in rule sends them."""
+    return definition.get('lane_class') != LANE_AUTH
+
+
 def ensure_builtin_rules(company_id: int) -> None:
     for definition in all_definitions():
         if definition['lane_class'] != LANE_AUTH:
@@ -336,6 +341,8 @@ def create_rule(company_id: int, data: dict, *, user_id: int | None = None) -> E
     definition = get_definition(event_type)
     if definition is None:
         raise SendError(400, 'event_unknown')
+    if not rules_allowed(definition):
+        raise SendError(400, 'auth_event_rule_forbidden', {'event_type': ['auth_event']})
     service = str(data.get('service') or definition['owner_service'])
     if service != definition['owner_service']:
         raise SendError(400, 'event_unknown')
@@ -376,8 +383,17 @@ def update_rule(rule: EmailRule, data: dict) -> EmailRule:
     definition = get_definition(rule.event_type)
     if definition is None:
         raise SendError(400, 'event_unknown')
+    if not rules_allowed(definition) and not rule.built_in:
+        # Written before the API refused these rules. Deleting is the only change left.
+        raise SendError(400, 'auth_event_rule_forbidden', {'event_type': ['auth_event']})
     if 'enabled' in data and not bool(data.get('enabled')) and rule.built_in:
         raise SendError(409, 'rule_built_in')
+    if rule.built_in:
+        # The sign-in message goes to the address identity sent it for, never a fixed list.
+        if 'recipient_mode' in data and str(data.get('recipient_mode') or EmailRule.MODE_HINTS) != EmailRule.MODE_HINTS:
+            raise SendError(409, 'rule_built_in', {'recipient_mode': ['built_in']})
+        if 'static_recipients' in data and data.get('static_recipients'):
+            raise SendError(409, 'rule_built_in', {'static_recipients': ['built_in']})
     if 'language' in data:
         rule.language = _language(definition, data.get('language'))
     if 'recipient_mode' in data:
@@ -472,8 +488,40 @@ def content_for_rule(rule: EmailRule, language: str) -> dict:
     return content_for_template(rule.template, language)
 
 
+def _auth_copy_passes(template: EmailTemplate, definition: dict) -> bool:
+    """Today's auth checks, again at send time, so a copy published under older checks falls back."""
+    from apps.email.auth_templates import validate_auth_template
+
+    version = None
+    if template.active_version:
+        version = TemplateVersion.objects.filter(
+            template=template, number=template.active_version, state=TemplateVersion.STATE_PUBLISHED
+        ).first()
+    if version is None:
+        return True
+    try:
+        for _language, document, subject, preheader in _version_variants(definition, version):
+            validate_auth_template(definition, document, subject, preheader)
+    except (SendError, SubstitutionError):
+        return False
+    return True
+
+
 def content_for_event(company_id: int, definition: dict, language: str) -> dict:
-    """Direct sends use the company's copy for the event when there is one."""
+    """Direct sends use the company's copy for the event when there is one.
+
+    An auth-lane send only uses the built-in rule's copy, which publish checked,
+    or the default design. Never another company copy on the event.
+    """
+    if not rules_allowed(definition):
+        builtin = (
+            EmailRule.objects.filter(company_id=company_id, event_type=definition['event_type'], built_in=True)
+            .select_related('template')
+            .first()
+        )
+        if builtin is not None and _auth_copy_passes(builtin.template, definition):
+            return content_for_template(builtin.template, language)
+        return default_content(definition, language)
     copies = EmailTemplate.objects.filter(
         company_id=company_id,
         event_type=definition['event_type'],
