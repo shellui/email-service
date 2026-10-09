@@ -1,6 +1,14 @@
+---
+title: Lanes
+sidebar_label: Lanes
+description: Auth, transactional, and bulk queues. Sign-in mail has its own worker so a broadcast does not delay it.
+---
+
 # Lanes
 
-Three lanes. A template's `lane_class` is fixed. `/send` cannot move a transactional template onto `auth`.
+Three lanes, three workers. A template's `lane_class` is fixed. `/send` cannot move a transactional template onto `auth`.
+
+Sign-in mail never waits on a newsletter. The auth worker only claims auth rows. The bulk worker only claims bulk rows and broadcasts. A full bulk queue does not sit in front of a magic link.
 
 | Lane | Who uses it | From address | Retry | TTL |
 | --- | --- | --- | --- | --- |

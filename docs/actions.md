@@ -1,4 +1,12 @@
-# Shellui Actions (outbound webhooks)
+---
+title: Webhooks
+sidebar_label: Webhooks
+description: Signed Shellui Actions webhooks for message, unsubscribe, and newsletter events.
+---
+
+# Webhooks
+
+Shellui Actions webhooks leave email-service when a message changes state.
 
 Company owners and staff can subscribe to email-service domain events. Delivery uses the same outbox, signing, and retry rules as storage-service and hosting-service. There is no separate bus.
 
@@ -17,8 +25,10 @@ For n8n, see [n8n.md](n8n.md). The caller contract, including the envelope, is i
 | `email.message.expired` | The auth TTL elapsed before handoff. |
 | `email.message.suppressed` | The address was suppressed and the message was not handed to the provider. |
 | `email.unsubscribe.created` | `POST /u/{token}` recorded an unsubscribe. |
+| `email.newsletter.confirmed` | Someone confirmed a list subscription. |
+| `email.newsletter.unsubscribed` | Someone left a list. |
 
-`data` includes `message_id`, `template_key`, `lane`, `service`, `to_email`, and `to_user_id`. `to_email` is personal data.
+Message `data` includes `message_id`, `template_key`, `lane`, `service`, `to_email`, and `to_user_id`. It does not include template variables or a sign-in link. `to_email` is personal data. Newsletter `data` includes `list_id`, `list_name`, `email`, `language`, and `source`.
 
 Opens and clicks from Resend are ignored and do not emit events.
 

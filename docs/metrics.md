@@ -1,3 +1,9 @@
+---
+title: Metrics
+sidebar_label: Metrics
+description: Admin statistics and the Prometheus gauges on GET /api/v1/metrics.
+---
+
 # Metrics
 
 ## Admin stats
