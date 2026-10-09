@@ -53,7 +53,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Host port: `8003` (the container listens on `8000`). Set `SECRET_KEY` in `.env` first. Compose starts Redis. Postgres is required when `DEBUG=false` and is not part of the Compose file. The local path, workers, and the production secret list are in [Run email-service](docs/getting-started.md).
+The local API is `http://localhost:8003`. The container listens on `8000`. Set `SECRET_KEY` in `.env` first. Compose starts Redis. Postgres is required when `DEBUG=false` and is not part of the Compose file. The local path, workers, and the production secret list are in [Run email-service](docs/getting-started.md).
 
 ## Tests
 
