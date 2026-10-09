@@ -1,6 +1,14 @@
-# Suggested events
+---
+title: Events catalog
+sidebar_label: Events catalog
+description: Catalog events for identity, storage, and hosting, and which ones send without a company rule.
+---
 
-`GET /api/v1/catalog` is the live list. This page records the v1 catalog so the admin app can show which events exist and which ones the catalog marks as enabled.
+# Events catalog
+
+`GET /api/v1/catalog` is the live list. This page records the v1 catalog: lane, suggested English and French subjects, and whether a company must create a rule.
+
+identity-service posts magic links, the staff notice, and invitations with `POST /api/v1/send`. It posts every other catalog event with `POST /api/v1/events`. storage-service and hosting-service post their events with `POST /api/v1/events`. Login events `identity.auth.login.succeeded` and `identity.auth.login.failed` are not in this catalog. Identity marks them `webhook: false`.
 
 `default_enabled` is catalog metadata. It does not send mail. A company receives event mail only when an enabled email rule exists. See [rules.md](rules.md).
 

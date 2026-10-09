@@ -1,6 +1,51 @@
-# Production security
+---
+title: Security
+sidebar_label: Security
+description: Sign-in links, stored secrets, and the production controls for a public email-service.
+---
 
-Controls for running email-service next to identity-service 0.5.0 or newer.
+# Security
+
+These controls cover sign-in mail and a public install. Run them next to identity-service 0.5.0 or newer.
+
+## Who receives a sign-in link
+
+An auth-lane send accepts one recipient. A second address returns `400 auth_single_recipient`, on `/send`, on `/send/batch`, and on `/events`. The address is the one in that request. A company rule cannot add another.
+
+Auth-lane events are `identity.auth.magic_link.requested` and `identity.user.invited`. Each company gets a built-in rule. It cannot be deleted, disabled, or switched to a static recipient list (`409 rule_built_in`). A company cannot add its own rule on those events (`400 auth_event_rule_forbidden`).
+
+`/send` does not consult rules. identity-service uses `/send` for those two events and does not also post them to `/events`.
+
+## Staff accounts do not get a magic link
+
+identity-service sends `identity.auth.magic_link.staff_blocked` when a staff account asks for a magic link. email-service does not decide that. It only sends the copy in `apps/email/builtin_auth.py`.
+
+That copy has no link and no token. Variables are `company_name` and `sign_in_url` (the app origin, omitted for a loopback callback). Companies cannot edit it, add a rule, or receive it through `POST /api/v1/events`. It is not in `GET /api/v1/catalog`. `/send` only.
+
+## Links and tokens are not kept
+
+`magic_link_url` and the other send variables are Fernet-encrypted with `EMAIL_VARIABLES_KEY` until the provider accepts the message. They are deleted on accept, on expiry, and when the send fails for good. Message status payloads do not include the rendered HTML or the variables.
+
+`email.message.*` webhook data is `message_id`, `template_key`, `lane`, `service`, `to_email`, and `to_user_id`. It does not include the sign-in URL or the token. The service's own log lines do not write those values either. An SMTP library exception can still contain whatever the relay returned.
+
+Auth copy cannot put the link variable in an image `src`, a `style`, or an `alt` (`auth_link_misplaced`). Subject, preheader, and document text cannot contain a literal URL (`auth_literal_link`).
+
+## What a company can change
+
+A company can:
+
+- Store its own Resend or SMTP credentials, From address, and Bulk From
+- Create, edit, and delete email rules on transactional events
+- Edit the copy those rules send, including English and French text and a color theme
+
+A company cannot:
+
+- Disable, delete, or add recipients on a built-in auth rule
+- Add a rule on an auth-lane event
+- Edit `identity.auth.magic_link.staff_blocked`
+- Set `from_email` to the platform From address unless the company is in `EMAIL_PLATFORM_COMPANY_IDS`
+- Store an SMTP host that is not a public address, or store SMTP at all while `EMAIL_ALLOW_COMPANY_SMTP` is false
+- Turn off the private-address check on a Shellui Actions webhook URL
 
 ## Credentials
 

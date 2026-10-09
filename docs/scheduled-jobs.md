@@ -1,8 +1,10 @@
 ---
-description: What the email-service container runs next to the web server - the lane workers and the scheduled jobs - and how to split or turn them off.
+title: Scheduled jobs
+sidebar_label: Scheduled jobs
+description: Lane workers, retry_webhooks, sweep_email_queue, and purge_expired_data inside the email-service image.
 ---
 
-# Workers and scheduled jobs
+# Scheduled jobs
 
 The email-service Docker image runs everything it needs to deliver mail in one container: the web server, one delivery worker per lane, and the scheduled jobs. With `REDIS_URL` set (required in production), there is nothing else to set up: no extra worker containers and no cron.
 
@@ -18,7 +20,7 @@ The email-service Docker image runs everything it needs to deliver mail in one c
 
 The container starts with database migrations, then starts every process. A `SIGTERM` (for example `docker stop` or a redeploy) is passed to all of them. If one process exits, the others are stopped and the container exits, so Docker or Coolify restarts it.
 
-## Scheduled jobs
+## The three jobs
 
 | Job | Schedule | What it does |
 | --- | --- | --- |

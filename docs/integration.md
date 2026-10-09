@@ -1,6 +1,12 @@
+---
+title: Integration contract
+sidebar_label: Integration contract
+description: The HTTP contract for identity-service, storage-service, hosting-service, and the Shellui admin app.
+---
+
 # Integration contract
 
-This page is the contract for identity-service, storage-service, hosting-service, and the Shellui admin app. Implement against these paths, fields, and error codes. Do not infer a second shape from another service.
+This page is the contract for identity-service, storage-service, hosting-service, and the Shellui admin app. Implement against these paths, fields, and error codes. Do not infer a second shape from another service. The handbook map is the [overview](index.md).
 
 Base URL: `https://email.shellui.com`
 

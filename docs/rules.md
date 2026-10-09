@@ -1,3 +1,9 @@
+---
+title: Email rules
+sidebar_label: Email rules
+description: Company email rules per event, and the built-in auth rules a company cannot change.
+---
+
 # Email rules
 
 A company email rule is one send instruction, the same idea as a Shellui Actions webhook rule. The admin "Email and webhooks" page lists email rules next to webhook rules, ordered by event.
