@@ -761,7 +761,7 @@ Response: `{deleted_messages, email_masked}`. Deletes message rows and their eve
 `GET /api/v1/health` is public.
 
 ```json
-{"status": "ok", "version": "0.1.0"}
+{"status": "ok", "version": "0.2.0"}
 ```
 
 `GET /api/v1/metrics` requires an identity JWT. Staff, or a token with the `pat_agm` claim (`access_global_metrics`), receives every company. Owners receive their company. `?company_id=` is allowed for staff and for the matching owner.

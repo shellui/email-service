@@ -95,7 +95,7 @@ curl -fsS http://localhost:8003/api/v1/health
 ```
 
 ```json
-{"status": "ok", "version": "0.1.0"}
+{"status": "ok", "version": "0.2.0"}
 ```
 
 A `200` here does not prove Redis, Postgres, or a lane worker is up. Worker and job health is `GET /api/v1/scheduled-jobs` (staff JWT). See [Scheduled jobs](scheduled-jobs.md).
