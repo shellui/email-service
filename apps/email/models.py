@@ -291,11 +291,33 @@ class NewsletterSubscriber(models.Model):
 
 
 class CompanyProfile(models.Model):
-    """Display name learned from a caller. Later events can omit ``company_name``."""
+    """Display name learned from a caller, plus this company's auth link hosts."""
 
     company_id = models.PositiveIntegerField(unique=True)
     name = models.CharField(max_length=255)
+    auth_link_hosts = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Allowed link hosts',
+        help_text=(
+            'Extra hostnames this company may use in auth mail, such as playground.shellui.com. '
+            'Exact hostnames only: no scheme, path, port, wildcard, or IP address. '
+            'localhost is refused when DEBUG is off. '
+            'Identity application domains and EMAIL_AUTH_LINK_HOSTS are included in addition to this list.'
+        ),
+    )
+    application_link_hosts = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Application link hosts',
+        help_text=(
+            "Hostnames of this company's identity application URLs. Synced from identity. Not edited here."
+        ),
+    )
     updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return self.name or str(self.company_id)
 
 
 class EventSkip(models.Model):

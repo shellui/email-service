@@ -396,6 +396,18 @@ class ProviderSerializer(serializers.Serializer):
     auth_link_hosts = serializers.ListField(child=serializers.CharField())
 
 
+class AuthLinkHostsSerializer(serializers.Serializer):
+    company_id = serializers.IntegerField()
+    hosts = serializers.ListField(child=serializers.CharField())
+    application_hosts = serializers.ListField(child=serializers.CharField())
+    platform_hosts = serializers.ListField(child=serializers.CharField())
+    auth_link_hosts = serializers.ListField(child=serializers.CharField())
+
+
+class AuthLinkHostsWriteSerializer(serializers.Serializer):
+    hosts = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+
+
 class ProviderWriteSerializer(serializers.Serializer):
     provider = serializers.ChoiceField(choices=['resend', 'smtp'])
     from_email = serializers.EmailField()

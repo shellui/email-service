@@ -146,7 +146,7 @@ def _render_variants(template: EmailTemplate, version: TemplateVersion, definiti
     version.renderer_version = RENDERER_VERSION
 
 
-def publish_version(template: EmailTemplate, version: TemplateVersion) -> None:
+def publish_version(template: EmailTemplate, version: TemplateVersion, *, authorization: str | None = None) -> None:
     definition = definition_for(template)
     for language, document, subject, preheader in _version_variants(definition, version):
         try:
@@ -154,7 +154,14 @@ def publish_version(template: EmailTemplate, version: TemplateVersion) -> None:
             if definition and definition.get('lane_class') == LANE_AUTH:
                 from apps.email.auth_templates import validate_auth_template
 
-                validate_auth_template(definition, document, subject, preheader)
+                validate_auth_template(
+                    definition,
+                    document,
+                    subject,
+                    preheader,
+                    company_id=template.company_id,
+                    authorization=authorization,
+                )
             if definition and definition.get('lane_class') == 'bulk' and 'system.unsubscribe_url' not in tokens:
                 raise SendError(400, 'unsubscribe_link_missing')
         except SendError as exc:
@@ -218,7 +225,7 @@ def create_version(
 def library_document_for(template: EmailTemplate, source: LibraryTemplate) -> dict:
     """``source`` adapted to the copy's event, for "Start over from another template"."""
     definition = definition_for(template) or {}
-    return adapt_to_event(source.document, definition)
+    return adapt_to_event(source.document, definition, company_id=template.company_id)
 
 
 def _suggested(definition: dict, language: str) -> dict:
@@ -251,7 +258,7 @@ def create_copy(
     )
     version = create_version(
         template,
-        document=adapt_to_event(source.document, definition),
+        document=adapt_to_event(source.document, definition, company_id=company_id),
         subject=pack['subject'],
         preheader=pack.get('preheader') or '',
         theme=source.theme or theme,
@@ -505,7 +512,7 @@ def _auth_copy_passes(template: EmailTemplate, definition: dict) -> bool:
         return True
     try:
         for _language, document, subject, preheader in _version_variants(definition, version):
-            validate_auth_template(definition, document, subject, preheader)
+            validate_auth_template(definition, document, subject, preheader, company_id=template.company_id)
     except (SendError, SubstitutionError):
         return False
     return True

@@ -28,7 +28,11 @@ When `DEBUG=false`, `SECURE_SSL_REDIRECT`, HSTS (one year), and secure session a
 
 ## Links in auth mail
 
-`magic_link_url` must use `https` and a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false` that list cannot include `localhost`, `127.0.0.1`, or `::1`. Other URL variables must be `https`, `mailto`, or `tel`. An auth-lane copy must keep the required link variable, and every link in the document (link marks, button `href`, linked images) must be a declared URL variable, `{{ system.message_id }}`, or an allowlisted `https` host. Subject, preheader, and every text node in the document cannot contain a literal URL (`auth_literal_link`). The required link variable is the only link allowed in that prose. A copy made from the library for an auth event drops the links these checks would refuse, so it publishes as made.
+`magic_link_url` must use `https` and a host in the company's auth link hosts. That set is `EMAIL_AUTH_LINK_HOSTS` (the platform floor, default `id.shellui.com`), plus hostnames of the company's identity application URLs, plus any extra hostnames on Allowed link hosts. When `DEBUG=false`, `localhost`, `127.0.0.1`, and `::1` are refused even if a list includes them. A host that is not on the set is refused, including a host another company added. Other URL variables must be `https`, `mailto`, or `tel`.
+
+An auth-lane copy must keep the required link variable, and every link in the document (link marks, button `href`, linked images) must be a declared URL variable, `{{ system.message_id }}`, or an allowlisted `https` host. The same check runs on publish and again at send time. Publish returns `auth_link_host_not_allowed` with `allowed_link_hosts: ["not_allowlisted"]` when the host is missing: add it under Allowed link hosts (Django admin on the company profile, or `PUT /api/v1/auth-link-hosts`). Subject, preheader, and every text node in the document cannot contain a literal URL (`auth_literal_link`). The required link variable is the only link allowed in that prose. A copy made from the library for an auth event drops the links these checks would refuse, so it publishes as made.
+
+Extra hostnames are exact names only: no scheme, path, port, wildcard, or IP address. Each add and remove is a row in the event log (`email.auth_link_host.added`, `email.auth_link_host.removed`) and the row stores the hostname only. Sign-in links and tokens are not written to the event log, delivery records, or Sentry.
 
 ## Documents
 

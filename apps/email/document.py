@@ -167,7 +167,7 @@ def _strip_link(node: dict, keep) -> None:
             node.pop('marks', None)
 
 
-def adapt_to_event(document: dict, definition: dict) -> dict:
+def adapt_to_event(document: dict, definition: dict, *, company_id: int | None = None) -> dict:
     """A copy of ``document`` with ``{{ action_url }}`` pointing at the event's link.
 
     Auth-lane copies keep only links the auth checks accept, so the design can be
@@ -190,5 +190,8 @@ def adapt_to_event(document: dict, definition: dict) -> dict:
         from apps.email.auth_templates import auth_link_allowed
 
         for node in nodes(adapted):
-            _strip_link(node, lambda href: auth_link_allowed(definition, href))
+            _strip_link(
+                node,
+                lambda href, company_id=company_id: auth_link_allowed(definition, href, company_id=company_id),
+            )
     return adapted

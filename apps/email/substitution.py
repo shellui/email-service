@@ -59,12 +59,21 @@ def _validate_url(value: str, *, allow_http_localhost: bool, allowed_hosts: set[
     parsed = urlparse(value.strip())
     scheme = (parsed.scheme or '').lower()
     host = (parsed.hostname or '').lower()
+    if allowed_hosts is not None:
+        if scheme == 'http' and allow_http_localhost and host in {'localhost', '127.0.0.1'}:
+            return value.strip()
+        if scheme != 'https' or parsed.username or parsed.password or parsed.port is not None:
+            raise SubstitutionError('variable_url_not_allowed', 'variables')
+        from apps.email.link_hosts import canonical_host_or_none
+
+        key = canonical_host_or_none(host)
+        if not key or key not in allowed_hosts:
+            raise SubstitutionError('variable_url_not_allowed', 'variables')
+        return value.strip()
     if scheme == 'http' and allow_http_localhost and host in {'localhost', '127.0.0.1'}:
         return value.strip()
     if scheme not in _ALLOWED_URL_SCHEMES:
         raise SubstitutionError('invalid_url_scheme', 'variables')
-    if scheme == 'https' and allowed_hosts is not None and host not in allowed_hosts:
-        raise SubstitutionError('variable_url_not_allowed', 'variables')
     return value.strip()
 
 

@@ -158,7 +158,7 @@ The container applies migrations, which also sync the built-in library designs, 
    ```
 
 2. On identity-service, set `EMAIL_SERVICE_API_KEY` to the printed `esk_` value, and `EMAIL_SERVICE_URL` when email-service is not at `https://email.shellui.com`.
-3. Check that `EMAIL_AUTH_LINK_HOSTS` on email-service contains the host of identity `JWT_ISSUER`, otherwise magic links are refused with `auth_link_host_not_allowed`.
+3. Check that `EMAIL_AUTH_LINK_HOSTS` on email-service contains the host of identity `JWT_ISSUER`, otherwise magic links to identity are refused with `auth_link_host_not_allowed`. A company's own app host belongs on Allowed link hosts, or on its identity application URLs, not in this env var.
 4. Request a magic link for a non-staff address and check that it arrives.
 
 ## Resend checklist (before the first real send)
