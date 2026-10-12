@@ -44,7 +44,7 @@ Backoff is 30s * 2^(attempt-1), capped at 1 hour, up to 8 attempts, then `dead`.
 
 SSRF checks reject private and link-local targets unless `ACTIONS_WEBHOOK_ALLOW_PRIVATE=true` (local only). The check runs when the rule is saved and again at delivery. Delivery connects to the resolved public address, keeps the original `Host` header, and does not follow redirects.
 
-The container retries due deliveries every minute with `retry_webhooks`. Finished deliveries and event-log rows are deleted after `EVENT_LOG_RETENTION_DAYS` (7) by the hourly `purge_expired_data`. See [Workers and scheduled jobs](scheduled-jobs.md).
+The container retries due deliveries every minute with `retry_webhooks`. Finished deliveries and event-log rows are deleted after `EVENT_LOG_RETENTION_DAYS` (7) by the hourly `purge_expired_data`. A retry stores `trigger=automatic_retry` and, for staff, `scheduled_job_run_id`. See [Workers and scheduled jobs](scheduled-jobs.md).
 
 ## Admin API
 

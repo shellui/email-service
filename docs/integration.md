@@ -736,6 +736,10 @@ Response: `{deleted_messages, email_masked}`. Deletes message rows and their eve
 
 `GET /api/v1/metrics` requires an identity JWT. Staff, or a token with the `pat_agm` claim (`access_global_metrics`), receives every company. Owners receive their company. `?company_id=` is allowed for staff and for the matching owner.
 
+`GET /api/v1/metrics/all` requires staff or `pat_agm`. It adds `shellui_email_scheduled_job_*` and `shellui_email_scheduler_*`. Company owners get `403`. `GET /api/v1/metrics` does not include those series.
+
+`GET /api/v1/scheduled-jobs`, `GET /api/v1/scheduled-jobs/{job}/runs`, and `GET /api/v1/scheduled-jobs/runs/{id}` are staff only. Company owners get `403`. See [scheduled-jobs.md](scheduled-jobs.md#monitoring).
+
 Prometheus text. See [metrics.md](metrics.md).
 
 ## Provider webhooks (Resend)

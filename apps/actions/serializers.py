@@ -60,6 +60,8 @@ class DeliveryAttemptSerializer(serializers.Serializer):
     status = serializers.CharField()
     http_status = serializers.IntegerField(allow_null=True)
     error_code = serializers.CharField(allow_blank=True)
+    trigger = serializers.CharField(required=False, allow_null=True)
+    scheduled_job_run_id = serializers.IntegerField(required=False, allow_null=True)
 
 
 class DeliverySerializer(serializers.Serializer):
@@ -95,7 +97,7 @@ class EventLogListSerializer(serializers.Serializer):
 
 class EventLogDetailSerializer(serializers.Serializer):
     id = serializers.IntegerField()
-    company_id = serializers.IntegerField()
+    company_id = serializers.IntegerField(allow_null=True)
     event_type = serializers.CharField()
     data = serializers.JSONField()
     created_at = serializers.CharField()
@@ -112,3 +114,76 @@ class EventLogRetentionSerializer(serializers.Serializer):
 
 class ActionTestQueuedSerializer(serializers.Serializer):
     status = serializers.CharField()
+
+
+class ScheduledJobRunSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    job = serializers.CharField()
+    trigger = serializers.CharField()
+    status = serializers.CharField()
+    started_at = serializers.CharField(allow_null=True)
+    finished_at = serializers.CharField(allow_null=True)
+    duration_ms = serializers.IntegerField(allow_null=True)
+    counts = serializers.JSONField()
+    error_key = serializers.CharField(allow_null=True)
+    error_class = serializers.CharField(allow_null=True)
+    error_message = serializers.CharField(allow_null=True)
+    host = serializers.CharField(allow_blank=True)
+    request_id = serializers.CharField()
+    event_log_id = serializers.IntegerField(allow_null=True)
+
+
+class ScheduledJobLast24hSerializer(serializers.Serializer):
+    succeeded = serializers.IntegerField()
+    failed = serializers.IntegerField()
+
+
+class ScheduledJobSummarySerializer(serializers.Serializer):
+    job = serializers.CharField()
+    health = serializers.CharField()
+    overdue = serializers.BooleanField()
+    interval_seconds = serializers.IntegerField()
+    overdue_after_seconds = serializers.IntegerField()
+    last_run = ScheduledJobRunSerializer(allow_null=True)
+    last_success_at = serializers.CharField(allow_null=True)
+    last_failure_at = serializers.CharField(allow_null=True)
+    last_skipped_at = serializers.CharField(allow_null=True)
+    last_duration_ms = serializers.IntegerField(allow_null=True)
+    last_counts = serializers.JSONField()
+    next_expected_at = serializers.CharField(allow_null=True)
+    last_24h = ScheduledJobLast24hSerializer()
+    skipped_locked_total = serializers.IntegerField()
+
+
+class ScheduledJobsOverviewSerializer(serializers.Serializer):
+    generated_at = serializers.CharField()
+    scheduler_enabled = serializers.BooleanField()
+    redis_reachable = serializers.BooleanField(allow_null=True)
+    beat_last_seen_at = serializers.CharField(allow_null=True)
+    beat_stale = serializers.BooleanField()
+    jobs = ScheduledJobSummarySerializer(many=True)
+
+
+class ScheduledJobRunsSerializer(serializers.Serializer):
+    job = serializers.CharField()
+    results = ScheduledJobRunSerializer(many=True)
+
+
+class ScheduledJobWebhookAttemptSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    delivery_id = serializers.CharField()
+    company_id = serializers.IntegerField()
+    event_type = serializers.CharField()
+    status = serializers.CharField()
+    http_status = serializers.IntegerField(allow_null=True)
+    attempt_number = serializers.IntegerField()
+    duration_ms = serializers.IntegerField(allow_null=True)
+    trigger = serializers.CharField(allow_null=True)
+    created_at = serializers.CharField()
+
+
+class ScheduledJobRunDetailSerializer(ScheduledJobRunSerializer):
+    webhook_delivery_attempts = ScheduledJobWebhookAttemptSerializer(many=True)
+    webhook_delivery_attempts_truncated = serializers.BooleanField()
+    email_events = serializers.ListField(child=serializers.JSONField())
+    email_events_truncated = serializers.BooleanField()

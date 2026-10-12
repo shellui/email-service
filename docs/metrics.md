@@ -33,3 +33,13 @@ Gauges, computed from the database at scrape time:
 | `shellui_email_auth_ttl_expiries` | none | Auth messages that expired before handoff |
 
 Empty lanes are reported as 0 for depth and age so a scrape still lists `auth`, `transactional`, and `bulk`.
+
+This endpoint never includes scheduled job metrics.
+
+## Global Prometheus
+
+`GET /api/v1/metrics/all`
+
+Auth: staff, or a personal access token with `access_global_metrics` (JWT claim `pat_agm`). Company owners get `403`. A call without a token gets `401`.
+
+The body is the same queue gauges as `GET /api/v1/metrics` with no `company_id`, plus the scheduler series `shellui_email_scheduled_job_*` and `shellui_email_scheduler_*`. Names, labels, and alert rules are in [Workers and scheduled jobs](scheduled-jobs.md#prometheus-metrics).

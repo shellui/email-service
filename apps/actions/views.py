@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.actions.emit import store_rule_secret
-from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt, EventLog
+from apps.actions.models import ActionOutbox, ActionRule, EventLog
 from apps.actions.registry import all_event_types
 from apps.actions.serializers import (
     ActionEventListSerializer,
@@ -25,7 +25,7 @@ from apps.actions.serializers import (
     EventLogRetentionSerializer,
     EventLogTypesSerializer,
 )
-from apps.email.access import company_from_request, require_admin
+from apps.email.access import company_from_request, require_admin, require_staff
 from apps.email.crypto import decrypt_text
 from apps.email.schema import COMPANY_QUERY, ErrorSerializer
 from apps.email.service import SendError
@@ -294,8 +294,20 @@ class ActionDeliveryListView(APIView):
             require_admin(request, company_id)
         except SendError as exc:
             return error_response(exc, request)
-        rows = ActionOutbox.objects.filter(company_id=company_id).order_by('-created_at')[:100]
-        return Response({'deliveries': [_delivery_payload(row) for row in rows]})
+        rows = ActionOutbox.objects.filter(company_id=company_id).order_by('-created_at')
+        run_raw = (request.GET.get('scheduled_job_run_id') or '').strip()
+        if run_raw:
+            if not getattr(request.user, 'is_staff', False):
+                return error_response(SendError(403, 'forbidden'), request)
+            try:
+                run_id = int(run_raw)
+            except (TypeError, ValueError):
+                return error_response(
+                    SendError(400, 'validation_failed', {'scheduled_job_run_id': ['invalid']}),
+                    request,
+                )
+            rows = rows.filter(delivery_attempts__scheduled_job_run_id=run_id).distinct()
+        return Response({'deliveries': [_delivery_payload(row) for row in rows[:100]]})
 
 
 @extend_schema_view(
@@ -314,7 +326,13 @@ class ActionDeliveryDetailView(APIView):
             require_admin(request, row.company_id)
         except SendError as exc:
             return error_response(exc, request)
-        return Response(_delivery_payload(row, include_attempts=True))
+        return Response(
+            _delivery_payload(
+                row,
+                include_attempts=True,
+                include_run_ids=bool(getattr(request.user, 'is_staff', False)),
+            )
+        )
 
 
 @extend_schema_view(
@@ -341,7 +359,7 @@ class ActionDeliveryRequeueView(APIView):
         return Response(_delivery_payload(row))
 
 
-def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False) -> dict:
+def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False, include_run_ids: bool = False) -> dict:
     data = {
         'id': str(row.pk),
         'company_id': row.company_id,
@@ -353,15 +371,18 @@ def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False) -> d
         'created_at': row.created_at.isoformat(),
     }
     if include_attempts:
-        data['attempts'] = [
-            {
+        data['attempts'] = []
+        for attempt in row.delivery_attempts.all():
+            item = {
                 'attempt_number': attempt.attempt_number,
                 'status': attempt.status,
                 'http_status': attempt.http_status,
                 'error_code': attempt.error_code,
+                'trigger': attempt.trigger or None,
             }
-            for attempt in row.delivery_attempts.all()
-        ]
+            if include_run_ids:
+                item['scheduled_job_run_id'] = attempt.scheduled_job_run_id
+            data['attempts'].append(item)
         data['envelope'] = row.envelope
     return data
 
@@ -376,12 +397,19 @@ def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False) -> d
 )
 class EventLogListView(APIView):
     def get(self, request):
+        scope = (request.query_params.get('scope') or '').strip()
         try:
-            company_id = company_from_request(request)
-            require_admin(request, company_id)
+            if scope == 'platform':
+                require_staff(request)
+                rows = EventLog.objects.filter(company_id__isnull=True).order_by('-created_at')[:100]
+            elif scope:
+                raise SendError(400, 'validation_failed', {'scope': ['invalid']})
+            else:
+                company_id = company_from_request(request)
+                require_admin(request, company_id)
+                rows = EventLog.objects.filter(company_id=company_id).order_by('-created_at')[:100]
         except SendError as exc:
             return error_response(exc, request)
-        rows = EventLog.objects.filter(company_id=company_id).order_by('-created_at')[:100]
         return Response(
             {
                 'events': [
@@ -410,7 +438,10 @@ class EventLogDetailView(APIView):
         if row is None:
             return error_response(SendError(404, 'not_found'), request)
         try:
-            require_admin(request, row.company_id)
+            if row.company_id is None:
+                require_staff(request)
+            else:
+                require_admin(request, row.company_id)
         except SendError as exc:
             return error_response(exc, request)
         return Response(

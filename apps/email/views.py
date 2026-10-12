@@ -1269,6 +1269,40 @@ class MetricsView(APIView):
 
 
 @extend_schema_view(
+    get=extend_schema(
+        tags=['platform-metrics'],
+        operation_id='api_v1_metrics_all_retrieve',
+        summary='Prometheus metrics for the deployment, including scheduled jobs (staff)',
+        description=(
+            'Global Prometheus text. Requires staff, or a personal access token with '
+            '`access_global_metrics` (`pat_agm`). Includes `shellui_email_scheduled_job_*` and '
+            '`shellui_email_scheduler_*`. `GET /api/v1/metrics` does not.'
+        ),
+        responses={
+            (200, 'text/plain'): OpenApiResponse(
+                response=OpenApiTypes.STR,
+                description='text/plain Prometheus exposition',
+            ),
+            401: ErrorSerializer,
+            403: ErrorSerializer,
+        },
+    ),
+)
+class MetricsAllView(APIView):
+    renderer_classes = [PrometheusTextRenderer]
+
+    def get(self, request):
+        from apps.email.metrics import METRICS_CONTENT_TYPE, global_metrics_http_body
+
+        user = request.user
+        if isinstance(user, ServicePrincipal) or not getattr(user, 'is_authenticated', False):
+            return error_response(SendError(401, 'unauthorized'), request)
+        if not (getattr(user, 'is_staff', False) or getattr(user, 'access_global_metrics', False)):
+            return error_response(SendError(403, 'forbidden'), request)
+        return HttpResponse(global_metrics_http_body(), content_type=METRICS_CONTENT_TYPE)
+
+
+@extend_schema_view(
     post=extend_schema(
         tags=['provider'],
         operation_id='api_v1_provider_webhooks_resend_create',
