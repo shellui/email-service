@@ -147,14 +147,19 @@ def models_company(company_id: int):
     return Q(company_id=company_id) | Q(company_id__isnull=True)
 
 
-def _url_tokens(definition: dict) -> dict[str, set[str] | None]:
+def _url_tokens(definition: dict, company_id: int | None = None) -> dict[str, set[str] | None]:
     tokens: dict[str, set[str] | None] = {}
+    allowed = None
     for variable in definition.get('variables') or []:
         if variable.get('type') != 'url' and not variable.get('is_url'):
             continue
         hosts = None
         if variable.get('allowed_hosts_setting'):
-            hosts = {host.lower() for host in settings.EMAIL_AUTH_LINK_HOSTS}
+            if allowed is None:
+                from apps.email.link_hosts import effective_auth_link_hosts
+
+                allowed = set(effective_auth_link_hosts(company_id))
+            hosts = allowed
         tokens[variable['token']] = hosts
     return tokens
 
@@ -913,7 +918,7 @@ def deliver_message(message_id) -> None:
     except SendError as exc:
         _finish_failed(message_id, exc.code)
         return
-    url_tokens = _url_tokens(definition)
+    url_tokens = _url_tokens(definition, snapshot['company_id'])
     try:
         subject, _missing_subject = substitute(
             content['subject'],

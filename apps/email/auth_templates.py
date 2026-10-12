@@ -8,11 +8,9 @@ sign-in link to a host the company chose, so publish refuses it.
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
-
-from django.conf import settings
 
 from apps.email.document import links, texts
+from apps.email.link_hosts import effective_auth_link_hosts, literal_https_host_allowed, refresh_application_hosts
 from apps.email.rendering import document_tokens
 from apps.email.service import SendError
 from apps.email.substitution import TOKEN_RE, SubstitutionError, find_tokens, reject_template_tags
@@ -44,16 +42,12 @@ def _declared_url_tokens(definition: dict) -> set[str]:
     return tokens
 
 
-def _literal_host_allowed(href: str) -> bool:
-    parsed = urlparse(href.strip())
-    if (parsed.scheme or '').lower() != 'https':
-        return False
-    host = (parsed.hostname or '').lower()
-    allowed = {item.lower() for item in settings.EMAIL_AUTH_LINK_HOSTS}
-    return bool(host) and host in allowed
+def _literal_host_allowed(href: str, company_id: int | None) -> bool:
+    allowed = set(effective_auth_link_hosts(company_id))
+    return literal_https_host_allowed(href, allowed)
 
 
-def _link_error(definition: dict, href: str) -> str | None:
+def _link_error(definition: dict, href: str, company_id: int | None = None) -> str | None:
     try:
         reject_template_tags(href)
     except SubstitutionError:
@@ -65,19 +59,29 @@ def _link_error(definition: dict, href: str) -> str | None:
     leftover = TOKEN_RE.sub('', href).strip()
     if not href_tokens and not leftover:
         return 'required'
-    if leftover and not _literal_host_allowed(leftover):
+    if leftover and not _literal_host_allowed(leftover, company_id):
         return 'host_not_allowed'
     return None
 
 
-def auth_link_allowed(definition: dict, href: str) -> bool:
-    return _link_error(definition, href) is None
+def auth_link_allowed(definition: dict, href: str, company_id: int | None = None) -> bool:
+    return _link_error(definition, href, company_id) is None
 
 
-def validate_auth_template(definition: dict, document: dict, subject: str, preheader: str) -> None:
+def validate_auth_template(
+    definition: dict,
+    document: dict,
+    subject: str,
+    preheader: str,
+    *,
+    company_id: int | None = None,
+    authorization: str | None = None,
+) -> None:
     """Reject an auth copy that drops the sign-in link or links anywhere else."""
     if not definition or definition.get('lane_class') != 'auth':
         return
+    if company_id is not None and authorization:
+        refresh_application_hosts(company_id, authorization)
     try:
         tokens = document_tokens(document, subject, preheader)
     except SubstitutionError as exc:
@@ -86,11 +90,14 @@ def validate_auth_template(definition: dict, document: dict, subject: str, prehe
     if missing:
         raise SendError(400, 'auth_link_missing', {token: ['required'] for token in missing})
     for href in links(document):
-        error = _link_error(definition, href)
+        error = _link_error(definition, href, company_id)
         if error == 'template_tags_forbidden':
             raise SendError(400, 'validation_failed', {'document': [error]})
         if error:
-            raise SendError(400, 'auth_link_host_not_allowed', {'href': [error]})
+            fields = {'href': [error]}
+            if error == 'host_not_allowed':
+                fields['allowed_link_hosts'] = ['not_allowlisted']
+            raise SendError(400, 'auth_link_host_not_allowed', fields)
     _reject_misplaced_link_tokens(definition, document)
     _reject_literal_links(definition, document, subject, preheader)
 

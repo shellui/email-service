@@ -11,6 +11,7 @@ from apps.email.newsletter_views import (
     NewsletterSubscriberListView,
 )
 from apps.email.views import (
+    AuthLinkHostsView,
     BroadcastDetailView,
     BroadcastListView,
     BroadcastPreviewView,
@@ -111,6 +112,7 @@ urlpatterns = [
     ),
     path('rules', RuleListView.as_view(), name='email-rules'),
     path('rules/<int:rule_id>', RuleDetailView.as_view(), name='email-rule-detail'),
+    path('auth-link-hosts', AuthLinkHostsView.as_view(), name='email-auth-link-hosts'),
     path('provider', ProviderView.as_view(), name='email-provider'),
     path('provider/test-send', ProviderTestSendView.as_view(), name='email-provider-test-send'),
     path('provider-webhooks/resend/<str:stream>', ProviderWebhookView.as_view(), name='email-resend-webhook'),

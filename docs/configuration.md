@@ -38,7 +38,7 @@ The web form stays closed when `DEBUG=false` and `SETUP_TOKEN` is empty. Set `SE
 | `DEFAULT_FROM_NAME` | `Shellui` | Display name |
 | `BULK_FROM_EMAIL` | `news@news.shellui.com` | Broadcast sender for Shellui companies without a Bulk From |
 | `BULK_FROM_NAME` | `Shellui` | Display name for `BULK_FROM_EMAIL` |
-| `EMAIL_AUTH_LINK_HOSTS` | `id.shellui.com` plus localhost only when `DEBUG=true` | Hosts allowed in auth URL variables. `DEBUG=false` drops `localhost`, `127.0.0.1`, and `::1`. |
+| `EMAIL_AUTH_LINK_HOSTS` | `id.shellui.com` plus localhost only when `DEBUG=true` | Platform hostnames allowed in every company's auth mail. Company application domains and Allowed link hosts are added per company. `DEBUG=false` drops `localhost`, `127.0.0.1`, and `::1`. |
 | `EMAIL_PLATFORM_COMPANY_IDS` | empty | Company ids that may use the platform From for non-auth mail |
 | `EMAIL_ALLOW_COMPANY_SMTP` | `false` | Allow a company to store an SMTP relay |
 | `EMAIL_COMPANY_AUTH_LIMIT` | `30` | Auth messages per company per window |

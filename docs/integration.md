@@ -90,14 +90,14 @@ JSON errors never contain translated sentences. Shape:
 | `recipient_suppressed` | 422 | Auth lane, hard bounce. Do not retry. |
 | `recipient_rate_limited` | 429 | Auth lane, 5 messages per recipient per company per 10 minutes |
 | `company_rate_limited` | 429 | Transactional lane, 1000 messages per company per hour. Auth lane, 30 messages per company per 60 seconds (`EMAIL_COMPANY_AUTH_LIMIT`). |
-| `variable_url_not_allowed` | 400 | URL variable is not `https`, `mailto`, or `tel`, or the host is not on `EMAIL_AUTH_LINK_HOSTS` |
+| `variable_url_not_allowed` | 400 | URL variable is not `https`, `mailto`, or `tel`, or an auth URL host is not on the company's auth link hosts (`EMAIL_AUTH_LINK_HOSTS`, identity application domains, and Allowed link hosts) |
 | `unsubscribe_link_missing` | 400 | A bulk template publish omitted `{{ system.unsubscribe_url }}` |
 | `provider_not_configured` | 409 | No usable provider credentials for this send |
 | `platform_sender_not_allowed` | 409 | Non-auth mail for a company with no provider, and the company is not listed in `EMAIL_PLATFORM_COMPANY_IDS`. Auth mail still uses the platform fallback. The same code is HTTP 403 when a company sets `from_email` to the platform From address. |
 | `company_smtp_disabled` | 400 or 409 | Company SMTP is off (`EMAIL_ALLOW_COMPANY_SMTP` defaults to false). 400 when saving the provider, 409 when a send is refused. |
 | `provider_host_not_public` | 400 | Company SMTP host is missing, private, or not a public address |
 | `auth_link_missing` | 400 | An auth-lane copy dropped a required link variable such as `magic_link_url` |
-| `auth_link_host_not_allowed` | 400 | An auth-lane link (link mark, button, or linked image) is not an allowlisted `https` host, a declared URL variable, or `system.message_id` |
+| `auth_link_host_not_allowed` | 400 | An auth-lane link (link mark, button, or linked image) is not an allowlisted `https` host, a declared URL variable, or `system.message_id`. `allowed_link_hosts: ["not_allowlisted"]` means add the hostname under Allowed link hosts |
 | `auth_literal_link` | 400 | An auth-lane copy has a literal URL in the subject, preheader, or document text |
 | `provider_not_available` | 400 | Provider name is not `resend` or `smtp` |
 | `provider_test_failed` | 502 | The test send was refused by the provider |
@@ -353,13 +353,13 @@ Hosting and storage do not need to send `company_name`. Identity still may. Auth
 
 email-service does not call identity's company API. That API is limited to members of the company, and a service key is not a member.
 
-URL variables must be `https`, `mailto`, or `tel`. `http://localhost` and `http://127.0.0.1` are allowed only when `DEBUG=true`. Auth URL variables (`magic_link_url`) must use a host in `EMAIL_AUTH_LINK_HOSTS`. When `DEBUG=false`, `localhost`, `127.0.0.1`, and `::1` are removed from that list even if the environment includes them.
+URL variables must be `https`, `mailto`, or `tel`. `http://localhost` and `http://127.0.0.1` are allowed only when `DEBUG=true`. Auth URL variables (`magic_link_url`) must use `https` and a host in the company's auth link hosts: `EMAIL_AUTH_LINK_HOSTS`, the company's identity application domains, and its Allowed link hosts. When `DEBUG=false`, `localhost`, `127.0.0.1`, and `::1` are removed from that set even if a list includes them. A host one company allows is refused for every other company.
 
 Non-auth mail (`POST /api/v1/send` on a transactional template, and `POST /api/v1/events` when an enabled rule matches and a recipient resolves) requires a company provider, unless `company_id` is in `EMAIL_PLATFORM_COMPANY_IDS`. Otherwise the response is `409 platform_sender_not_allowed`. Identity auth templates (`identity.auth.magic_link.requested`, `identity.user.invited`) still send through the platform fallback when the company has no provider, from `no-reply@shellui.com`. That includes event ingest of those auth events through the built-in rule.
 
 A company that is not in `EMAIL_PLATFORM_COMPANY_IDS` cannot set `from_email` or `bulk_from_email` to `DEFAULT_FROM_EMAIL` or `BULK_FROM_EMAIL` (`403 platform_sender_not_allowed`).
 
-Auth-lane copies must still contain every required URL variable (`magic_link_url` or `invitation_url`). Every link in the document (link marks, button `href`, linked images) must be a declared URL variable, `{{ system.message_id }}`, or a literal `https` URL whose host is on `EMAIL_AUTH_LINK_HOSTS`. Otherwise publish returns `auth_link_missing` or `auth_link_host_not_allowed`. Subject, preheader, and document text must not contain a literal URL. The required link variable may appear there. A literal URL returns `auth_literal_link`. A link variable anywhere else in the document (an image `src`, a `style`, an `alt`, any other attribute) returns `auth_link_misplaced`, because a mail client or image proxy would request that URL and hand the link to its host.
+Auth-lane copies must still contain every required URL variable (`magic_link_url` or `invitation_url`). Every link in the document (link marks, button `href`, linked images) must be a declared URL variable, `{{ system.message_id }}`, or a literal `https` URL whose host is on the company's auth link hosts. Otherwise publish returns `auth_link_missing` or `auth_link_host_not_allowed`. The host error includes `allowed_link_hosts: ["not_allowlisted"]`: add the hostname under Allowed link hosts (Django admin on the company profile, or `PUT /api/v1/auth-link-hosts`). The same check runs again at send time. Subject, preheader, and document text must not contain a literal URL. The required link variable may appear there. A literal URL returns `auth_literal_link`. A link variable anywhere else in the document (an image `src`, a `style`, an `alt`, any other attribute) returns `auth_link_misplaced`, because a mail client or image proxy would request that URL and hand the link to its host.
 
 ## Message status
 
@@ -423,7 +423,7 @@ Auth: service key, staff, or company owner.
 }
 ```
 
-`auth_link_hosts` is the read-only `EMAIL_AUTH_LINK_HOSTS` list. The editor uses it to check a button `href` before publish. `rules_allowed` is `false` for auth-lane events: the rule editor must not offer them, and `POST /api/v1/rules` refuses them. `variables[]` items: `token`, `type` (`string` or `url`), `required`, `description` (an i18n key `email.var.<token>`), `example`, `is_url`, and optionally `sensitive` and `allowed_hosts_setting`. A variable with `allowed_hosts_setting: "EMAIL_AUTH_LINK_HOSTS"` must use one of those hosts.
+`auth_link_hosts` is the list the editor checks before publish. For a service key it is `EMAIL_AUTH_LINK_HOSTS`. For a company owner or staff member it is that platform list, plus the company's identity application domains, plus its Allowed link hosts. Pass `company_id` (the admin app always does). `rules_allowed` is `false` for auth-lane events: the rule editor must not offer them, and `POST /api/v1/rules` refuses them. `variables[]` items: `token`, `type` (`string` or `url`), `required`, `description` (an i18n key `email.var.<token>`), `example`, `is_url`, and optionally `sensitive` and `allowed_hosts_setting`. A variable with `allowed_hosts_setting: "EMAIL_AUTH_LINK_HOSTS"` must use a host in that company's `auth_link_hosts` list.
 
 `link_token` is the URL variable a design's main link (`{{ action_url }}`) becomes on a copy of this event, empty when the event has no link. `default_template` is the library key used for built-in rules and for direct sends before the company has a copy. Designs are on `GET /api/v1/library` (admin JWT).
 
@@ -452,7 +452,7 @@ Auth: staff or company owner. `company_id` query parameter, or the token's compa
 }
 ```
 
-`smtp_allowed` is `EMAIL_ALLOW_COMPANY_SMTP` (default false). `auth_link_hosts` is the same list as on `GET /api/v1/catalog`.
+`smtp_allowed` is `EMAIL_ALLOW_COMPANY_SMTP` (default false). `auth_link_hosts` is the same company list as on `GET /api/v1/catalog` for this `company_id`.
 
 When the company has no provider row the same keys are present: `configured` is false, `provider` is null, `credentials_hint`, `from_name`, `sending_domain`, and `webhook_hint` are empty strings, and `webhook_configured` is false. `from_email` and `bulk_from_email` are the platform addresses. The API key is never returned. `configured: false` means auth mail can still use the platform fallback. Non-auth mail then returns `platform_sender_not_allowed` unless this company is in `EMAIL_PLATFORM_COMPANY_IDS`.
 
@@ -499,6 +499,30 @@ Set `EMAIL_FALLBACK_PROVIDER=none` to require a company provider for auth mail a
 Auth rate limits: 5 messages per recipient per company per 10 minutes (`recipient_rate_limited`), and 30 messages per company per 60 seconds (`company_rate_limited`, `EMAIL_COMPANY_AUTH_LIMIT` and `EMAIL_COMPANY_AUTH_WINDOW_SECONDS`). A provider HTTP 401 or 403 pauses that company's lane only. `POST /api/v1/lanes/{lane}/pause` is still staff-only and pauses the lane for every company.
 
 Default from address when the company has none: `no-reply@shellui.com`. Bulk from address: `news@news.shellui.com`. The HTTP host is `email.shellui.com` and is not a sending domain.
+
+## Admin: allowed link hosts
+
+Auth: staff or company owner. `company_id` query parameter, or the token's company.
+
+`GET /api/v1/auth-link-hosts?company_id=42`
+
+`PUT /api/v1/auth-link-hosts?company_id=42` replaces the extra hostnames. It does not change the platform list or the application domains.
+
+```json
+{
+  "company_id": 42,
+  "hosts": ["playground.shellui.com"],
+  "application_hosts": ["app.acme.com"],
+  "platform_hosts": ["id.shellui.com"],
+  "auth_link_hosts": ["app.acme.com", "id.shellui.com", "playground.shellui.com"]
+}
+```
+
+`hosts` is the editable list (Allowed link hosts). `application_hosts` are hostnames of the company's active identity OAuth redirect origins (`GET {IDENTITY_SERVICE_URL}/api/v1/oauth-redirects`), synced when the caller sends a user JWT. A service key is not forwarded. If identity does not answer, the stored application hostnames stay as they are and no new ones are added. `platform_hosts` is `EMAIL_AUTH_LINK_HOSTS`. `auth_link_hosts` is the union the editor and the send path use.
+
+Each hostname is exact: no scheme, path, port, wildcard, or IP address. `localhost` is refused when `DEBUG=false`. A bad value returns `400 validation_failed` with `hosts` set to `invalid_hostname`, `wildcard_not_allowed`, `ip_not_allowed`, `port_not_allowed`, `path_not_allowed`, `scheme_not_allowed`, `localhost_not_allowed`, or `too_many`. Adding and removing an extra hostname writes `email.auth_link_host.added` and `email.auth_link_host.removed` to the event log. The row's `data` is `{"host": "playground.shellui.com"}` and does not include a URL or a token.
+
+The same list is on the company profile in Django admin (Allowed link hosts). Application link hosts there are read-only.
 
 ## Admin: library
 

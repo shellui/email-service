@@ -26,6 +26,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### ✨ Feature
 
 - **Scheduled jobs:** staff read job health at `GET /api/v1/scheduled-jobs` and recent runs at `GET /api/v1/scheduled-jobs/{job}/runs` and `GET /api/v1/scheduled-jobs/runs/{id}`. Runs are recorded for `retry_webhooks`, `sweep_email_queue`, and `purge_expired_data`. Prometheus series `shellui_email_scheduled_job_*` and `shellui_email_scheduler_*` are on `GET /api/v1/metrics/all`. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
+- **Allowed link hosts:** a company can name extra hostnames for auth mail (`PUT /api/v1/auth-link-hosts`, and Allowed link hosts on the company profile in Django admin). Identity application domains and `EMAIL_AUTH_LINK_HOSTS` still apply. A host outside that set is refused. See [docs/security.md](docs/security.md).
 
 ## [0.1.0] - 2026-10-06
 
