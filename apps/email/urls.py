@@ -1,10 +1,5 @@
 from django.urls import path
 
-from apps.actions.scheduled_job_views import (
-    ScheduledJobRunDetailView,
-    ScheduledJobRunsView,
-    ScheduledJobsView,
-)
 from apps.email.newsletter_views import (
     NewsletterDetailView,
     NewsletterExportView,
@@ -16,6 +11,7 @@ from apps.email.newsletter_views import (
     NewsletterSubscriberListView,
 )
 from apps.email.views import (
+    AuthLinkHostsView,
     BroadcastDetailView,
     BroadcastListView,
     BroadcastPreviewView,
@@ -29,6 +25,7 @@ from apps.email.views import (
     MessageCancelView,
     MessageDetailView,
     MessageListView,
+    MetricsAllView,
     MetricsView,
     PrivacyEraseView,
     ProviderTestSendView,
@@ -52,10 +49,8 @@ from apps.email.views import (
 
 urlpatterns = [
     path('health', HealthView.as_view(), name='email-health'),
+    path('metrics/all', MetricsAllView.as_view(), name='email-metrics-all'),
     path('metrics', MetricsView.as_view(), name='email-metrics'),
-    path('scheduled-jobs', ScheduledJobsView.as_view(), name='email-scheduled-jobs'),
-    path('scheduled-jobs/runs/<int:pk>', ScheduledJobRunDetailView.as_view(), name='email-scheduled-job-run-detail'),
-    path('scheduled-jobs/<str:job>/runs', ScheduledJobRunsView.as_view(), name='email-scheduled-job-runs'),
     path('send', SendView.as_view(), name='email-send'),
     path('send/batch', SendBatchView.as_view(), name='email-send-batch'),
     path('events', EventIngestView.as_view(), name='email-events'),
@@ -117,6 +112,7 @@ urlpatterns = [
     ),
     path('rules', RuleListView.as_view(), name='email-rules'),
     path('rules/<int:rule_id>', RuleDetailView.as_view(), name='email-rule-detail'),
+    path('auth-link-hosts', AuthLinkHostsView.as_view(), name='email-auth-link-hosts'),
     path('provider', ProviderView.as_view(), name='email-provider'),
     path('provider/test-send', ProviderTestSendView.as_view(), name='email-provider-test-send'),
     path('provider-webhooks/resend/<str:stream>', ProviderWebhookView.as_view(), name='email-resend-webhook'),

@@ -14,13 +14,14 @@ The contract other services implement is [docs/integration.md](docs/integration.
 
 ## Features
 
-- Direct send (`POST /api/v1/send`) for magic links, invitations, and the staff notice. Each sign-in link goes to one address
-- Event ingest (`POST /api/v1/events`): one message per enabled email rule. No rule returns `skipped_reason: no_rule`
-- 40 React Email designs in five sets (Barebone, Matte, Protocol, Arcane, Studio), plus company templates
-- Resend and SMTP. Mailjet is a module that is not registered yet
-- Per-company credentials encrypted at rest
-- Broadcasts and newsletters (double opt-in, CSV import and export, optional Turnstile)
-- Prometheus metrics at `GET /api/v1/metrics`
+- Direct send (`POST /api/v1/send`) for magic links, invitations, and the staff notice, with TTL and idempotency. Each sign-in link goes to one address
+- Event ingest (`POST /api/v1/events`): one message per enabled email rule. No rule returns `skipped_reason: no_rule`. Auth-lane events have a built-in rule
+- 40 React Email designs in five sets (Barebone, Matte, Protocol, Arcane, Studio), plus company templates. Each email rule sends its own editable copy. See [docs/library.md](docs/library.md)
+- Resend and SMTP. Mailjet is a module that is not registered yet. See [docs/providers.md](docs/providers.md)
+- Per-company credentials encrypted at rest. API responses return a masked hint and `configured`
+- Admin API for rules, templates, stats, test sends, and suppressions
+- Broadcasts and newsletters (double opt-in, CSV import and export, optional Turnstile). See [docs/broadcasts.md](docs/broadcasts.md) and [docs/newsletters.md](docs/newsletters.md)
+- Prometheus metrics at `GET /api/v1/metrics`. Scheduled job and lane worker series are staff-only on `GET /api/v1/metrics/all`
 - Shellui Actions webhooks for `email.message.*`, unsubscribes, and newsletter events
 - OpenAPI at `/api/docs/` and `/api/docs/redoc/`
 
@@ -40,7 +41,8 @@ The contract other services implement is [docs/integration.md](docs/integration.
 | Broadcasts | `/api/v1/broadcasts` |
 | Newsletters | `/api/v1/newsletters`, `POST /api/v1/public/newsletters/{public_key}/subscribe` |
 | Stats | `GET /api/v1/stats` |
-| Metrics | `GET /api/v1/metrics` |
+| Metrics | `GET /api/v1/metrics`, `GET /api/v1/metrics/all` |
+| Scheduled jobs | `GET /api/v1/scheduled-jobs` (staff) |
 | Shellui Actions | `/api/v1/actions/*` |
 | OpenAPI | `/api/docs/`, `/api/docs/redoc/` |
 

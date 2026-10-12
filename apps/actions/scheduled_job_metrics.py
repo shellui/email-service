@@ -1,10 +1,10 @@
 """
-Prometheus metrics for the scheduled jobs and lane workers, in the global ``GET /api/v1/metrics`` only.
+Prometheus metrics for the scheduled jobs and lane workers, served by ``GET /api/v1/metrics/all`` only.
 
 Runs happen in the Celery worker or a cron process, not in gunicorn, so values are read
 from the database at scrape time (``ScheduledJobCounter``, ``ScheduledJobState``) instead
 of in-process counters. Heartbeats come from Redis. A dedicated registry keeps them out of
-company-scoped scrapes. Labels: ``job``, ``status``, ``kind`` and ``lane`` only.
+``GET /api/v1/metrics``. Labels: ``job``, ``status``, ``kind`` and ``lane`` only (low cardinality).
 """
 
 from __future__ import annotations
@@ -144,3 +144,4 @@ _registry.register(ScheduledJobsCollector())
 
 def scheduled_jobs_metrics_body() -> bytes:
     return generate_latest(_registry)
+

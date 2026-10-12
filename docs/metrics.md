@@ -40,4 +40,12 @@ Gauges, computed from the database at scrape time:
 
 Empty lanes are reported as 0 for depth and age so a scrape still lists `auth`, `transactional`, and `bulk`.
 
-The global scrape (no `company_id`, staff or `access_global_metrics`) also includes the scheduled job and lane worker metrics (`shellui_email_scheduled_job_*`, `shellui_email_scheduler_*`, `shellui_email_lane_worker_*`). See [Workers and scheduled jobs](scheduled-jobs.md#prometheus-metrics).
+This endpoint never includes scheduled job or lane worker metrics.
+
+## Global Prometheus
+
+`GET /api/v1/metrics/all`
+
+Auth: staff, or a personal access token with `access_global_metrics` (JWT claim `pat_agm`). Company owners get `403`. A call without a token gets `401`.
+
+The body is the same queue gauges as `GET /api/v1/metrics` with no `company_id`, plus `shellui_email_scheduled_job_*`, `shellui_email_scheduler_*`, and `shellui_email_lane_worker_*`. Names, labels, and alert rules are in [Scheduled jobs](scheduled-jobs.md#prometheus-metrics).

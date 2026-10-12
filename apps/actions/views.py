@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from django.utils import timezone
-from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.actions.emit import store_rule_secret
-from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt, EventLog
+from apps.actions.models import ActionOutbox, ActionRule, EventLog
 from apps.actions.registry import all_event_types
 from apps.actions.serializers import (
     ActionEventListSerializer,
@@ -295,8 +294,20 @@ class ActionDeliveryListView(APIView):
             require_admin(request, company_id)
         except SendError as exc:
             return error_response(exc, request)
-        rows = ActionOutbox.objects.filter(company_id=company_id).order_by('-created_at')[:100]
-        return Response({'deliveries': [_delivery_payload(row) for row in rows]})
+        rows = ActionOutbox.objects.filter(company_id=company_id).order_by('-created_at')
+        run_raw = (request.GET.get('scheduled_job_run_id') or '').strip()
+        if run_raw:
+            if not getattr(request.user, 'is_staff', False):
+                return error_response(SendError(403, 'forbidden'), request)
+            try:
+                run_id = int(run_raw)
+            except (TypeError, ValueError):
+                return error_response(
+                    SendError(400, 'validation_failed', {'scheduled_job_run_id': ['invalid']}),
+                    request,
+                )
+            rows = rows.filter(delivery_attempts__scheduled_job_run_id=run_id).distinct()
+        return Response({'deliveries': [_delivery_payload(row) for row in rows[:100]]})
 
 
 @extend_schema_view(
@@ -315,7 +326,13 @@ class ActionDeliveryDetailView(APIView):
             require_admin(request, row.company_id)
         except SendError as exc:
             return error_response(exc, request)
-        return Response(_delivery_payload(row, include_attempts=True))
+        return Response(
+            _delivery_payload(
+                row,
+                include_attempts=True,
+                include_run_ids=bool(getattr(request.user, 'is_staff', False)),
+            )
+        )
 
 
 @extend_schema_view(
@@ -342,7 +359,7 @@ class ActionDeliveryRequeueView(APIView):
         return Response(_delivery_payload(row))
 
 
-def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False) -> dict:
+def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False, include_run_ids: bool = False) -> dict:
     data = {
         'id': str(row.pk),
         'company_id': row.company_id,
@@ -354,15 +371,18 @@ def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False) -> d
         'created_at': row.created_at.isoformat(),
     }
     if include_attempts:
-        data['attempts'] = [
-            {
+        data['attempts'] = []
+        for attempt in row.delivery_attempts.all():
+            item = {
                 'attempt_number': attempt.attempt_number,
                 'status': attempt.status,
                 'http_status': attempt.http_status,
                 'error_code': attempt.error_code,
+                'trigger': attempt.trigger or None,
             }
-            for attempt in row.delivery_attempts.all()
-        ]
+            if include_run_ids:
+                item['scheduled_job_run_id'] = attempt.scheduled_job_run_id
+            data['attempts'].append(item)
         data['envelope'] = row.envelope
     return data
 
@@ -371,36 +391,25 @@ def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False) -> d
     get=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_event_log_list',
-        parameters=[
-            COMPANY_QUERY,
-            OpenApiParameter(
-                name='scope',
-                type=OpenApiTypes.STR,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                enum=['platform'],
-                description=(
-                    'Staff only: `platform` lists events without a company '
-                    '(`email.scheduled_job.succeeded`, `email.scheduled_job.failed`).'
-                ),
-            ),
-        ],
+        parameters=[COMPANY_QUERY],
         responses={200: EventLogListSerializer, **_API_ERRORS},
     ),
 )
 class EventLogListView(APIView):
     def get(self, request):
+        scope = (request.query_params.get('scope') or '').strip()
         try:
-            if request.query_params.get('scope') == 'platform':
+            if scope == 'platform':
                 require_staff(request)
-                rows = EventLog.objects.filter(company_id__isnull=True)
+                rows = EventLog.objects.filter(company_id__isnull=True).order_by('-created_at')[:100]
+            elif scope:
+                raise SendError(400, 'validation_failed', {'scope': ['invalid']})
             else:
                 company_id = company_from_request(request)
                 require_admin(request, company_id)
-                rows = EventLog.objects.filter(company_id=company_id)
+                rows = EventLog.objects.filter(company_id=company_id).order_by('-created_at')[:100]
         except SendError as exc:
             return error_response(exc, request)
-        rows = rows.order_by('-created_at')[:100]
         return Response(
             {
                 'events': [

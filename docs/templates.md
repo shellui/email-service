@@ -113,4 +113,4 @@ email-service fills these itself, and callers must not send them:
 - `system.assets_url`, `EMAIL_PUBLIC_URL` plus `/static/library`, where library images and fonts load from.
 - On non-auth mail, `system.unsubscribe_url` and `system.preferences_url`, the signed `POST /u/{token}` URL for that recipient. Auth mail does not set them.
 
-Auth URL hosts are limited by `EMAIL_AUTH_LINK_HOSTS` (default `id.shellui.com`, plus `localhost` and `127.0.0.1` when `DEBUG=true`).
+Auth URL hosts are the platform list `EMAIL_AUTH_LINK_HOSTS` (default `id.shellui.com`, plus `localhost` and `127.0.0.1` when `DEBUG=true`), the company's identity application domains, and its Allowed link hosts. A button `href` on an auth template has to be one of those hosts, or a declared URL variable. `auth_link_host_not_allowed` means the host is not on that set: add the hostname under Allowed link hosts in Django admin or with `PUT /api/v1/auth-link-hosts`. One company's hosts are not used for another company. See [security.md](security.md).

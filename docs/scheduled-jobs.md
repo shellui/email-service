@@ -106,15 +106,15 @@ The management command records its own run, so the Celery path and the cron path
 | `status` | `running`, `succeeded`, or `failed` |
 | `started_at`, `finished_at`, `duration_ms` | Timing |
 | `counts` | Items processed, see below |
-| `error_key`, `error_class`, `error_message` | On failure: a stable key (`database_error`, `redis_error`, `timeout`, `network_error`, `interrupted`, `unexpected_error`), the exception class, and a short message without URL query strings, credentials, or tokens |
+| `error_key`, `error_class`, `error_message` | On failure: a stable key (`database_error`, `redis_error`, `timeout`, `network_error`, `interrupted`, `unexpected_error`), the exception class, and a short message without URL query strings, credentials, tokens, or sign-in links |
 | `host` | Host name and process id |
 | `event_log_id` | The platform event written for this run |
 
 `counts` per job:
 
 - `retry_webhooks`: `webhook_deliveries_attempted`, `webhook_deliveries_succeeded`, `webhook_deliveries_failed` (will be retried), and `webhook_deliveries_given_up` (now `dead`)
-- `sweep_email_queue`: `messages_expired`, `send_leases_released`, and `broadcasts_pending` (broadcasts that still need work after the run)
-- `purge_expired_data`: rows deleted per type (`messages`, `send_requests`, `event_log`, `webhook_deliveries`, `newsletter_pending`, `newsletter_cleared`, `scheduled_job_runs`)
+- `sweep_email_queue`: `expired`, `released`, and `broadcasts` (broadcasts that still need work after the run)
+- `purge_expired_data`: rows deleted per type (`messages`, `send_requests`, `events`, `webhook_deliveries`, `newsletter_pending`, `newsletter_cleared`, `scheduled_job_runs`) and `complete` (`true` when the run finished deleting old scheduled job runs)
 
 Some runs are not stored:
 
@@ -162,7 +162,7 @@ The endpoints use the same Bearer JWT as other admin endpoints and need Django `
 | --- | --- | --- |
 | `GET` | `/api/v1/scheduled-jobs` | `scheduler_enabled`, `redis_reachable`, `beat_last_seen_at`, `beat_stale`, `workers_enabled`, `workers` (per lane: `last_seen_at`, `stale`), and per job: `health`, `overdue`, `last_run`, `last_success_at`, `last_failure_at`, `last_skipped_at`, `last_duration_ms`, `last_counts`, `next_expected_at`, `last_24h`, `skipped_locked_total` |
 | `GET` | `/api/v1/scheduled-jobs/{job}/runs?limit=20&status=failed` | Recent runs, newest first. `limit` 1 to 100, `status` optional |
-| `GET` | `/api/v1/scheduled-jobs/runs/{id}` | One run with the webhook delivery attempts it made, across companies |
+| `GET` | `/api/v1/scheduled-jobs/runs/{id}` | One run, plus the webhook attempts it made. `email_events` is an empty list |
 | `GET` | `/api/v1/actions/event-log?scope=platform` | The platform events of the runs |
 
 Example job entry:
@@ -176,13 +176,28 @@ Example job entry:
   "overdue_after_seconds": 180,
   "last_success_at": "2026-10-06T13:21:02.511+00:00",
   "next_expected_at": "2026-10-06T13:22:01.904+00:00",
-  "last_counts": {"messages_expired": 0, "send_leases_released": 1, "broadcasts_pending": 0},
+  "last_counts": {"expired": 0, "released": 1, "broadcasts": 0},
   "last_24h": {"succeeded": 1439, "failed": 1},
   "skipped_locked_total": 0
 }
 ```
 
-Every Shellui Actions delivery attempt made by a `retry_webhooks` run stores the run id, so `GET /api/v1/scheduled-jobs/runs/{id}` lists the attempts of every company for that run.
+`email_events` is present so the admin panel can reuse the view it uses for identity-service, hosting-service, and storage-service. email-service does not post events to itself, so that list stays empty. Webhook attempts are filled in.
+
+### From a run to its webhooks
+
+Every delivery attempt stores a `trigger`:
+
+- `dispatch`: the first try, right after the event
+- `automatic_retry`: a `retry_webhooks` run, with `scheduled_job_run_id`
+
+While `retry_webhooks` runs, webhook POSTs send `X-Request-ID: sjr-{run_id}`. Log lines for that run use the same request id.
+
+Staff can open `GET /api/v1/scheduled-jobs/runs/{id}` for the attempts (every company). `GET /api/v1/actions/deliveries?scheduled_job_run_id={id}` lists webhook deliveries of the token company that this run touched. Each attempt on `GET /api/v1/actions/deliveries/{id}` includes `scheduled_job_run_id` for staff.
+
+Company owners see `trigger` on their own delivery attempts, so they know a retry was automatic, and they never see `scheduled_job_run_id` or any run detail. Filtering by `scheduled_job_run_id` as an owner returns `403`.
+
+Run records and error text never store a token or a sign-in link. Query strings, bearer tokens, and sign-in, unsubscribe, and confirm URLs are removed before the row or the log line is written.
 
 ### Failed runs
 
@@ -194,16 +209,16 @@ A failed run:
 - increments `shellui_email_scheduled_job_runs_total{status="failed"}`
 - makes the command exit with status 1 and print `retry_webhooks failed: OperationalError: … (run_id=1234)`, so an external scheduler that alerts on failed jobs still works
 
-If Redis is down when a Celery run tries to take its lock, that run is recorded as `failed` with `error_key=redis_error`.
+If Redis is down when a Celery run tries to take its lock, that run is recorded as `failed` with `error_key=redis_error`. The Celery task returns `failed` after the run is stored, so the error is logged once.
 
 ### Prometheus metrics
 
-The global `GET /api/v1/metrics` (Django staff, or a token with `access_global_metrics`, without `company_id`) includes these metrics. A company scrape never does. Values come from the database and Redis, so they are the same whichever gunicorn worker answers and survive restarts.
+`GET /api/v1/metrics/all` includes the scheduled job and lane worker metrics. It needs staff, or a personal access token with `access_global_metrics` (`pat_agm`). `GET /api/v1/metrics` never includes them, including a company scrape. Values come from the database and Redis, so they are the same whichever gunicorn worker answers and survive restarts.
 
 | Metric | Type | Labels | Meaning |
 | --- | --- | --- | --- |
 | `shellui_email_scheduled_job_runs_total` | counter | `job`, `status` | Finished runs: `succeeded`, `failed`, `skipped_locked` |
-| `shellui_email_scheduled_job_items_total` | counter | `job`, `kind` | Items processed, `kind` is a `counts` name (`broadcasts_pending` excluded) |
+| `shellui_email_scheduled_job_items_total` | counter | `job`, `kind` | Items processed, `kind` is a `counts` name |
 | `shellui_email_scheduled_job_last_success_timestamp_seconds` | gauge | `job` | Unix time of the last successful run (0 before the first one) |
 | `shellui_email_scheduled_job_last_run_timestamp_seconds` | gauge | `job` | Unix time the last run started (0 before the first one) |
 | `shellui_email_scheduled_job_last_run_duration_seconds` | gauge | `job` | Duration of the last finished run |

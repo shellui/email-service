@@ -77,12 +77,27 @@ class DeliveryAttempt(models.Model):
     error_code = models.CharField(max_length=64, blank=True)
     attempt_number = models.PositiveIntegerField()
     duration_ms = models.PositiveIntegerField(null=True, blank=True)
-    # The retry_webhooks run that made this attempt (no FK: runs are purged after 7 days).
-    scheduled_job_run_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+    # ``ScheduledJobRun`` that made this attempt (staff only in the API; no FK, runs are purged first).
+    scheduled_job_run_id = models.BigIntegerField(null=True, blank=True)
+    trigger = models.CharField(
+        max_length=16,
+        blank=True,
+        choices=[
+            ('dispatch', 'Dispatch'),
+            ('automatic_retry', 'Automatic retry'),
+        ],
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['scheduled_job_run_id'],
+                name='actions_attempt_sjrun_idx',
+                condition=models.Q(scheduled_job_run_id__isnull=False),
+            ),
+        ]
 
 
 class EventLog(models.Model):
@@ -136,15 +151,11 @@ class ScheduledJobRun(models.Model):
     started_at = models.DateTimeField(default=timezone.now)
     finished_at = models.DateTimeField(null=True, blank=True)
     duration_ms = models.PositiveIntegerField(null=True, blank=True)
-    # Integer counters per item kind, for example ``webhook_deliveries_succeeded``.
     counts = models.JSONField(default=dict, blank=True)
-    # Stable key the admin panel translates (``database_error``, ``redis_error``, …).
     error_key = models.CharField(max_length=32, blank=True)
     error_class = models.CharField(max_length=128, blank=True)
-    # Sanitized and truncated: no URL query strings, credentials or tokens.
     error_message = models.CharField(max_length=300, blank=True)
     host = models.CharField(max_length=128, blank=True)
-    # Staff-only platform event written when the run finished (no FK: purged separately).
     event_log_id = models.BigIntegerField(null=True, blank=True)
 
     class Meta:
@@ -169,7 +180,6 @@ class ScheduledJobState(models.Model):
     """Latest timestamps per job. Survives run retention, so ``last_success_at`` is never lost."""
 
     job = models.CharField(max_length=64, primary_key=True)
-    # Creation time is the reference for ``overdue`` until the first successful run.
     created_at = models.DateTimeField(default=timezone.now)
     last_started_at = models.DateTimeField(null=True, blank=True)
     last_success_at = models.DateTimeField(null=True, blank=True)
@@ -189,8 +199,8 @@ class ScheduledJobCounter(models.Model):
     """
     Monotonic counters for Prometheus (``runs.<status>``, ``items.<kind>``).
 
-    Stored in the database because runs happen in the Celery worker or a cron process,
-    while ``/api/v1/metrics`` is served by gunicorn workers.
+    Stored in the database because runs happen in the Celery worker, while metrics
+    are served by gunicorn workers.
     """
 
     job = models.CharField(max_length=64)

@@ -67,7 +67,6 @@ RUN_STATUSES = (
 
 EVENT_SUCCEEDED = 'email.scheduled_job.succeeded'
 EVENT_FAILED = 'email.scheduled_job.failed'
-PLATFORM_EVENTS = (EVENT_SUCCEEDED, EVENT_FAILED)
 
 BEAT_STALE_AFTER = timedelta(minutes=3)
 
@@ -96,6 +95,7 @@ RETRY_WEBHOOKS = JobSpec(
     name='retry_webhooks',
     interval_seconds=60,
     overdue_after_seconds=180,
+    # Lock TTL in apps.actions.tasks. A shorter window would mark a live run interrupted.
     max_runtime_seconds=300,
     item_kinds=(
         'webhook_deliveries_attempted',
@@ -105,16 +105,12 @@ RETRY_WEBHOOKS = JobSpec(
     ),
 )
 
-# ``broadcasts_pending`` is stored on the run but is a level, not a count, so it is not an item kind.
 SWEEP_EMAIL_QUEUE = JobSpec(
     name='sweep_email_queue',
     interval_seconds=60,
     overdue_after_seconds=180,
     max_runtime_seconds=300,
-    item_kinds=(
-        'messages_expired',
-        'send_leases_released',
-    ),
+    item_kinds=('expired', 'released', 'broadcasts'),
 )
 
 PURGE_EXPIRED_DATA = JobSpec(
@@ -125,7 +121,7 @@ PURGE_EXPIRED_DATA = JobSpec(
     item_kinds=(
         'messages',
         'send_requests',
-        'event_log',
+        'events',
         'webhook_deliveries',
         'newsletter_pending',
         'newsletter_cleared',
@@ -161,15 +157,22 @@ _SECRET_PAIR_RE = re.compile(
 _BEARER_RE = re.compile(r'(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}')
 _JWT_RE = re.compile(r'\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b')
 _LONG_HEX_RE = re.compile(r'\b[A-Fa-f0-9]{32,}\b')
+# Whole sign-in, unsubscribe, and confirm URLs, including a token in the path or query.
+_SIGN_IN_LINK_RE = re.compile(
+    r'(?i)\b[a-z][a-z0-9+.-]*://[^\s\'"<>]*(?:magic[-_]link|/sign-?in(?:[/?#]|$)|/u/|/n/confirm/)[^\s\'"<>]*'
+)
+_PATH_TOKEN_RE = re.compile(r'(?i)(/(?:u|n/confirm)/)[^\s/\'"<>]{6,}')
 ERROR_MESSAGE_MAX = 300
 
 
 def sanitize_error_message(text: str) -> str:
     """
-    One line, at most 300 characters, with URL query strings, URL credentials, ``key=value``
-    secrets, bearer tokens, JWTs and long hex tokens removed.
+    One line, at most 300 characters, with sign-in links, URL query strings, URL credentials,
+    ``key=value`` secrets, bearer tokens, JWTs and long hex tokens removed.
     """
     value = ' '.join(str(text or '').split())
+    value = _SIGN_IN_LINK_RE.sub('[Filtered]', value)
+    value = _PATH_TOKEN_RE.sub(r'\1[Filtered]', value)
     value = _URL_QUERY_RE.sub(r'\1', value)
     value = _URL_USERINFO_RE.sub(r'\1', value)
     value = _BEARER_RE.sub(r'\1 [Filtered]', value)
@@ -258,8 +261,9 @@ class ScheduledJobFailed(CommandError):
     """
     Raised by the commands after a failed run was recorded and reported.
 
-    A ``CommandError``, so ``manage.py`` prints one line and exits with status 1 (cron
-    alerting works) without a second Sentry report from the uncaught-exception hook.
+    A ``CommandError``, so ``manage.py`` prints one line and exits with status 1 (an
+    external cron that alerts on a failed command still works) without a second
+    Sentry report from the uncaught-exception hook.
     """
 
     def __init__(self, run: ScheduledJobRun | None, message: str):
@@ -297,7 +301,7 @@ def _mark_interrupted(spec: JobSpec, current: ScheduledJobRun) -> None:
 
 
 def _record_platform_event(run: ScheduledJobRun) -> int | None:
-    from apps.actions.models import EventLog
+    from apps.actions.event_log import record_event
 
     event_id = EVENT_SUCCEEDED if run.status == ScheduledJobRun.STATUS_SUCCEEDED else EVENT_FAILED
     payload = {
@@ -310,7 +314,7 @@ def _record_platform_event(run: ScheduledJobRun) -> int | None:
         'error_key': run.error_key,
         'error_class': run.error_class,
     }
-    return EventLog.objects.create(company_id=None, event_type=event_id, data=payload).pk
+    return record_event(event_id, None, payload).pk
 
 
 def _finish(

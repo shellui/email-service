@@ -50,6 +50,8 @@ from apps.email.schema import (
     BroadcastPreviewSerializer,
     BroadcastSerializer,
     BatchResponseSerializer,
+    AuthLinkHostsSerializer,
+    AuthLinkHostsWriteSerializer,
     CatalogSerializer,
     EmailRuleListSerializer,
     EmailRulePatchSerializer,
@@ -95,6 +97,15 @@ from apps.email.schema import (
 from apps.email.unsubscribe import unsubscribe_token, unsubscribe_url
 from apps.providers.credentials import strip_internal_credentials
 from apps.email.document import validate_document
+from apps.email.link_hosts import (
+    HostRejected,
+    auth_link_hosts_payload,
+    effective_auth_link_hosts,
+    parse_extra_hosts,
+    platform_auth_link_hosts,
+    refresh_application_hosts,
+    replace_extra_hosts,
+)
 from apps.email.library import SETS as LIBRARY_SETS
 from apps.email.library import (
     create_library_template,
@@ -400,7 +411,7 @@ class CatalogView(APIView):
                         },
                     }
                 )
-            return Response({'auth_link_hosts': list(settings.EMAIL_AUTH_LINK_HOSTS), 'events': events})
+            return Response({'auth_link_hosts': _catalog_auth_link_hosts(request), 'events': events})
         return error_response(SendError(401, 'unauthorized'), request)
 
 
@@ -670,7 +681,7 @@ class TemplatePublishView(APIView):
             version = TemplateVersion.objects.filter(template=template, number=number).first()
             if version is None:
                 raise SendError(404, 'template_not_found')
-            publish_version(template, version)
+            publish_version(template, version, authorization=request.META.get('HTTP_AUTHORIZATION', ''))
         except SubstitutionError:
             return error_response(SendError(400, 'validation_failed', {'document': ['template_tags_forbidden']}), request)
         except SendError as exc:
@@ -760,7 +771,7 @@ class TemplateTestSendView(APIView):
                 link = unsubscribe_url(int(company_id), to_email, category)
                 variables['system.unsubscribe_url'] = link
                 variables['system.preferences_url'] = link
-            url_tokens = _url_tokens(definition) if definition else {}
+            url_tokens = _url_tokens(definition, company_id) if definition else {}
             subject, _missing_subject = substitute(subject, variables, html=False, subject=True, url_tokens=url_tokens)
             html, _missing_html = substitute(
                 html, variables, html=True, url_tokens=url_tokens, allow_http_localhost=settings.DEBUG
@@ -870,17 +881,31 @@ class RuleDetailView(APIView):
         return Response(status=204)
 
 
-def _provider_common() -> dict:
+def _catalog_auth_link_hosts(request) -> list[str]:
+    user = request.user
+    if isinstance(user, ServicePrincipal):
+        return platform_auth_link_hosts()
+    try:
+        company_id = company_from_request(request)
+        require_admin(request, company_id)
+    except SendError:
+        return platform_auth_link_hosts()
+    refresh_application_hosts(company_id, request.META.get('HTTP_AUTHORIZATION', ''))
+    return effective_auth_link_hosts(company_id)
+
+
+def _provider_common(company_id: int, authorization: str = '') -> dict:
+    refresh_application_hosts(company_id, authorization)
     return {
         'fallback_provider': settings.EMAIL_FALLBACK_PROVIDER,
         'fallback_configured': platform_fallback_configured(),
         'smtp_allowed': bool(settings.EMAIL_ALLOW_COMPANY_SMTP),
-        'auth_link_hosts': list(settings.EMAIL_AUTH_LINK_HOSTS),
+        'auth_link_hosts': effective_auth_link_hosts(company_id),
     }
 
 
-def _provider_payload(row: CompanyProvider | None) -> dict:
-    common = _provider_common()
+def _provider_payload(row: CompanyProvider | None, company_id: int, authorization: str = '') -> dict:
+    common = _provider_common(company_id, authorization)
     if row is None:
         return {
             'configured': False,
@@ -943,7 +968,7 @@ class ProviderView(APIView):
         except SendError as exc:
             return error_response(exc, request)
         row = CompanyProvider.objects.filter(company_id=company_id).first()
-        payload = _provider_payload(row)
+        payload = _provider_payload(row, company_id, request.META.get('HTTP_AUTHORIZATION', ''))
         payload['company_id'] = company_id
         return Response(payload)
 
@@ -1019,9 +1044,53 @@ class ProviderView(APIView):
             )
         except SendError as exc:
             return error_response(exc, request)
-        payload = _provider_payload(row)
+        payload = _provider_payload(row, company_id, request.META.get('HTTP_AUTHORIZATION', ''))
         payload['company_id'] = company_id
         return Response(payload)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth-link-hosts'],
+        operation_id='api_v1_auth_link_hosts_retrieve',
+        parameters=[COMPANY_QUERY],
+        responses={200: AuthLinkHostsSerializer, **_API_ERRORS},
+    ),
+    put=extend_schema(
+        tags=['auth-link-hosts'],
+        operation_id='api_v1_auth_link_hosts_update',
+        parameters=[COMPANY_QUERY],
+        request=AuthLinkHostsWriteSerializer,
+        responses={200: AuthLinkHostsSerializer, **_API_ERRORS},
+    ),
+)
+class AuthLinkHostsView(APIView):
+    """Extra hostnames a company may use in auth mail. Owners and staff only."""
+
+    def get(self, request):
+        try:
+            company_id = company_from_request(request)
+            require_admin(request, company_id)
+            refresh_application_hosts(company_id, request.META.get('HTTP_AUTHORIZATION', ''))
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(auth_link_hosts_payload(company_id))
+
+    def put(self, request):
+        try:
+            company_id = company_from_request(request)
+            user = require_admin(request, company_id)
+            if not isinstance(request.data, dict) or 'hosts' not in request.data:
+                raise SendError(400, 'validation_failed', {'hosts': ['required']})
+            try:
+                hosts = parse_extra_hosts(request.data.get('hosts'))
+            except HostRejected as exc:
+                raise SendError(400, 'validation_failed', {'hosts': [exc.code]}) from exc
+            replace_extra_hosts(company_id, hosts, user_id=getattr(user, 'user_id', None))
+            refresh_application_hosts(company_id, request.META.get('HTTP_AUTHORIZATION', ''))
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(auth_link_hosts_payload(company_id))
 
 
 @extend_schema_view(
@@ -1260,15 +1329,46 @@ class MetricsView(APIView):
                 return error_response(exc, request)
             body = metrics_http_body(company_id=company_id)
         elif getattr(user, 'is_staff', False) or getattr(user, 'access_global_metrics', False):
-            # Platform metrics (scheduled jobs, lane workers) are global only, never in a company scrape.
-            from apps.actions.scheduled_job_metrics import scheduled_jobs_metrics_body
-
-            body = metrics_http_body() + scheduled_jobs_metrics_body()
+            body = metrics_http_body()
         elif getattr(user, 'is_company_owner', False) and user.company_id is not None:
             body = metrics_http_body(company_id=int(user.company_id))
         else:
             return error_response(SendError(403, 'forbidden'), request)
         return HttpResponse(body, content_type=METRICS_CONTENT_TYPE)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['platform-metrics'],
+        operation_id='api_v1_metrics_all_retrieve',
+        summary='Prometheus metrics for the deployment, including scheduled jobs (staff)',
+        description=(
+            'Global Prometheus text. Requires staff, or a personal access token with '
+            '`access_global_metrics` (`pat_agm`). Includes `shellui_email_scheduled_job_*`, '
+            '`shellui_email_scheduler_*`, and `shellui_email_lane_worker_*`. `GET /api/v1/metrics` does not.'
+        ),
+        responses={
+            (200, 'text/plain'): OpenApiResponse(
+                response=OpenApiTypes.STR,
+                description='text/plain Prometheus exposition',
+            ),
+            401: ErrorSerializer,
+            403: ErrorSerializer,
+        },
+    ),
+)
+class MetricsAllView(APIView):
+    renderer_classes = [PrometheusTextRenderer]
+
+    def get(self, request):
+        from apps.email.metrics import METRICS_CONTENT_TYPE, global_metrics_http_body
+
+        user = request.user
+        if isinstance(user, ServicePrincipal) or not getattr(user, 'is_authenticated', False):
+            return error_response(SendError(401, 'unauthorized'), request)
+        if not (getattr(user, 'is_staff', False) or getattr(user, 'access_global_metrics', False)):
+            return error_response(SendError(403, 'forbidden'), request)
+        return HttpResponse(global_metrics_http_body(), content_type=METRICS_CONTENT_TYPE)
 
 
 @extend_schema_view(

@@ -58,6 +58,8 @@ def read_worker_heartbeats(client=None) -> dict[str, float]:
         raw = client.mget([worker_heartbeat_key(lane) for lane in LANES])
     except Exception:  # noqa: BLE001
         return {}
+    if not isinstance(raw, (list, tuple)):
+        return {}
     seen = {}
     for lane, value in zip(LANES, raw):
         if value is None:

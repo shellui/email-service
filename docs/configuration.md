@@ -92,7 +92,7 @@ identity-service also has `EMAIL_SERVICE_TIMEOUT_SECONDS` (default 5), `EMAIL_SE
 | `DEFAULT_FROM_NAME` | `Shellui` | Display name |
 | `BULK_FROM_EMAIL` | `news@news.shellui.com` | Broadcast sender for companies in `EMAIL_PLATFORM_COMPANY_IDS` that have no Bulk From |
 | `BULK_FROM_NAME` | `Shellui` | Display name for `BULK_FROM_EMAIL` |
-| `EMAIL_AUTH_LINK_HOSTS` | `id.shellui.com`, plus `localhost` and `127.0.0.1` when `DEBUG=true` | Hosts allowed in auth URL variables. `DEBUG=false` drops `localhost`, `127.0.0.1`, and `::1` |
+| `EMAIL_AUTH_LINK_HOSTS` | `id.shellui.com`, plus `localhost` and `127.0.0.1` when `DEBUG=true` | Platform hostnames allowed in every company's auth mail. Company application domains and Allowed link hosts are added per company. `DEBUG=false` drops `localhost`, `127.0.0.1`, and `::1` |
 | `EMAIL_PLATFORM_COMPANY_IDS` | empty | Comma-separated company ids that may use the platform From for non-auth mail |
 | `EMAIL_ALLOW_COMPANY_SMTP` | `false` | Allow a company to store an SMTP relay |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Django host header allowlist |

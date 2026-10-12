@@ -60,6 +60,8 @@ class DeliveryAttemptSerializer(serializers.Serializer):
     status = serializers.CharField()
     http_status = serializers.IntegerField(allow_null=True)
     error_code = serializers.CharField(allow_blank=True)
+    trigger = serializers.CharField(required=False, allow_null=True)
+    scheduled_job_run_id = serializers.IntegerField(required=False, allow_null=True)
 
 
 class DeliverySerializer(serializers.Serializer):
@@ -117,28 +119,28 @@ class ActionTestQueuedSerializer(serializers.Serializer):
 class ScheduledJobRunSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     job = serializers.CharField()
-    trigger = serializers.ChoiceField(choices=['celery', 'command'])
-    status = serializers.ChoiceField(choices=['running', 'succeeded', 'failed'])
+    trigger = serializers.CharField()
+    status = serializers.CharField()
     started_at = serializers.CharField(allow_null=True)
     finished_at = serializers.CharField(allow_null=True)
     duration_ms = serializers.IntegerField(allow_null=True)
-    counts = serializers.DictField(child=serializers.IntegerField())
+    counts = serializers.JSONField()
     error_key = serializers.CharField(allow_null=True)
     error_class = serializers.CharField(allow_null=True)
     error_message = serializers.CharField(allow_null=True)
-    host = serializers.CharField()
+    host = serializers.CharField(allow_blank=True)
     request_id = serializers.CharField()
     event_log_id = serializers.IntegerField(allow_null=True)
 
 
-class ScheduledJobWindowSerializer(serializers.Serializer):
+class ScheduledJobLast24hSerializer(serializers.Serializer):
     succeeded = serializers.IntegerField()
     failed = serializers.IntegerField()
 
 
-class ScheduledJobEntrySerializer(serializers.Serializer):
+class ScheduledJobSummarySerializer(serializers.Serializer):
     job = serializers.CharField()
-    health = serializers.ChoiceField(choices=['healthy', 'overdue', 'failing', 'disabled'])
+    health = serializers.CharField()
     overdue = serializers.BooleanField()
     interval_seconds = serializers.IntegerField()
     overdue_after_seconds = serializers.IntegerField()
@@ -147,9 +149,9 @@ class ScheduledJobEntrySerializer(serializers.Serializer):
     last_failure_at = serializers.CharField(allow_null=True)
     last_skipped_at = serializers.CharField(allow_null=True)
     last_duration_ms = serializers.IntegerField(allow_null=True)
-    last_counts = serializers.DictField(child=serializers.IntegerField())
-    next_expected_at = serializers.CharField()
-    last_24h = ScheduledJobWindowSerializer()
+    last_counts = serializers.JSONField()
+    next_expected_at = serializers.CharField(allow_null=True)
+    last_24h = ScheduledJobLast24hSerializer()
     skipped_locked_total = serializers.IntegerField()
 
 
@@ -165,29 +167,32 @@ class ScheduledJobsOverviewSerializer(serializers.Serializer):
     redis_reachable = serializers.BooleanField(allow_null=True)
     beat_last_seen_at = serializers.CharField(allow_null=True)
     beat_stale = serializers.BooleanField()
-    jobs = ScheduledJobEntrySerializer(many=True)
+    jobs = ScheduledJobSummarySerializer(many=True)
     workers_enabled = serializers.BooleanField()
     workers = LaneWorkerSerializer(many=True)
 
 
-class ScheduledJobRunListSerializer(serializers.Serializer):
+class ScheduledJobRunsSerializer(serializers.Serializer):
     job = serializers.CharField()
     results = ScheduledJobRunSerializer(many=True)
 
 
-class ScheduledJobDeliveryAttemptSerializer(serializers.Serializer):
+class ScheduledJobWebhookAttemptSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     delivery_id = serializers.CharField()
     company_id = serializers.IntegerField()
     event_type = serializers.CharField()
     status = serializers.CharField()
     http_status = serializers.IntegerField(allow_null=True)
-    error_code = serializers.CharField()
+    error_code = serializers.CharField(allow_blank=True)
     attempt_number = serializers.IntegerField()
     duration_ms = serializers.IntegerField(allow_null=True)
+    trigger = serializers.CharField(allow_null=True)
     created_at = serializers.CharField()
 
 
 class ScheduledJobRunDetailSerializer(ScheduledJobRunSerializer):
-    webhook_delivery_attempts = ScheduledJobDeliveryAttemptSerializer(many=True)
+    webhook_delivery_attempts = ScheduledJobWebhookAttemptSerializer(many=True)
     webhook_delivery_attempts_truncated = serializers.BooleanField()
+    email_events = serializers.ListField(child=serializers.JSONField())
+    email_events_truncated = serializers.BooleanField()

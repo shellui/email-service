@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from apps.actions.models import ActionOutbox, ActionRule, EventLog, ScheduledJobRun
+from apps.actions.models import (
+    ActionOutbox,
+    ActionRule,
+    EventLog,
+    ScheduledJobCounter,
+    ScheduledJobRun,
+    ScheduledJobState,
+)
 
 
 @admin.register(ActionRule)
@@ -29,3 +36,13 @@ class ScheduledJobRunAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+
+@admin.register(ScheduledJobState)
+class ScheduledJobStateAdmin(admin.ModelAdmin):
+    list_display = ('job', 'last_success_at', 'last_failure_at', 'last_skipped_at')
+
+
+@admin.register(ScheduledJobCounter)
+class ScheduledJobCounterAdmin(admin.ModelAdmin):
+    list_display = ('job', 'name', 'value')

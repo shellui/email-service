@@ -1,10 +1,10 @@
 """
 Run a management command as a scheduled Celery task.
 
-Each task calls the same command cron users run, so both paths share one code path: the
-command records the run (``trigger=celery`` here, ``command`` from cron). A Redis lock
-(config.task_lock) makes sure only one run of each job is active across all containers.
-See docs/scheduled-jobs.md#monitoring.
+Each task calls the same command cron users run, so both paths share one code path.
+The command records the run (``trigger=celery`` here, ``command`` from cron). A Redis
+lock (config.task_lock) makes sure only one run of each job is active across all
+containers. A failed run is already logged and stored by the command.
 """
 
 import io
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 def run_locked_command(name: str, ttl: int, **options) -> str:
     """
     ``skipped`` when another run holds the lock, ``failed`` when the run failed (already
-    recorded, logged at ERROR and sent to Sentry by the command), else the command summary.
+    recorded), else the command summary.
     """
     from apps.actions.scheduled_jobs import (
         TRIGGER_CELERY,

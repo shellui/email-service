@@ -86,3 +86,10 @@ def metrics_http_body(*, company_id: int | None = None) -> bytes:
         ).set(row['n'])
     expiries.set(base.filter(lane='auth', status=Message.STATUS_EXPIRED).count())
     return generate_latest(registry)
+
+
+def global_metrics_http_body() -> bytes:
+    """Global queue gauges plus scheduled-job series. Staff scrape only (``GET /api/v1/metrics/all``)."""
+    from apps.actions.scheduled_job_metrics import scheduled_jobs_metrics_body
+
+    return metrics_http_body() + scheduled_jobs_metrics_body()

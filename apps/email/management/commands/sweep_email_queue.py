@@ -13,7 +13,7 @@ class Command(BaseCommand):
     help = 'Expire overdue messages, release stale send leases, and move broadcasts forward.'
 
     def add_arguments(self, parser):
-        # Set to "celery" by the Celery task; cron runs keep the default.
+        # Set to "celery" by the Celery task; external runs keep the default.
         parser.add_argument('--trigger', choices=TRIGGERS, default=TRIGGER_COMMAND, help=argparse.SUPPRESS)
 
     def handle(self, *args, **options):
@@ -21,13 +21,14 @@ class Command(BaseCommand):
             result = sweep()
             broadcasts = process_broadcasts()
             counts = {
-                'messages_expired': result['expired'],
-                'send_leases_released': result['released'],
-                'broadcasts_pending': broadcasts,
+                'expired': int(result['expired']),
+                'released': int(result['released']),
+                'broadcasts': int(broadcasts),
             }
-            return (result, broadcasts), counts
+            return counts, counts
 
-        (result, broadcasts), run_id = run_recorded(JOB, options.get('trigger') or TRIGGER_COMMAND, work)
+        stats, run_id = run_recorded(JOB, options.get('trigger') or TRIGGER_COMMAND, work)
         self.stdout.write(
-            f"expired={result['expired']} released={result['released']} broadcasts={broadcasts} run_id={run_id}"
+            f"expired={stats['expired']} released={stats['released']} broadcasts={stats['broadcasts']} "
+            f'run_id={run_id}'
         )
