@@ -155,6 +155,12 @@ class ScheduledJobSummarySerializer(serializers.Serializer):
     skipped_locked_total = serializers.IntegerField()
 
 
+class LaneWorkerSerializer(serializers.Serializer):
+    lane = serializers.ChoiceField(choices=['auth', 'transactional', 'bulk'])
+    last_seen_at = serializers.CharField(allow_null=True)
+    stale = serializers.BooleanField()
+
+
 class ScheduledJobsOverviewSerializer(serializers.Serializer):
     generated_at = serializers.CharField()
     scheduler_enabled = serializers.BooleanField()
@@ -162,6 +168,8 @@ class ScheduledJobsOverviewSerializer(serializers.Serializer):
     beat_last_seen_at = serializers.CharField(allow_null=True)
     beat_stale = serializers.BooleanField()
     jobs = ScheduledJobSummarySerializer(many=True)
+    workers_enabled = serializers.BooleanField()
+    workers = LaneWorkerSerializer(many=True)
 
 
 class ScheduledJobRunsSerializer(serializers.Serializer):
@@ -176,6 +184,7 @@ class ScheduledJobWebhookAttemptSerializer(serializers.Serializer):
     event_type = serializers.CharField()
     status = serializers.CharField()
     http_status = serializers.IntegerField(allow_null=True)
+    error_code = serializers.CharField(allow_blank=True)
     attempt_number = serializers.IntegerField()
     duration_ms = serializers.IntegerField(allow_null=True)
     trigger = serializers.CharField(allow_null=True)

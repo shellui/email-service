@@ -230,6 +230,7 @@ SPECTACULAR_SETTINGS = {
     'ENUM_NAME_OVERRIDES': {
         'AudienceModeEnum': ['filter', 'pick', 'newsletter'],
         'SubscriberAddModeEnum': ['confirm', 'consented'],
+        'ScheduledJobRunStatusEnum': ['running', 'succeeded', 'failed'],
     },
 }
 

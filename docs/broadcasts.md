@@ -1,3 +1,9 @@
+---
+title: Broadcasts
+sidebar_label: Broadcasts
+description: One email to many company members or to a newsletter list, each recipient in their language.
+---
+
 # Broadcasts
 
 A broadcast is one email a company writes once and sends to many of its users: product news, a launch, a policy change. Company owners and staff create them in the admin under **Email > Broadcasts**.

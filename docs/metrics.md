@@ -1,3 +1,9 @@
+---
+title: Metrics
+sidebar_label: Metrics
+description: Admin statistics and the Prometheus gauges on GET /api/v1/metrics.
+---
+
 # Metrics
 
 ## Admin stats
@@ -12,7 +18,7 @@ Grouped by `by_lane`, `by_event` (catalog `event_type`), and `by_day`. Query `fr
 
 `sent` includes every status the provider accepted. A later `delivered` or `bounced` row still counts as `sent`.
 
-`skipped` counts accepted events that queued no message: `no_recipients`, `no_rule`, and `rule_disabled` (older rows only; new skips use `no_rule`).
+`skipped` counts accepted events that queued no message: `no_recipients`, `no_rule`, and `rule_disabled` (always 0).
 
 ## Prometheus
 
@@ -34,7 +40,7 @@ Gauges, computed from the database at scrape time:
 
 Empty lanes are reported as 0 for depth and age so a scrape still lists `auth`, `transactional`, and `bulk`.
 
-This endpoint never includes scheduled job metrics.
+This endpoint never includes scheduled job or lane worker metrics.
 
 ## Global Prometheus
 
@@ -42,4 +48,4 @@ This endpoint never includes scheduled job metrics.
 
 Auth: staff, or a personal access token with `access_global_metrics` (JWT claim `pat_agm`). Company owners get `403`. A call without a token gets `401`.
 
-The body is the same queue gauges as `GET /api/v1/metrics` with no `company_id`, plus the scheduler series `shellui_email_scheduled_job_*` and `shellui_email_scheduler_*`. Names, labels, and alert rules are in [Workers and scheduled jobs](scheduled-jobs.md#prometheus-metrics).
+The body is the same queue gauges as `GET /api/v1/metrics` with no `company_id`, plus `shellui_email_scheduled_job_*`, `shellui_email_scheduler_*`, and `shellui_email_lane_worker_*`. Names, labels, and alert rules are in [Scheduled jobs](scheduled-jobs.md#prometheus-metrics).

@@ -1,8 +1,10 @@
 ---
-description: What the email-service container runs next to the web server - the lane workers and the scheduled jobs - and how to split or turn them off.
+title: Scheduled jobs
+sidebar_label: Scheduled jobs
+description: Lane workers, retry_webhooks, sweep_email_queue, and purge_expired_data inside the email-service image.
 ---
 
-# Workers and scheduled jobs
+# Scheduled jobs
 
 The email-service Docker image runs everything it needs to deliver mail in one container: the web server, one delivery worker per lane, and the scheduled jobs. With `REDIS_URL` set (required in production), there is nothing else to set up: no extra worker containers and no cron.
 
@@ -18,21 +20,21 @@ The email-service Docker image runs everything it needs to deliver mail in one c
 
 The container starts with database migrations, then starts every process. A `SIGTERM` (for example `docker stop` or a redeploy) is passed to all of them. If one process exits, the others are stopped and the container exits, so Docker or Coolify restarts it.
 
-## Scheduled jobs
+## The three jobs
 
 | Job | Schedule | What it does |
 | --- | --- | --- |
-| `retry_webhooks` | Every minute | Retries pending [Shellui Actions](actions.md) webhook deliveries |
+| `retry_webhooks` | Every minute | Sends due [Shellui Actions](actions.md) webhook deliveries, first tries and retries |
 | `sweep_email_queue` | Every minute | Expires overdue messages, releases send leases left by a worker that stopped mid-send, and moves broadcasts forward |
-| `purge_expired_data` | Every hour, at minute 17 | Deletes messages, send requests, event log rows, finished deliveries, and unconfirmed newsletter sign-ups past their retention |
+| `purge_expired_data` | Every hour, at minute 17 | Deletes messages, send requests, event log rows, finished deliveries, unconfirmed newsletter sign-ups, and scheduled job runs past their retention |
 
 Each job is the management command of the same name, so its output is the same whether the scheduler or your own cron runs it. Every run logs one summary line, for example:
 
 ```text
-INFO [config.scheduled_tasks] sweep_email_queue: expired=0 released=0 broadcasts=0 run_id=1
+INFO [config.scheduled_tasks] [req=-] sweep_email_queue: expired=0 released=0 broadcasts=0 run_id=1842
 ```
 
-`run_id` is the stored run. A failed run is logged as an error and reported to Sentry when `SENTRY_DSN` is set. See [Monitoring](#monitoring).
+Every run is also recorded, see [Monitoring](#monitoring).
 
 ## Several containers
 
@@ -91,24 +93,43 @@ Set `SCHEDULER_ENABLED=false` and run the commands with the same image, environm
 
 ## Monitoring
 
-Staff can see whether the three jobs are running, what the last run did, and which Shellui Actions webhook attempts a run made. Company owners cannot. The data is platform-wide.
+Every run of the three jobs is recorded, whether the in-container beat or your own cron started it, and each lane worker reports a heartbeat. Django staff can read both through the API and Prometheus. Company owners never see them.
 
-Each finished run stores one `ScheduledJobRun` row for 7 days, the latest timestamps in `ScheduledJobState`, monotonic counters for Prometheus, and one staff-only platform event (`email.scheduled_job.succeeded` or `email.scheduled_job.failed`). Those events have no company, are not in the webhook catalog, and are not delivered to Shellui Actions rules. `GET /api/v1/actions/event-log?scope=platform` lists them for staff. A company event log does not.
+### What each run records
 
-`counts` for `retry_webhooks`: `webhook_deliveries_attempted`, `webhook_deliveries_succeeded`, `webhook_deliveries_failed` (will be retried), `webhook_deliveries_given_up` (now `dead`).
+The management command records its own run, so the Celery path and the cron path give the same data. Each run writes one `ScheduledJobRun` row:
 
-`counts` for `sweep_email_queue`: `expired`, `released`, `broadcasts`.
+| Field | Content |
+| --- | --- |
+| `job` | `retry_webhooks`, `sweep_email_queue`, or `purge_expired_data` |
+| `trigger` | `celery` (in-container beat) or `command` (your scheduler, or a manual run) |
+| `status` | `running`, `succeeded`, or `failed` |
+| `started_at`, `finished_at`, `duration_ms` | Timing |
+| `counts` | Items processed, see below |
+| `error_key`, `error_class`, `error_message` | On failure: a stable key (`database_error`, `redis_error`, `timeout`, `network_error`, `interrupted`, `unexpected_error`), the exception class, and a short message without URL query strings, credentials, tokens, or sign-in links |
+| `host` | Host name and process id |
+| `event_log_id` | The platform event written for this run |
 
-`counts` for `purge_expired_data`: rows deleted (`messages`, `send_requests`, `events`, `webhook_deliveries`, `newsletter_pending`, `newsletter_cleared`, `scheduled_job_runs`) and `complete`.
+`counts` per job:
+
+- `retry_webhooks`: `webhook_deliveries_attempted`, `webhook_deliveries_succeeded`, `webhook_deliveries_failed` (will be retried), and `webhook_deliveries_given_up` (now `dead`)
+- `sweep_email_queue`: `expired`, `released`, and `broadcasts` (broadcasts that still need work after the run)
+- `purge_expired_data`: rows deleted per type (`messages`, `send_requests`, `events`, `webhook_deliveries`, `newsletter_pending`, `newsletter_cleared`, `scheduled_job_runs`) and `complete` (`true` when the run finished deleting old scheduled job runs)
 
 Some runs are not stored:
 
-- Skipped runs: when another container holds the lock, the run only increments the `skipped_locked` counter
-- Dry runs: `retry_webhooks --dry-run` changes nothing, so it is not recorded
+- **Skipped runs**: when another container holds the lock, the run only increments the `skipped_locked` counter. With two replicas, one run in two is skipped, and a row for each would double the writes
+- **Dry runs**: `retry_webhooks --dry-run` changes nothing, so it is not recorded
 
-`purge_expired_data` deletes runs older than 7 days. The latest timestamps per job and the metric counters are kept. A `running` row older than the job's lock expiry (5 minutes for `retry_webhooks` and `sweep_email_queue`, 15 minutes for `purge_expired_data`) belongs to a process that died, so the next run marks it `failed` with `error_key=interrupted`.
+Runs are kept 7 days: `purge_expired_data` deletes older ones. The latest timestamps per job and the metric counters are never purged. A `running` row older than the job's lock expiry (5 minutes for `retry_webhooks` and `sweep_email_queue`, 15 minutes for `purge_expired_data`) belongs to a process that died, so the next run marks it `failed` with `error_key=interrupted`.
 
-### Health
+While a run executes, its log lines carry `[req=sjr-{run_id}]`, so one search finds everything a run logged.
+
+### Events
+
+Each finished run writes one platform event without a company: `email.scheduled_job.succeeded` or `email.scheduled_job.failed`. The data holds `run_id`, `job`, `trigger`, `duration_ms`, `counts`, `host`, `error_key`, and `error_class` (never the error message). Staff list them with `GET /api/v1/actions/event-log?scope=platform`. Company owners get `403` on that scope and on the detail of a platform event. These events are not in the Shellui Actions catalog, so no company can subscribe a webhook to them. They follow `EVENT_LOG_RETENTION_DAYS` like other event log rows.
+
+### Health and overdue jobs
 
 A job is overdue when its last successful run is older than 3 times its interval:
 
@@ -118,29 +139,48 @@ A job is overdue when its last successful run is older than 3 times its interval
 | `sweep_email_queue` | 1 minute | 3 minutes |
 | `purge_expired_data` | 1 hour | 2 hours 15 minutes |
 
-Before the first successful run, the clock starts when the monitoring tables were created (the migration). Each job gets one `health` value:
+Before the first successful run, the clock starts when the monitoring tables were created. Each job gets one `health` value:
 
-- `disabled`: `SCHEDULER_ENABLED=false` and no run was ever recorded
+- `disabled`: `SCHEDULER_ENABLED=false` and no run was ever recorded. Set up your cron (see [Use your own scheduler](#use-your-own-scheduler)); the first recorded run turns monitoring on
 - `failing`: the last finished run failed
 - `overdue`: no successful run within the limit above
 - `healthy`: none of the above
 
-External cron is monitored like the in-container scheduler, so `SCHEDULER_ENABLED=false` with a working cron reports `healthy`.
+Cron runs are monitored like in-container runs, so `SCHEDULER_ENABLED=false` with a working cron reports `healthy`.
 
-Two more signals cover the scheduler itself:
+More signals cover the processes themselves:
 
 - `redis_reachable`: email-service answers a `PING` on the broker (`null` without a broker)
-- beat heartbeat: each time beat publishes a job, it stores the time in Redis (`email-service:scheduler:beat:heartbeat`). `beat_stale` is true when the scheduler is enabled and beat published nothing for 3 minutes
+- beat heartbeat: each time beat publishes a job, it stores the time in Redis (`email-service:scheduler:beat:heartbeat`). `beat_stale` is true when the scheduler is enabled and beat published nothing for 3 minutes. A fresh heartbeat with an overdue job means the Celery worker is stuck or down
+- lane worker heartbeat: each `run_email_worker` stores the time of its last poll in Redis at most every 15 seconds (`email-service:scheduler:worker:{lane}:heartbeat`). A lane is `stale` when no worker polled for 60 seconds, wherever the workers run. Mail on that lane is not sent until a worker is back
 
-### Staff API
+### Admin API (staff only)
 
-The endpoints use the same Bearer JWT as other admin endpoints. They need `is_staff`. Other callers get `403`, including company owners, and calls without a token get `401`. A personal access token with global metrics access is not enough here. No `company_id` is needed. The success body uses keys and enums only (`health`, `status`, `error_key`, count names), which the admin panel translates. Failed calls use this service's `error_code` (`unauthorized`, `forbidden`, `not_found`, `validation_failed`).
+The endpoints use the same Bearer JWT as other admin endpoints and need Django `is_staff`: other callers get `403`, including company owners and tokens with `access_global_metrics`, and calls without a token get `401`. No `company_id` is needed. Responses contain keys and enums only (`health`, `status`, `error_key`, count names).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/v1/scheduled-jobs` | `scheduler_enabled`, `redis_reachable`, `beat_last_seen_at`, `beat_stale`, and per job: `health`, `overdue`, `last_run`, `last_success_at`, `last_failure_at`, `last_skipped_at`, `last_duration_ms`, `last_counts`, `next_expected_at`, `last_24h`, `skipped_locked_total` |
+| `GET` | `/api/v1/scheduled-jobs` | `scheduler_enabled`, `redis_reachable`, `beat_last_seen_at`, `beat_stale`, `workers_enabled`, `workers` (per lane: `last_seen_at`, `stale`), and per job: `health`, `overdue`, `last_run`, `last_success_at`, `last_failure_at`, `last_skipped_at`, `last_duration_ms`, `last_counts`, `next_expected_at`, `last_24h`, `skipped_locked_total` |
 | `GET` | `/api/v1/scheduled-jobs/{job}/runs?limit=20&status=failed` | Recent runs, newest first. `limit` 1 to 100, `status` optional |
 | `GET` | `/api/v1/scheduled-jobs/runs/{id}` | One run, plus the webhook attempts it made. `email_events` is an empty list |
+| `GET` | `/api/v1/actions/event-log?scope=platform` | The platform events of the runs |
+
+Example job entry:
+
+```json
+{
+  "job": "sweep_email_queue",
+  "health": "healthy",
+  "overdue": false,
+  "interval_seconds": 60,
+  "overdue_after_seconds": 180,
+  "last_success_at": "2026-10-06T13:21:02.511+00:00",
+  "next_expected_at": "2026-10-06T13:22:01.904+00:00",
+  "last_counts": {"expired": 0, "released": 1, "broadcasts": 0},
+  "last_24h": {"succeeded": 1439, "failed": 1},
+  "skipped_locked_total": 0
+}
+```
 
 `email_events` is present so the admin panel can reuse the view it uses for identity-service, hosting-service, and storage-service. email-service does not post events to itself, so that list stays empty. Webhook attempts are filled in.
 
@@ -164,16 +204,16 @@ Run records and error text never store a token or a sign-in link. Query strings,
 A failed run:
 
 - is stored with `status=failed` and its `error_key`
-- logs one ERROR line with the job, run id, trigger and sanitized error, plus the traceback
-- is reported to Sentry when `SENTRY_DSN` is set, tagged `scheduled_job`, `scheduled_job_trigger` and `scheduled_job_run_id`
+- logs one ERROR line with the job, run id, trigger, and sanitized error, plus the traceback. The original exception message is replaced by the sanitized one, so a URL query string or credential in it never reaches the logs
+- is reported to Sentry when `SENTRY_DSN` is set, tagged `scheduled_job`, `scheduled_job_trigger`, and `scheduled_job_run_id`
 - increments `shellui_email_scheduled_job_runs_total{status="failed"}`
-- makes the command exit with status 1, so an external cron that alerts on a failed command still works
+- makes the command exit with status 1 and print `retry_webhooks failed: OperationalError: … (run_id=1234)`, so an external scheduler that alerts on failed jobs still works
 
 If Redis is down when a Celery run tries to take its lock, that run is recorded as `failed` with `error_key=redis_error`. The Celery task returns `failed` after the run is stored, so the error is logged once.
 
 ### Prometheus metrics
 
-`GET /api/v1/metrics/all` includes the scheduled job metrics. It needs staff, or a personal access token with `access_global_metrics` (`pat_agm`). `GET /api/v1/metrics` never includes them. Values come from the database, so they are the same whichever gunicorn worker answers and survive restarts.
+`GET /api/v1/metrics/all` includes the scheduled job and lane worker metrics. It needs staff, or a personal access token with `access_global_metrics` (`pat_agm`). `GET /api/v1/metrics` never includes them, including a company scrape. Values come from the database and Redis, so they are the same whichever gunicorn worker answers and survive restarts.
 
 | Metric | Type | Labels | Meaning |
 | --- | --- | --- | --- |
@@ -186,12 +226,14 @@ If Redis is down when a Celery run tries to take its lock, that run is recorded 
 | `shellui_email_scheduler_enabled` | gauge | none | 1 when `SCHEDULER_ENABLED` is true |
 | `shellui_email_scheduler_redis_up` | gauge | none | 1 when the broker answers `PING`. Absent without a broker |
 | `shellui_email_scheduler_beat_last_seen_timestamp_seconds` | gauge | none | Unix time beat last published a job. Absent before the first one |
+| `shellui_email_lane_worker_up` | gauge | `lane` | 1 when a worker of the lane polled within 60 seconds. Absent without a broker |
+| `shellui_email_lane_worker_last_seen_timestamp_seconds` | gauge | `lane` | Unix time a worker of the lane last polled. Absent before the first poll |
 
 Suggested alert rules:
 
 ```yaml
 groups:
-  - name: email-scheduled-jobs
+  - name: email-service
     rules:
       - alert: EmailScheduledJobOverdue
         expr: shellui_email_scheduled_job_overdue == 1
@@ -204,6 +246,13 @@ groups:
         expr: increase(shellui_email_scheduled_job_runs_total{status="failed"}[15m]) >= 3
         labels:
           severity: warning
+      - alert: EmailLaneWorkerDown
+        expr: shellui_email_lane_worker_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "no email-service worker is sending the {{ $labels.lane }} lane"
       - alert: EmailSchedulerRedisDown
         expr: shellui_email_scheduler_redis_up == 0
         for: 2m
@@ -215,10 +264,11 @@ groups:
           severity: info
 ```
 
-The overdue alert covers a stopped beat, a stuck worker, and a missing external schedule alike.
+The overdue alert covers a stopped beat, a stuck Celery worker, and a missing cron line alike. `shellui_email_queue_oldest_age_seconds` (see [Metrics](metrics.md)) is a second signal for stuck lanes. Scrape every 30 to 60 seconds: each scrape runs a few indexed queries and two Redis calls.
 
 ## Related
 
 - [Lanes](lanes.md)
 - [Broadcasts](broadcasts.md)
 - [Configuration](configuration.md)
+- [Metrics](metrics.md)

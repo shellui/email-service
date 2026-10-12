@@ -1344,8 +1344,8 @@ class MetricsView(APIView):
         summary='Prometheus metrics for the deployment, including scheduled jobs (staff)',
         description=(
             'Global Prometheus text. Requires staff, or a personal access token with '
-            '`access_global_metrics` (`pat_agm`). Includes `shellui_email_scheduled_job_*` and '
-            '`shellui_email_scheduler_*`. `GET /api/v1/metrics` does not.'
+            '`access_global_metrics` (`pat_agm`). Includes `shellui_email_scheduled_job_*`, '
+            '`shellui_email_scheduler_*`, and `shellui_email_lane_worker_*`. `GET /api/v1/metrics` does not.'
         ),
         responses={
             (200, 'text/plain'): OpenApiResponse(

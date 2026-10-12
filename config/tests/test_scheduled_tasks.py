@@ -39,6 +39,14 @@ class FakeRedis:
         self.store[key] = (value, time.monotonic() + (ex or 3600))
         return True
 
+    def get(self, key):
+        self._expire()
+        item = self.store.get(key)
+        return item[0].encode() if item else None
+
+    def mget(self, keys):
+        return [self.get(key) for key in keys]
+
     def eval(self, script, numkeys, key, token):
         self._expire()
         if key in self.store and self.store[key][0] == token:

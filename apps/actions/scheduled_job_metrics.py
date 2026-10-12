@@ -1,14 +1,15 @@
 """
-Prometheus metrics for the scheduled jobs, served by ``GET /api/v1/metrics/all`` only.
+Prometheus metrics for the scheduled jobs and lane workers, served by ``GET /api/v1/metrics/all`` only.
 
 Runs happen in the Celery worker or a cron process, not in gunicorn, so values are read
 from the database at scrape time (``ScheduledJobCounter``, ``ScheduledJobState``) instead
-of in-process counters. A dedicated registry keeps them out of ``GET /api/v1/metrics``.
-Labels: ``job``, ``status`` and ``kind`` only (low cardinality).
+of in-process counters. Heartbeats come from Redis. A dedicated registry keeps them out of
+``GET /api/v1/metrics``. Labels: ``job``, ``status``, ``kind`` and ``lane`` only (low cardinality).
 """
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.utils import timezone
 from prometheus_client import CollectorRegistry, generate_latest
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
@@ -36,6 +37,8 @@ METRIC_NAMES = (
     'shellui_email_scheduler_enabled',
     'shellui_email_scheduler_redis_up',
     'shellui_email_scheduler_beat_last_seen_timestamp_seconds',
+    'shellui_email_lane_worker_up',
+    'shellui_email_lane_worker_last_seen_timestamp_seconds',
 )
 
 
@@ -107,6 +110,32 @@ class ScheduledJobsCollector:
                 'Unix time when Celery beat last published a scheduled job.',
                 value=beat.timestamp(),
             )
+        if reachable and getattr(settings, 'CELERY_BROKER_URL', ''):
+            yield from _lane_worker_metrics(now)
+
+
+def _lane_worker_metrics(now):
+    from apps.email.worker_heartbeat import LANES, WORKER_STALE_AFTER, read_worker_heartbeats
+
+    seen = read_worker_heartbeats()
+    up = GaugeMetricFamily(
+        'shellui_email_lane_worker_up',
+        '1 when a worker of the lane polled within the last 60 seconds.',
+        labels=('lane',),
+    )
+    last = GaugeMetricFamily(
+        'shellui_email_lane_worker_last_seen_timestamp_seconds',
+        'Unix time when a worker of the lane last polled. Absent before the first poll.',
+        labels=('lane',),
+    )
+    stale_after = WORKER_STALE_AFTER.total_seconds()
+    for lane in LANES:
+        ts = seen.get(lane)
+        up.add_metric([lane], 1 if ts is not None and now.timestamp() - ts <= stale_after else 0)
+        if ts is not None:
+            last.add_metric([lane], ts)
+    yield up
+    yield last
 
 
 _registry = CollectorRegistry(auto_describe=False)

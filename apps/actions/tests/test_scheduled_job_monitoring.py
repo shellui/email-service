@@ -37,6 +37,7 @@ from apps.authapi.principal import EmailPrincipal
 from apps.authapi.service_auth import ServicePrincipal
 from apps.email import tasks as email_tasks
 from apps.email.metrics import metrics_http_body
+from apps.email.worker_heartbeat import HeartbeatThrottle, read_worker_heartbeats, record_worker_heartbeat
 from config.request_context import request_id_var
 from config.task_lock import beat_heartbeat_key, lock_key
 from config.tests.test_scheduled_tasks import FakeRedis
@@ -69,6 +70,9 @@ class FakeRedisWithGet(FakeRedis):
         self._expire()
         item = self.store.get(key)
         return item[0].encode() if item else None
+
+    def mget(self, keys):
+        return [self.get(key) for key in keys]
 
     def ping(self):
         return True
@@ -440,8 +444,12 @@ class StaffApiTests(TestCase):
                 'beat_last_seen_at',
                 'beat_stale',
                 'jobs',
+                'workers_enabled',
+                'workers',
             },
         )
+        self.assertEqual([worker['lane'] for worker in data['workers']], ['auth', 'transactional', 'bulk'])
+        self.assertTrue(all(worker['stale'] for worker in data['workers']))
         self.assertEqual(
             [job['job'] for job in data['jobs']],
             ['retry_webhooks', 'sweep_email_queue', 'purge_expired_data'],
@@ -585,8 +593,89 @@ class MetricsTests(TestCase):
         text = response.content.decode()
         self.assertNotIn('shellui_email_scheduled_job', text)
         self.assertNotIn('shellui_email_scheduler', text)
+        self.assertNotIn('lane_worker', text)
         self.assertIn('shellui_email_queue_depth', text)
 
         staff_company = self._client(staff=True).get('/api/v1/metrics')
         self.assertEqual(staff_company.status_code, 200)
-        self.assertNotIn('shellui_email_scheduled_job', staff_company.content.decode())
+        staff_text = staff_company.content.decode()
+        self.assertNotIn('shellui_email_scheduled_job', staff_text)
+        self.assertNotIn('lane_worker', staff_text)
+
+    @override_settings(CELERY_BROKER_URL='redis://broker:6379/0')
+    def test_global_metrics_include_lane_workers(self):
+        fake = FakeRedisWithGet()
+        now = timezone.now().timestamp()
+        record_worker_heartbeat('auth', now=now, client=fake)
+        record_worker_heartbeat('bulk', now=now - 600, client=fake)
+        with mock.patch('config.task_lock.get_lock_client', return_value=fake):
+            body = self._client(staff=True).get('/api/v1/metrics/all').content.decode()
+        self.assertIn('shellui_email_lane_worker_up{lane="auth"} 1.0', body)
+        self.assertIn('shellui_email_lane_worker_up{lane="bulk"} 0.0', body)
+        self.assertIn('shellui_email_lane_worker_up{lane="transactional"} 0.0', body)
+        self.assertIn('shellui_email_lane_worker_last_seen_timestamp_seconds{lane="auth"}', body)
+        self.assertNotIn('shellui_email_lane_worker_last_seen_timestamp_seconds{lane="transactional"}', body)
+
+
+class DeliveryCorrelationTests(TestCase):
+    def setUp(self):
+        self.fake = FakeRedisWithGet()
+        patcher = mock.patch('config.task_lock.get_lock_client', return_value=self.fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @mock.patch('apps.actions.delivery.resolve_webhook_endpoint', return_value='resolved')
+    @mock.patch('apps.actions.delivery._post_pinned')
+    def test_attempts_carry_the_run_id_and_trigger(self, post, _resolve):
+        post.return_value = mock.Mock(status_code=200, headers={})
+        row = ActionOutbox.objects.create(
+            company_id=7,
+            event_type='email.message.sent',
+            envelope={'id': 'evt'},
+            webhook_id='wh_corr',
+            target_url='https://hooks.example.com/x',
+            next_attempt_at=timezone.now(),
+        )
+        call_command('retry_webhooks', stdout=StringIO())
+        run = ScheduledJobRun.objects.get()
+        attempt = DeliveryAttempt.objects.get(outbox=row)
+        self.assertEqual(attempt.scheduled_job_run_id, run.pk)
+        self.assertEqual(attempt.trigger, 'automatic_retry')
+        self.assertEqual(run.counts['webhook_deliveries_succeeded'], 1)
+        request_id = post.call_args.args[2]['X-Request-ID']
+        self.assertEqual(request_id, f'sjr-{run.pk}')
+
+
+class WorkerHeartbeatTests(TestCase):
+    def test_record_and_read(self):
+        fake = FakeRedisWithGet()
+        self.assertTrue(record_worker_heartbeat('auth', now=100.0, client=fake))
+        self.assertEqual(read_worker_heartbeats(client=fake), {'auth': 100.0})
+        self.assertEqual(fake.store['email-service:scheduler:worker:auth:heartbeat'][0], '100.000')
+
+    def test_redis_errors_never_raise(self):
+        client = mock.Mock()
+        client.set.side_effect = redis.ConnectionError('down')
+        client.mget.side_effect = redis.ConnectionError('down')
+        with self.assertLogs('apps.email.worker_heartbeat', level='WARNING'):
+            self.assertFalse(record_worker_heartbeat('auth', client=client))
+        self.assertEqual(read_worker_heartbeats(client=client), {})
+
+    @override_settings(CELERY_BROKER_URL='')
+    def test_no_broker_stores_nothing(self):
+        self.assertFalse(record_worker_heartbeat('auth'))
+
+    def test_throttle(self):
+        throttle = HeartbeatThrottle('bulk', interval=15)
+        with mock.patch('apps.email.worker_heartbeat.record_worker_heartbeat') as record:
+            self.assertTrue(throttle.beat(now=0))
+            self.assertFalse(throttle.beat(now=10))
+            self.assertTrue(throttle.beat(now=16))
+        self.assertEqual(record.call_count, 2)
+
+    @override_settings(CELERY_BROKER_URL='redis://broker:6379/0')
+    def test_worker_command_beats(self):
+        fake = FakeRedisWithGet()
+        with mock.patch('config.task_lock.get_lock_client', return_value=fake):
+            call_command('run_email_worker', '--lane', 'transactional', '--once', stdout=StringIO())
+            self.assertIn('transactional', read_worker_heartbeats())

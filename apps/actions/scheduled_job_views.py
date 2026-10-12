@@ -46,13 +46,14 @@ def _require_platform_staff(request) -> Response | None:
 @extend_schema_view(
     get=extend_schema(
         tags=['scheduled-jobs'],
-        summary='Scheduled jobs health (staff)',
+        summary='Scheduled jobs and lane workers health (staff)',
         description=(
             'Per job (`retry_webhooks`, `sweep_email_queue`, `purge_expired_data`): `health` '
             '(`healthy`, `overdue`, `failing`, `disabled`), `overdue` (no successful run within '
             '`overdue_after_seconds`), `last_run`, `last_success_at`, `next_expected_at`, `last_counts` '
-            'and `last_24h` run counts. Also `scheduler_enabled`, `redis_reachable` (null without a broker) '
-            'and the beat heartbeat (`beat_last_seen_at`, `beat_stale`).'
+            'and `last_24h` run counts. Also `scheduler_enabled`, `redis_reachable` (null without a broker), '
+            'the beat heartbeat (`beat_last_seen_at`, `beat_stale`), and one entry per lane worker '
+            '(`last_seen_at`, `stale`).'
         ),
         operation_id='api_v1_scheduled_jobs_list',
         responses={200: ScheduledJobsOverviewSerializer, **_STAFF_RESPONSES},
@@ -169,6 +170,7 @@ class ScheduledJobRunDetailView(APIView):
                 'event_type': attempt.outbox.event_type,
                 'status': attempt.status,
                 'http_status': attempt.http_status,
+                'error_code': attempt.error_code,
                 'attempt_number': attempt.attempt_number,
                 'duration_ms': attempt.duration_ms,
                 'trigger': attempt.trigger or None,

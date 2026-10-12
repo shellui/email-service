@@ -1,10 +1,16 @@
+---
+title: Newsletters
+sidebar_label: Newsletters
+description: Public lists, double opt-in, the website form, Turnstile, and CSV import and export.
+---
+
 # Newsletters
 
 A newsletter is a mailing list anyone can join from a company's website, with or without an account. People sign up with their email address, get a confirmation email, and are on the list once they click it (double opt-in). The company then writes issues as broadcasts and sends them to the list. Company owners and staff manage lists in the admin under **Email > Newsletters**.
 
 ## How it works
 
-1. **Create a list.** email-service gives it a public key (`nl_...`) and its own confirmation email (a company template with `kind: newsletter_confirmation`, kept out of the event template list).
+1. **Create a list.** email-service gives it a public key (`nl_` plus a random token) and its own confirmation email (a company template with `kind: newsletter_confirmation`, kept out of the event template list).
 2. **Add the form** to the website. It posts to the list's `subscribe_url`.
 3. **The visitor confirms.** The email links to `/n/confirm/<token>` on email-service. Opening the page shows a button. Clicking it confirms (mail scanners open links, and that alone must not subscribe anyone). The page then redirects to `confirmed_redirect_url`, or shows its own "You are subscribed" message.
 4. **Send an issue.** Create a broadcast with the audience `{"mode": "newsletter", "list_id": 12}`. Only confirmed subscribers get it, each in their language.
@@ -26,7 +32,7 @@ Unconfirmed sign-ups are deleted after `EMAIL_NEWSLETTER_PENDING_DAYS` (7). The 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(form));
-    const response = await fetch("https://email.shellui.com/api/v1/public/newsletters/nl_xxx/subscribe", {
+    const response = await fetch("https://email.shellui.com/api/v1/public/newsletters/nl_your_list_key_here/subscribe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...data, language: document.documentElement.lang }),

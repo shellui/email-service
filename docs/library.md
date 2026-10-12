@@ -1,4 +1,10 @@
-# Template library
+---
+title: Design library
+sidebar_label: Design library
+description: The 40 React Email designs in five sets, and how a company template is copied onto a rule.
+---
+
+# Design library
 
 The library is the set of designs an event email starts from. It holds 40 built-in designs and the company's own templates.
 

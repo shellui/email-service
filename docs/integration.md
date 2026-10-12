@@ -1,6 +1,12 @@
+---
+title: Integration contract
+sidebar_label: Integration contract
+description: The HTTP contract for identity-service, storage-service, hosting-service, and the Shellui admin app.
+---
+
 # Integration contract
 
-This page is the contract for identity-service, storage-service, hosting-service, and the Shellui admin app. Implement against these paths, fields, and error codes. Do not infer a second shape from another service.
+This page is the contract for identity-service, storage-service, hosting-service, and the Shellui admin app. Implement against these paths, fields, and error codes. Do not infer a second shape from another service. The handbook map is the [overview](index.md).
 
 Base URL: `https://email.shellui.com`
 
@@ -760,11 +766,21 @@ Response: `{deleted_messages, email_masked}`. Deletes message rows and their eve
 
 `GET /api/v1/metrics` requires an identity JWT. Staff, or a token with the `pat_agm` claim (`access_global_metrics`), receives every company. Owners receive their company. `?company_id=` is allowed for staff and for the matching owner.
 
-`GET /api/v1/metrics/all` requires staff or `pat_agm`. It adds `shellui_email_scheduled_job_*` and `shellui_email_scheduler_*`. Company owners get `403`. `GET /api/v1/metrics` does not include those series.
-
-`GET /api/v1/scheduled-jobs`, `GET /api/v1/scheduled-jobs/{job}/runs`, and `GET /api/v1/scheduled-jobs/runs/{id}` are staff only. Company owners get `403`. See [scheduled-jobs.md](scheduled-jobs.md#monitoring).
-
 Prometheus text. See [metrics.md](metrics.md).
+
+`GET /api/v1/metrics/all` requires staff or `pat_agm`. It adds `shellui_email_scheduled_job_*`, `shellui_email_scheduler_*`, and `shellui_email_lane_worker_*`. Company owners get `403`. `GET /api/v1/metrics` does not include those series.
+
+## Scheduled jobs (staff)
+
+Django staff only (`401` without a token, `403` for everyone else, company owners included):
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/api/v1/scheduled-jobs` |
+| `GET` | `/api/v1/scheduled-jobs/{job}/runs` |
+| `GET` | `/api/v1/scheduled-jobs/runs/{id}` |
+
+Health of `retry_webhooks`, `sweep_email_queue`, and `purge_expired_data`, the beat and lane worker heartbeats, and recent runs. Each run also writes a platform event, listed with `GET /api/v1/actions/event-log?scope=platform`. See [Scheduled jobs](scheduled-jobs.md#monitoring).
 
 ## Provider webhooks (Resend)
 

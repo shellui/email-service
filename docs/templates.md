@@ -1,8 +1,14 @@
-# Templates
+---
+title: Templates and translations
+sidebar_label: Templates and translations
+description: Event copies, English and French text, variables, and Shellui color themes.
+---
+
+# Templates and translations
 
 An event email is a company template: a copy of a [library](library.md) design made for one event. It is created with an email rule, edited in the admin, and deleted with its rule. Copies are not listed in the library, and a copy never changes when the library template it came from changes.
 
-Catalog events live in `apps/email/catalog.py` for every webhook event identity, storage, and hosting emit on `develop`. Each event carries a suggested subject and preheader in English and French, its variables, `link_token` (the URL variable its link uses, empty when it has none), and `default_template` (the library key used when nothing else is chosen). The body always comes from a library design.
+Catalog events live in `apps/email/catalog.py` for the webhook events identity, storage, and hosting emit. Each event carries a suggested subject and preheader in English and French, its variables, `link_token` (the URL variable its link uses, empty when it has none), and `default_template` (the library key used when nothing else is chosen). The body always comes from a library design.
 
 Catalog keys are the sibling event ids (`identity.auth.magic_link.requested`, not a shortened alias). Direct `POST /api/v1/send` accepts those keys. A copy gets a generated key, `company.` plus 12 hex characters, a `name` (the event label, max 120), its `event_type`, `source_key` (the library key it came from), and `set` (whose `head.css` it uses).
 
@@ -44,7 +50,7 @@ Rendered bodies are not stored on the message and are not returned by status API
 - the library document, with `{{ action_url }}` replaced by the event's link variable (or `https://example.com` when the event has none);
 - on auth-lane events, only the links the auth checks accept (see [security.md](security.md#links-in-auth-mail)), so the copy publishes as is;
 - the catalog subject and preheader in the rule's language (English when the rule has none);
-- the library template's [theme](#themes), or else `content.theme` (the admin sends the user's current Shellui theme).
+- the library template's [theme](#themes), or else `content.theme` (the admin sends the Shellui theme selected in Settings).
 
 `POST /api/v1/templates/{id}/versions` adds a draft. Send `subject`, `preheader`, `document`, and optionally `translations` (see below) and `theme` (omitted, the latest version's are kept), or `library_id` to start over from another library template: the document is replaced (adapted to the event the same way), the subject and preheader stay, translations keep only their subject and preheader, and the theme becomes the new template's when it has one. The copy's `source_key` and `set` follow the new template. `201` `{number, state: "draft"}`.
 

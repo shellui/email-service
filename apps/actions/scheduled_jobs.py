@@ -1,6 +1,6 @@
 """
 Run recording and health for the scheduled jobs (``retry_webhooks``, ``sweep_email_queue``,
-``purge_expired_data``).
+``purge_expired_data``) and the lane workers.
 
 The management commands record their own runs (``record_run``), so runs started by the
 in-container Celery beat (``trigger=celery``) and by an external cron (``trigger=command``)
@@ -536,6 +536,25 @@ def beat_last_seen() -> datetime | None:
     return datetime.fromtimestamp(ts, tz=dt_timezone.utc)
 
 
+def workers_overview(now: datetime) -> list[dict]:
+    """Last heartbeat per lane. ``stale`` without a heartbeat in ``WORKER_STALE_AFTER``."""
+    from apps.email.worker_heartbeat import LANES, WORKER_STALE_AFTER, read_worker_heartbeats
+
+    seen = read_worker_heartbeats() if getattr(settings, 'CELERY_BROKER_URL', '') else {}
+    workers = []
+    for lane in LANES:
+        ts = seen.get(lane)
+        last = datetime.fromtimestamp(ts, tz=dt_timezone.utc) if ts is not None else None
+        workers.append(
+            {
+                'lane': lane,
+                'last_seen_at': _iso(last),
+                'stale': last is None or now - last > WORKER_STALE_AFTER,
+            }
+        )
+    return workers
+
+
 def _last_runs(job_names) -> dict[str, ScheduledJobRun]:
     result = {}
     for name in job_names:
@@ -681,6 +700,8 @@ def jobs_overview(*, now: datetime | None = None, check_redis: bool = True) -> d
         'beat_last_seen_at': _iso(beat_seen),
         'beat_stale': bool(enabled and (beat_seen is None or now - beat_seen > BEAT_STALE_AFTER)),
         'jobs': jobs,
+        'workers_enabled': bool(getattr(settings, 'EMAIL_WORKERS_ENABLED', True)),
+        'workers': workers_overview(now) if check_redis else [],
     }
 
 

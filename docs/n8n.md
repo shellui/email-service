@@ -1,4 +1,10 @@
-# Using Shellui webhooks with n8n
+---
+title: n8n
+sidebar_label: n8n
+description: Receive email-service Shellui Actions webhooks in an n8n Webhook node.
+---
+
+# n8n
 
 email-service can POST signed JSON to an n8n Webhook node when a message changes state. The signing and retry rules match identity-service, storage-service, and hosting-service, so one n8n pattern works for every Shellui webhook.
 

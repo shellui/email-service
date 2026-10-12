@@ -1,8 +1,16 @@
-# Authentication
+---
+title: Service keys
+sidebar_label: Service keys
+description: esk_ service keys for identity, storage, and hosting, and the identity JWT used by the admin API.
+---
 
-Two credentials share `Authorization: Bearer`.
+# Service keys
 
-## Service keys
+Two credentials share `Authorization: Bearer`. Sibling services use an `esk_` key. The admin app uses an identity-service JWT.
+
+Issue the key in email-service, then set `EMAIL_SERVICE_API_KEY` on the caller. storage-service and hosting-service also need `EMAIL_SERVICE_ALLOW_PRIVATE=true` when `EMAIL_SERVICE_URL` is a private or loopback address. See [Configuration](configuration.md).
+
+## Key format
 
 Prefix `esk_`, then `token_urlsafe(32)`. Stored as a 12-character prefix and a SHA-256 hash.
 
@@ -24,6 +32,8 @@ uv run python manage.py create_service_key --service identity --lanes auth,trans
 ```
 
 The command and the POST response print the key once. Callers set `EMAIL_SERVICE_API_KEY`.
+
+Recommended scopes: identity `auth` and `transactional` with prefix `identity.`; storage and hosting `transactional` with prefixes `storage.` and `hosting.`.
 
 ## Identity JWTs
 
