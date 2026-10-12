@@ -15,7 +15,7 @@ The integration contract is [docs/integration.md](docs/integration.md).
 - Admin API for rules, templates, stats, test sends, and suppressions
 - Broadcasts: one email to many company users, filtered by group, role, and activity, each in their own language. See [docs/broadcasts.md](docs/broadcasts.md).
 - Newsletters: lists anyone can join from a website form, with a confirmation email (double opt-in), rate limits, a honeypot, and optional Turnstile. Issues are broadcasts sent to a list. See [docs/newsletters.md](docs/newsletters.md).
-- Prometheus metrics at `GET /api/v1/metrics` (identity JWT, same scope as storage-service)
+- Prometheus metrics at `GET /api/v1/metrics` (identity JWT, same scope as storage-service). Scheduled job series are staff-only on `GET /api/v1/metrics/all`
 - Shellui Actions outbound webhooks for `email.message.*`
 - OpenAPI at `/api/docs/` and `/api/docs/redoc/`
 
@@ -126,7 +126,8 @@ curl -X PUT "https://email.shellui.com/api/v1/provider?company_id=42" \
 | Rules | `GET/POST /api/v1/rules`, `GET/PATCH/DELETE /api/v1/rules/{id}` |
 | Templates | `/api/v1/templates` |
 | Stats | `GET /api/v1/stats` |
-| Metrics | `GET /api/v1/metrics` |
+| Metrics | `GET /api/v1/metrics`, `GET /api/v1/metrics/all` |
+| Scheduled jobs | `GET /api/v1/scheduled-jobs` (staff) |
 | Shellui Actions | `/api/v1/actions/*` |
 | OpenAPI | `/api/docs/`, `/api/docs/redoc/` |
 

@@ -124,7 +124,9 @@ class ScheduledTaskTests(TestCase):
                 self.assertEqual(self.fake.store, {}, 'lock is released after the run')
 
     def test_sweep_summary(self):
-        self.assertEqual(email_tasks.sweep_email_queue.apply().get(), 'expired=0 released=0 broadcasts=0')
+        summary = email_tasks.sweep_email_queue.apply().get()
+        self.assertTrue(summary.startswith('expired=0 released=0 broadcasts=0'))
+        self.assertIn('run_id=', summary)
 
     @mock.patch('config.scheduled_tasks.call_command')
     def test_task_skips_while_another_run_holds_the_lock(self, call_command):

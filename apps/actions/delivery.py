@@ -90,11 +90,15 @@ def _post_pinned(resolved, body: bytes, headers: dict, timeout: float):
         session.close()
 
 
-def deliver_one(row_id) -> None:
+def deliver_one(row_id, *, scheduled_job_run_id: int | None = None, trigger: str = '') -> str:
+    """
+    Deliver one outbox row. Returns ``delivered``, ``retried``, ``dead``, or ``''`` when the row
+    was no longer due. ``trigger`` and ``scheduled_job_run_id`` are stored on the attempt only.
+    """
     with transaction.atomic():
         row = ActionOutbox.objects.select_for_update().get(pk=row_id)
         if row.status not in {ActionOutbox.STATUS_PENDING, ActionOutbox.STATUS_FAILED}:
-            return
+            return ''
         row.attempt_count += 1
         row.locked_until = timezone.now() + timedelta(seconds=settings.ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS)
         row.save(update_fields=['attempt_count', 'locked_until', 'updated_at'])
@@ -106,6 +110,8 @@ def deliver_one(row_id) -> None:
         headers['User-Agent'] = 'shellui-email-webhooks/1.0'
         headers['X-Shellui-Event'] = row.event_type
         headers['X-Shellui-Delivery-Attempt'] = str(row.attempt_count)
+        if scheduled_job_run_id is not None:
+            headers['X-Request-ID'] = f'sjr-{scheduled_job_run_id}'
         attempt_number = row.attempt_count
         allow_private = settings.ACTIONS_WEBHOOK_ALLOW_PRIVATE
 
@@ -163,26 +169,34 @@ def deliver_one(row_id) -> None:
             error_code=error_code,
             attempt_number=attempt_number,
             duration_ms=duration_ms,
+            scheduled_job_run_id=scheduled_job_run_id,
+            trigger=trigger,
         )
         if not error_code:
             row.status = ActionOutbox.STATUS_DELIVERED
             row.delivered_at = timezone.now()
             row.last_error = ''
             row.locked_until = None
+            outcome = 'delivered'
         elif retryable and attempt_number < settings.ACTIONS_OUTBOX_MAX_ATTEMPTS:
             row.status = ActionOutbox.STATUS_FAILED
             row.last_error = error_code
             row.next_attempt_at = timezone.now() + timedelta(seconds=_backoff_seconds(attempt_number, retry_after))
             row.locked_until = None
+            outcome = 'retried'
         else:
             row.status = ActionOutbox.STATUS_DEAD
             row.last_error = error_code or 'delivery_failed'
             row.locked_until = None
+            outcome = 'dead'
         row.save()
+    return outcome
 
 
-def deliver_due(*, limit: int = 50) -> int:
+def deliver_due(*, limit: int = 50, scheduled_job_run_id: int | None = None) -> dict:
+    """Retry due webhook rows. The return counts are for run recording; delivery is unchanged."""
     now = timezone.now()
+    trigger = 'automatic_retry' if scheduled_job_run_id is not None else 'dispatch'
     ids = list(
         ActionOutbox.objects.filter(
             status__in=[ActionOutbox.STATUS_PENDING, ActionOutbox.STATUS_FAILED],
@@ -191,9 +205,14 @@ def deliver_due(*, limit: int = 50) -> int:
         .order_by('next_attempt_at')
         .values_list('id', flat=True)[:limit]
     )
+    stats = {'processed': 0, 'delivered': 0, 'retried': 0, 'dead': 0}
     for row_id in ids:
-        deliver_one(row_id)
-    return len(ids)
+        outcome = deliver_one(row_id, scheduled_job_run_id=scheduled_job_run_id, trigger=trigger)
+        if not outcome:
+            continue
+        stats['processed'] += 1
+        stats[outcome] += 1
+    return stats
 
 
 def rotate_secret_value(new_secret: str | None = None) -> str:
