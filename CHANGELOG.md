@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 🔒 Security
+
+- **Service keys:** an empty `allowed_company_ids` list allows no company. Only an unset value allows every company.
+- **JWT keys:** a token `kid` that is not in the JWKS is rejected, including when the set has one key.
+- **Admin cookies:** a Secure session cookie is named `__Host-sessionid` and a Secure CSRF cookie is named `__Host-csrftoken`. The CSRF cookie is HttpOnly. Neither cookie sets a Domain.
+- **SECRET_KEY:** `manage.py check` fails when `DEBUG=false` and the key is empty, shorter than 50 characters, or a published placeholder.
+
 ## [0.2.0] - 2026-10-12
 
 ### ✨ Feature

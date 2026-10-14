@@ -13,8 +13,30 @@ from apps.email.models import (
 )
 
 
+class ServiceClientAdminForm(forms.ModelForm):
+    class Meta:
+        model = ServiceClient
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['allowed_company_ids'].help_text = (
+            'Company ids this key may address. An empty list allows no company. '
+            'null allows every company.'
+        )
+        if self.instance._state.adding and not self.is_bound:
+            self.initial['allowed_company_ids'] = []
+
+    def clean_allowed_company_ids(self):
+        raw = self.data.get(self.add_prefix('allowed_company_ids'))
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            return []
+        return self.cleaned_data.get('allowed_company_ids')
+
+
 @admin.register(ServiceClient)
 class ServiceClientAdmin(admin.ModelAdmin):
+    form = ServiceClientAdminForm
     list_display = ('service', 'name', 'key_prefix', 'active', 'last_used_at')
     search_fields = ('service', 'key_prefix')
 

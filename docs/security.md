@@ -63,9 +63,13 @@ Shellui Actions signing secrets are encrypted at rest and revealed only on creat
 
 Browser calls use Bearer JWTs, not cookies. `CORS_ALLOW_CREDENTIALS` defaults to false. `CORS_ALLOW_ALL_ORIGINS` defaults to true only when `DEBUG=true`. Production defaults to false unless the variable is set. Startup fails if both allow-all and credentials are true.
 
+Session and CSRF cookies are host-only (no `Domain`). The CSRF cookie is HttpOnly. When the cookie is Secure, the names are `__Host-sessionid` and `__Host-csrftoken`. On plain HTTP the names stay `sessionid` and `csrftoken`, because a `__Host-` cookie must be Secure.
+
 ## JWT issuer and audience
 
 When `DEBUG=false`, `IDENTITY_ISSUER`, `IDENTITY_AUDIENCE`, and a pinned JWKS document (`IDENTITY_JWKS` or `IDENTITY_JWKS_FILE`) are required. Issuer and audience must match identity-service `JWT_ISSUER` and `JWT_AUDIENCE` (typically `https://id.shellui.com` and `shellui`). The process refuses to start if the document is missing, including when only `IDENTITY_JWKS_URL` is set.
+
+The token `kid` must name a key in that document. A missing or unknown `kid` fails verification, including when the document has one key. During rotation, leave the previous key in the document until tokens signed with it expire.
 
 ## Transport
 

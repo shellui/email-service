@@ -17,6 +17,8 @@ Production (`DEBUG=false`) refuses to boot without:
 - `REDIS_URL` (rate limits and the scheduled jobs)
 - `EMAIL_CREDENTIALS_KEY`, `EMAIL_VARIABLES_KEY`, `EMAIL_HASH_PEPPER`
 
+`manage.py check` fails when `SECRET_KEY` is empty or shorter than 50 characters. It also fails when the key starts with `django-insecure-` or is `change-me-generate-a-strong-secret-key`. The container runs that check before migrations when `DEBUG=false`.
+
 ## Secrets
 
 Generate `SECRET_KEY` with:
@@ -181,8 +183,8 @@ See [Newsletters](newsletters.md).
 | `CORS_ALLOW_PRIVATE_NETWORK` | `true` | Chrome private-network preflight |
 | `SECURE_SSL_REDIRECT` | true when `DEBUG=false` | Redirect HTTP to HTTPS |
 | `SECURE_HSTS_SECONDS` | `31536000` when `DEBUG=false`, otherwise `0` | HSTS max-age |
-| `SESSION_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the session cookie |
-| `CSRF_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the CSRF cookie |
+| `SESSION_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the session cookie. When true, the name is `__Host-sessionid`. The cookie has no Domain |
+| `CSRF_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the CSRF cookie. The cookie is HttpOnly and has no Domain. When this flag is true, the name is `__Host-csrftoken` |
 | `GUNICORN_WORKERS` | `2` | Gunicorn worker processes |
 | `GUNICORN_THREADS` | `2` | Threads per worker |
 | `GUNICORN_TIMEOUT` | `120` | Worker timeout, seconds |

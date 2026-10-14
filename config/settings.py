@@ -130,6 +130,9 @@ if not _secret_key:
 SECRET_KEY = _secret_key
 
 DEBUG = os.getenv('DEBUG', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
+# Frozen at import. The test runner later sets DEBUG=False, and that must not
+# reject a local short key. manage.py check reads this flag, not DEBUG.
+SECRET_KEY_ENFORCE_STRENGTH = not DEBUG
 SETUP_TOKEN = os.getenv('SETUP_TOKEN', '').strip()
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'DEBUG' if DEBUG else 'INFO').strip().upper() or (
     'DEBUG' if DEBUG else 'INFO'
@@ -459,6 +462,15 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', not
 SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
+# Host-only cookies. A Domain attribute would let a sibling host plant them.
+SESSION_COOKIE_DOMAIN = None
+CSRF_COOKIE_DOMAIN = None
+SESSION_COOKIE_PATH = '/'
+CSRF_COOKIE_PATH = '/'
+CSRF_COOKIE_HTTPONLY = True
+# __Host- cookies must be Secure. Plain HTTP keeps the historical names.
+SESSION_COOKIE_NAME = '__Host-sessionid' if SESSION_COOKIE_SECURE else 'sessionid'
+CSRF_COOKIE_NAME = '__Host-csrftoken' if CSRF_COOKIE_SECURE else 'csrftoken'
 
 DJANGO_ADMIN_ENABLED = _env_bool('DJANGO_ADMIN_ENABLED', True)
 GUNICORN_WORKERS = _env_int('GUNICORN_WORKERS', 2)
