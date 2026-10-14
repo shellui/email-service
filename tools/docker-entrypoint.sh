@@ -154,9 +154,18 @@ supervise() {
   exit "${status}"
 }
 
+# Settings import already refuses an empty SECRET_KEY. This check refuses a
+# short or placeholder key when DEBUG=false (authapi.E001).
+run_production_check() {
+  if ! is_true "${DEBUG:-false}"; then
+    python manage.py check
+  fi
+}
+
 case "${MODE}" in
   web)
     prepare_data_dir
+    run_production_check
     python manage.py migrate --noinput
     start "${GUNICORN_ARGS[@]}"
     start_scheduler
@@ -165,6 +174,7 @@ case "${MODE}" in
     ;;
   worker)
     prepare_data_dir
+    run_production_check
     start_scheduler
     start_lane_workers
     if [ "${#PIDS[@]}" -eq 0 ]; then
