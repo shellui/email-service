@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.2.1] - 2026-10-21
+
+### 🛠 Improvements
+
+- **Errors:** Error pages use the Shellui design, and API errors always return JSON.
+
 ## [0.2.0] - 2026-10-12
 
 ### ✨ Feature

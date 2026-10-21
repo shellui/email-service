@@ -48,3 +48,8 @@ urlpatterns = [
 
 if settings.DJANGO_ADMIN_ENABLED:
     urlpatterns.insert(1, path('admin/', admin.site.urls))
+
+handler400 = 'config.errors.bad_request'
+handler403 = 'config.errors.permission_denied'
+handler404 = 'config.errors.page_not_found'
+handler500 = 'config.errors.server_error'
