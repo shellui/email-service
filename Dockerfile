@@ -52,6 +52,12 @@ VOLUME ["/app/data"]
 
 EXPOSE 8000
 
+# Coolify and Docker pick this up with no config. Worker mode passes (see the script).
+# start-period covers migrations on first boot; start-interval probes every 5s during it,
+# so a new deploy turns healthy quickly.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --start-interval=5s --retries=3 \
+  CMD ["python", "/app/tools/healthcheck.py"]
+
 USER appuser
 
 ENTRYPOINT ["/app/tools/docker-entrypoint.sh"]
