@@ -32,6 +32,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🔒 Security
 
 - `SECRET_KEY` shorter than 50 characters or a placeholder is refused when `DEBUG=false`.
+- `certifi` 2026.10.19 fixes PYSEC-2026-4320.
 
 ### 🏗 Chore
 
