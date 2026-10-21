@@ -68,6 +68,10 @@ The logs also show `starting the auth lane worker` (and the other two lanes). Wi
 
 ## Publish to Docker Hub
 
+Publishing a GitHub release runs `.github/workflows/publish.yml`. It builds `linux/amd64` and `linux/arm64` and pushes `shellui/email-service` tagged with the version, `major.minor` and `latest` (no `latest` for a prerelease). It needs the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets. The token needs read and write access to the repository and read access to public repositories. Run it again for an existing tag with **Run workflow**. The manual steps below stay as a fallback.
+
+For the runtime env, `python manage.py generate_env --host email.example.com` prints every required setting with fresh secrets. See [docs/configuration.md](docs/configuration.md#generate-the-env).
+
 ### Prerequisites
 
 1. The `shellui/email-service` repository exists on Docker Hub, and your account can push to the `shellui` organization.
