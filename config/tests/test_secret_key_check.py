@@ -84,12 +84,20 @@ class SecretKeyCheckTests(SimpleTestCase):
     def test_manage_py_check_fails_for_a_placeholder_outside_debug(self):
         result = _check('change-me-generate-a-strong-secret-key')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('authapi.E001', result.stderr + result.stdout)
+        # Settings import refuses the key before the system checks run.
+        self.assertIn(
+            'SECRET_KEY is shorter than 50 characters or a known placeholder',
+            result.stderr + result.stdout,
+        )
 
     def test_manage_py_check_fails_for_a_short_key_outside_debug(self):
         result = _check('django-insecure-12345678901234567890123456789012')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('authapi.E001', result.stderr + result.stdout)
+        # Settings import refuses the key before the system checks run.
+        self.assertIn(
+            'SECRET_KEY is shorter than 50 characters or a known placeholder',
+            result.stderr + result.stdout,
+        )
 
     def test_manage_py_check_passes_for_a_long_key(self):
         result = _check(OK_SECRET)

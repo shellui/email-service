@@ -21,14 +21,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
-## [Unreleased]
+## [0.3.0] - 2026-10-24
+
+### ✨ Feature
+
+- **Health check:** The image has a Docker `HEALTHCHECK` on `/health/live`, with no database or Redis check.
+- **Docker Hub:** A published GitHub release pushes a multi-arch image to `shellui/email-service`.
+- **generate_env:** `manage.py generate_env` prints the production env with a fresh `SECRET_KEY` and mail keys.
 
 ### 🔒 Security
 
+- `SECRET_KEY` shorter than 50 characters or a placeholder is refused when `DEBUG=false`.
+- `certifi` 2026.10.19 fixes PYSEC-2026-4320.
 - **Service keys:** an empty `allowed_company_ids` list allows no company. Only an unset value allows every company.
 - **JWT keys:** a token `kid` that is not in the JWKS is rejected, including when the set has one key.
-- **Admin cookies:** a Secure session cookie is named `__Host-sessionid` and a Secure CSRF cookie is named `__Host-csrftoken`. The CSRF cookie is HttpOnly. Neither cookie sets a Domain.
-- **SECRET_KEY:** `manage.py check` fails when `DEBUG=false` and the key is empty, shorter than 50 characters, or a published placeholder.
+- **Admin cookies:** Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, set no Domain, and the CSRF cookie is HttpOnly.
+
+### 🏗 Chore
+
+- `.env.example` is generated from `config/env_registry.py` and lists only the required settings.
 
 ## [0.2.0] - 2026-10-12
 

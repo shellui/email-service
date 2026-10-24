@@ -238,6 +238,8 @@ SPECTACULAR_SETTINGS = {
 }
 
 MIDDLEWARE = [
+    # First: /health/live answers before host checks and the https redirect.
+    'config.health.LivenessMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'config.request_context.RequestIdMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -580,6 +582,12 @@ SHELLUI_GITHUB_EMAIL_URL = os.getenv(
 
 if not DEBUG:
     _production_config_errors = []
+    if len(SECRET_KEY) < 50 or SECRET_KEY.startswith('django-insecure-') or 'change-me' in SECRET_KEY:
+        # Never print the value. generate_env prints a strong key.
+        _production_config_errors.append(
+            'SECRET_KEY is shorter than 50 characters or a known placeholder when DEBUG=false. '
+            'Run: python manage.py generate_env'
+        )
     if not IDENTITY_ISSUER:
         _production_config_errors.append(
             'IDENTITY_ISSUER is required when DEBUG=false. '
