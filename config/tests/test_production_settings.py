@@ -16,8 +16,8 @@ MANAGE_PY = PROJECT_ROOT / 'manage.py'
 
 def _settings_check(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     merged = os.environ.copy()
+    merged['SECRET_KEY'] = 'test-secret-key-for-settings-check-only-0123456789abcdefghij'
     merged.update(env)
-    merged.setdefault('SECRET_KEY', 'test-secret-key-for-settings-check-only')
     return subprocess.run(
         [sys.executable, str(MANAGE_PY), 'check'],
         cwd=PROJECT_ROOT,
@@ -66,7 +66,7 @@ class ProductionSettingsValidationTests(unittest.TestCase):
         env.update(
             {
                 'DEBUG': 'false',
-                'SECRET_KEY': 'test-secret-key-for-settings-check-only',
+                'SECRET_KEY': 'test-secret-key-for-settings-check-only-0123456789abcdefghij',
                 'DJANGO_SETTINGS_MODULE': 'config.settings',
                 'IDENTITY_ISSUER': 'https://id.shellui.com',
                 'IDENTITY_AUDIENCE': 'shellui',

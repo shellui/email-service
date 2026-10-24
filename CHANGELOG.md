@@ -21,6 +21,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.3.0] - 2026-10-24
+
+### ✨ Feature
+
+- **Health check:** The image has a Docker `HEALTHCHECK` on `/health/live`, with no database or Redis check.
+- **Docker Hub:** A published GitHub release pushes a multi-arch image to `shellui/email-service`.
+- **generate_env:** `manage.py generate_env` prints the production env with a fresh `SECRET_KEY` and mail keys.
+
+### 🛠 Improvements
+
+- **Errors:** Error pages use the Shellui design, and API errors always return JSON.
+
+### 🐛 Bug Fixes
+
+- **Container stop:** a SIGTERM reaches each child process once, not twice.
+
+### 🔒 Security
+
+- `SECRET_KEY` shorter than 50 characters or a placeholder is refused when `DEBUG=false`.
+- `certifi` 2026.10.19 fixes PYSEC-2026-4320.
+- `djangorestframework` 3.18.2 fixes CVE-2026-114136, CVE-2026-114137 and CVE-2026-114138.
+- **Service keys:** an empty `allowed_company_ids` list allows no company. Only an unset value allows every company.
+- **JWT keys:** a token `kid` that is not in the JWKS is rejected, including when the set has one key.
+- **Admin cookies:** Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, set no Domain, and the CSRF cookie is HttpOnly.
+
+### 🏗 Chore
+
+- `.env.example` is generated from `config/env_registry.py` and lists only the required settings.
+
 ## [0.2.0] - 2026-10-12
 
 ### ✨ Feature

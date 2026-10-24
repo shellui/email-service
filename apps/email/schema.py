@@ -526,7 +526,14 @@ class ServiceClientCreateSerializer(serializers.Serializer):
     name = serializers.CharField(required=False)
     allowed_lanes = serializers.ListField(child=serializers.CharField(), required=False)
     allowed_template_prefixes = serializers.ListField(child=serializers.CharField(), required=False)
-    allowed_company_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
+    allowed_company_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        help_text=(
+            'Company ids this key may address. Omit the field to allow every company. '
+            'An empty list allows none.'
+        ),
+    )
 
 
 class ServiceClientCreatedSerializer(serializers.Serializer):

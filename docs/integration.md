@@ -37,7 +37,7 @@ Recommended key scopes:
 | storage | `transactional` | `storage.` |
 | hosting | `transactional` | `hosting.` |
 
-A key that is not allowed to use a lane receives `403 lane_not_allowed`. A key whose prefixes do not match the template key receives `403 forbidden`.
+A key that is not allowed to use a lane receives `403 lane_not_allowed`. A key whose prefixes do not match the template key receives `403 forbidden`. Leave `allowed_company_ids` unset to allow every company. An empty list allows none and returns `403 company_mismatch`.
 
 ## Authentication
 

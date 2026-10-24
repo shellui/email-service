@@ -130,6 +130,9 @@ if not _secret_key:
 SECRET_KEY = _secret_key
 
 DEBUG = os.getenv('DEBUG', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
+# Frozen at import. The test runner later sets DEBUG=False, and that must not
+# reject a local short key. manage.py check reads this flag, not DEBUG.
+SECRET_KEY_ENFORCE_STRENGTH = not DEBUG
 SETUP_TOKEN = os.getenv('SETUP_TOKEN', '').strip()
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'DEBUG' if DEBUG else 'INFO').strip().upper() or (
     'DEBUG' if DEBUG else 'INFO'
@@ -235,6 +238,8 @@ SPECTACULAR_SETTINGS = {
 }
 
 MIDDLEWARE = [
+    # First: /health/live answers before host checks and the https redirect.
+    'config.health.LivenessMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'config.request_context.RequestIdMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -265,6 +270,9 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+
+# Branded page for browsers, JSON under the API prefixes (config/errors.py).
+CSRF_FAILURE_VIEW = 'config.errors.csrf_failure'
 
 REDIS_URL = os.getenv('REDIS_URL', '').strip()
 CACHES = _caches_config(REDIS_URL)
@@ -459,6 +467,15 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', not
 SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
+# Host-only cookies. A Domain attribute would let a sibling host plant them.
+SESSION_COOKIE_DOMAIN = None
+CSRF_COOKIE_DOMAIN = None
+SESSION_COOKIE_PATH = '/'
+CSRF_COOKIE_PATH = '/'
+CSRF_COOKIE_HTTPONLY = True
+# __Host- cookies must be Secure. Plain HTTP keeps the historical names.
+SESSION_COOKIE_NAME = '__Host-sessionid' if SESSION_COOKIE_SECURE else 'sessionid'
+CSRF_COOKIE_NAME = '__Host-csrftoken' if CSRF_COOKIE_SECURE else 'csrftoken'
 
 DJANGO_ADMIN_ENABLED = _env_bool('DJANGO_ADMIN_ENABLED', True)
 GUNICORN_WORKERS = _env_int('GUNICORN_WORKERS', 2)
@@ -568,6 +585,12 @@ SHELLUI_GITHUB_EMAIL_URL = os.getenv(
 
 if not DEBUG:
     _production_config_errors = []
+    if len(SECRET_KEY) < 50 or SECRET_KEY.startswith('django-insecure-') or 'change-me' in SECRET_KEY:
+        # Never print the value. generate_env prints a strong key.
+        _production_config_errors.append(
+            'SECRET_KEY is shorter than 50 characters or a known placeholder when DEBUG=false. '
+            'Run: python manage.py generate_env'
+        )
     if not IDENTITY_ISSUER:
         _production_config_errors.append(
             'IDENTITY_ISSUER is required when DEBUG=false. '

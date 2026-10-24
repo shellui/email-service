@@ -17,6 +17,14 @@ Production (`DEBUG=false`) refuses to boot without:
 - `REDIS_URL` (rate limits and the scheduled jobs)
 - `EMAIL_CREDENTIALS_KEY`, `EMAIL_VARIABLES_KEY`, `EMAIL_HASH_PEPPER`
 
+## Generate the env
+
+`python manage.py generate_env --host email.example.com` prints every production setting with a fresh `SECRET_KEY`, `EMAIL_CREDENTIALS_KEY`, `EMAIL_VARIABLES_KEY` and `EMAIL_HASH_PEPPER`. It runs with no env, database or Redis. Replace each `change-me` value. Add `--optional` to also list the optional settings with their defaults. The output holds secrets, so store it in a secret manager and never commit it.
+
+`.env.example` is generated from `config/env_registry.py` with `python manage.py generate_env --example > .env.example`. A test fails when the registry, the code, this page or `.env.example` drift apart.
+
+With `DEBUG=false`, a `SECRET_KEY` shorter than 50 characters or a placeholder also stops startup. Errors name the variable and never print its value. The container runs `manage.py check` before migrations when `DEBUG=false`, and the check also refuses a key that starts with `django-insecure-`.
+
 ## Secrets
 
 Generate `SECRET_KEY` with:
@@ -181,8 +189,8 @@ See [Newsletters](newsletters.md).
 | `CORS_ALLOW_PRIVATE_NETWORK` | `true` | Chrome private-network preflight |
 | `SECURE_SSL_REDIRECT` | true when `DEBUG=false` | Redirect HTTP to HTTPS |
 | `SECURE_HSTS_SECONDS` | `31536000` when `DEBUG=false`, otherwise `0` | HSTS max-age |
-| `SESSION_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the session cookie |
-| `CSRF_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the CSRF cookie |
+| `SESSION_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the session cookie. When true, the name is `__Host-sessionid`. The cookie has no Domain |
+| `CSRF_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the CSRF cookie. The cookie is HttpOnly and has no Domain. When this flag is true, the name is `__Host-csrftoken` |
 | `GUNICORN_WORKERS` | `2` | Gunicorn worker processes |
 | `GUNICORN_THREADS` | `2` | Threads per worker |
 | `GUNICORN_TIMEOUT` | `120` | Worker timeout, seconds |
@@ -196,5 +204,18 @@ See [Newsletters](newsletters.md).
 | `SENTRY_DSN` | empty | Optional error reporting |
 | `SENTRY_ENVIRONMENT` | `development` or `production` from `DEBUG` | Sentry environment name |
 | `SENTRY_TRACES_SAMPLE_RATE` | `0` | Trace sample rate |
+| `SENTRY_RELEASE` | the project version | Sentry release name |
+| `SECURE_HSTS_INCLUDE_SUBDOMAINS` | true when `DEBUG=false` | HSTS `includeSubDomains` |
+| `SECURE_HSTS_PRELOAD` | `false` | HSTS `preload` |
+| `JWKS_TIMEOUT` | `15` | JWKS fetch timeout, seconds (DEBUG only) |
+| `JWKS_RETRIES` | `2` | JWKS fetch retries (DEBUG only) |
+| `ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS` | `120` | Lease on a webhook retry row |
+| `CELERY_BEAT_SCHEDULE_FILE` | `/tmp/celerybeat-schedule` | Beat schedule file. Losing it only resets the schedule |
+| `SHELLUI_WEBSITE_URL`, `SHELLUI_DOCS_URL`, `SHELLUI_PLAYGROUND_URL` | shellui.com URLs | Links on the public pages |
+| `SHELLUI_EMAIL_DOCS_URL`, `SHELLUI_IDENTITY_DOCS_URL`, `SHELLUI_GITHUB_EMAIL_URL` | shellui.com and GitHub URLs | Links on the public pages |
+
+## Health check
+
+`GET /health/live` returns `200 ok` before host checks, the HTTPS redirect, sessions and the database. The Docker image runs `tools/healthcheck.py` against `http://127.0.0.1:8000/health/live` as its `HEALTHCHECK`, so Coolify and Docker need no extra config. It does not check Postgres or Redis. In worker mode it always passes. `GET /api/v1/health` stays the detailed status endpoint.
 
 See [Scheduled jobs](scheduled-jobs.md) to move workers into their own container.
