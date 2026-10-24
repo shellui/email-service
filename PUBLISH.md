@@ -168,7 +168,7 @@ The container applies migrations, which also sync the built-in library designs, 
 ## Resend checklist (before the first real send)
 
 > [!IMPORTANT]
-> Mail looks fine on day one without these, then quietly degrades: bounces are not suppressed, statuses stay at "handed to the provider", broadcasts fail, and Resend unsubscribes are lost. The full steps are in [README: Resend setup](README.md#resend-setup-required-before-going-live).
+> Mail looks fine on day one without these, then quietly degrades: bounces are not suppressed, statuses stay at "handed to the provider", broadcasts fail, and Resend unsubscribes are lost. The full steps are in [Providers: Resend account](docs/providers.md#resend-account-before-mail-leaves).
 
 - [ ] Main domain (`DEFAULT_FROM_EMAIL`) and news subdomain (`BULK_FROM_EMAIL`) are both **verified** in Resend > Domains.
 - [ ] `RESEND_API_KEY` is a **Full access** key. A Sending access key makes every broadcast fail with `provider_unauthorized`.
