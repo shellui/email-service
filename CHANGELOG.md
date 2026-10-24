@@ -33,6 +33,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - `SECRET_KEY` shorter than 50 characters or a placeholder is refused when `DEBUG=false`.
 - `certifi` 2026.10.19 fixes PYSEC-2026-4320.
+- `djangorestframework` 3.18.2 fixes CVE-2026-114136, CVE-2026-114137 and CVE-2026-114138.
 - **Service keys:** an empty `allowed_company_ids` list allows no company. Only an unset value allows every company.
 - **JWT keys:** a token `kid` that is not in the JWKS is rejected, including when the set has one key.
 - **Admin cookies:** Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, set no Domain, and the CSRF cookie is HttpOnly.
