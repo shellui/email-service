@@ -271,6 +271,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
+# Branded page for browsers, JSON under the API prefixes (config/errors.py).
+CSRF_FAILURE_VIEW = 'config.errors.csrf_failure'
+
 REDIS_URL = os.getenv('REDIS_URL', '').strip()
 CACHES = _caches_config(REDIS_URL)
 
