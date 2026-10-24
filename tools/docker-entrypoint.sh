@@ -140,7 +140,11 @@ supervise() {
   # Returns when the first child exits, or early when a trapped signal arrives.
   wait -n "${PIDS[@]}"
   status=$?
-  stop_children
+  # on_signal already forwarded the signal. A second TERM can land while a child
+  # is still in its own TERM handler.
+  if [ -z "${STOP_SIGNAL}" ]; then
+    stop_children
+  fi
   wait "${PIDS[@]}"
   set -e
   if [ -n "${STOP_SIGNAL}" ]; then

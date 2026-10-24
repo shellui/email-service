@@ -29,6 +29,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Docker Hub:** A published GitHub release pushes a multi-arch image to `shellui/email-service`.
 - **generate_env:** `manage.py generate_env` prints the production env with a fresh `SECRET_KEY` and mail keys.
 
+### 🐛 Bug Fixes
+
+- **Container stop:** a SIGTERM reaches each child process once, not twice.
+
 ### 🔒 Security
 
 - `SECRET_KEY` shorter than 50 characters or a placeholder is refused when `DEBUG=false`.
