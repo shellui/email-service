@@ -19,7 +19,7 @@ A key carries:
 - `service` (for example `identity`)
 - `allowed_lanes`
 - `allowed_template_prefixes` (a template key must start with one of them)
-- optional `allowed_company_ids` (empty means every company)
+- `allowed_company_ids`, optional. Leave it unset to allow every company. An empty list allows none.
 
 Issue a key as staff:
 
@@ -32,6 +32,8 @@ uv run python manage.py create_service_key --service identity --lanes auth,trans
 ```
 
 The command and the POST response print the key once. Callers set `EMAIL_SERVICE_API_KEY`.
+
+`create_service_key` and a POST that omits `allowed_company_ids` allow every company. In Django admin, a new key starts as an empty list, which allows none. Type `null` in that field to allow every company. An empty list stored before this change is migrated to `null`, so those keys keep the scope they already had.
 
 Recommended scopes: identity `auth` and `transactional` with prefix `identity.`; storage and hosting `transactional` with prefixes `storage.` and `hosting.`.
 
@@ -47,6 +49,8 @@ Admin routes verify RS256 tokens with the same JWKS client as storage-service an
 | `IDENTITY_ISSUER` | Required when `DEBUG=false`. Match identity `JWT_ISSUER`. |
 | `IDENTITY_AUDIENCE` | Required when `DEBUG=false`. Match identity `JWT_AUDIENCE`. |
 | `JWT_HS256_FALLBACK_SECRET` | Local only, when identity is in `DEBUG` with HS256. |
+
+The token `kid` must name a key in the JWKS. A missing or unknown `kid` is rejected, including when the document has one key. During rotation, leave the previous key in the document until tokens signed with it expire.
 
 The principal needs `is_staff` or `is_company_owner`. If the token has `company_id`, it must equal the requested company unless the caller is staff. A mismatch is `403 company_mismatch`.
 

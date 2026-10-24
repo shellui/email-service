@@ -80,11 +80,14 @@ def authenticate_service_key(raw_key: str) -> ServicePrincipal:
         raise exceptions.AuthenticationFailed('Invalid service key.')
     ServiceClient.objects.filter(pk=client.pk).update(last_used_at=timezone.now())
     allowed_companies = client.allowed_company_ids
+    # None is the unrestricted platform key. An empty list allows no company.
     company_tuple: tuple[int, ...] | None
-    if allowed_companies in (None, []):
-        company_tuple = None if not allowed_companies else tuple(int(c) for c in allowed_companies)
-    else:
+    if allowed_companies is None:
+        company_tuple = None
+    elif isinstance(allowed_companies, list):
         company_tuple = tuple(int(c) for c in allowed_companies)
+    else:
+        company_tuple = ()
     return ServicePrincipal(
         service=client.service,
         client_id=client.pk,

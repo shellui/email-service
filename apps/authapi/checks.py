@@ -1,7 +1,44 @@
 """Django system checks for authapi."""
 
 from django.conf import settings
-from django.core.checks import Warning, register
+from django.core.checks import Error, Warning, register
+
+_SECRET_KEY_MIN_LENGTH = 50
+_SECRET_KEY_PLACEHOLDERS = frozenset(
+    {
+        'change-me-generate-a-strong-secret-key',
+    }
+)
+
+
+def secret_key_is_unsafe(secret: str | None) -> bool:
+    value = (secret or '').strip()
+    folded = value.casefold()
+    if not value or len(value) < _SECRET_KEY_MIN_LENGTH:
+        return True
+    if folded.startswith('django-insecure-'):
+        return True
+    return folded in _SECRET_KEY_PLACEHOLDERS
+
+
+@register(tags='security')
+def secret_key_refused_outside_debug(app_configs, **kwargs):
+    if not getattr(settings, 'SECRET_KEY_ENFORCE_STRENGTH', not settings.DEBUG):
+        return []
+    if not secret_key_is_unsafe(settings.SECRET_KEY):
+        return []
+    return [
+        Error(
+            'SECRET_KEY is empty, shorter than 50 characters, or a published placeholder.',
+            hint=(
+                'Set SECRET_KEY to the output of '
+                'django.core.management.utils.get_random_secret_key. '
+                'Do not use an empty value, a django-insecure- prefix, '
+                'or change-me-generate-a-strong-secret-key.'
+            ),
+            id='authapi.E001',
+        )
+    ]
 
 
 @register(deploy=True, tags='security')

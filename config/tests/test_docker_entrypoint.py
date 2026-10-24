@@ -134,7 +134,8 @@ class DockerEntrypointTests(SimpleTestCase):
 
         self.assertEqual(proc.returncode, 0, stderr)
         calls = self.calls()
-        self.assertEqual(calls[0], 'python manage.py migrate --noinput')
+        self.assertEqual(calls[0], 'python manage.py check')
+        self.assertEqual(calls[1], 'python manage.py migrate --noinput')
         self.assertEqual(sorted(self.lane_workers()), sorted(LANE_WORKERS))
         self.assertIn('gunicorn TERM', calls)
         self.assertIn('celery TERM', calls)

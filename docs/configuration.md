@@ -23,7 +23,7 @@ Production (`DEBUG=false`) refuses to boot without:
 
 `.env.example` is generated from `config/env_registry.py` with `python manage.py generate_env --example > .env.example`. A test fails when the registry, the code, this page or `.env.example` drift apart.
 
-With `DEBUG=false`, a `SECRET_KEY` shorter than 50 characters or a placeholder also stops startup. Errors name the variable and never print its value.
+With `DEBUG=false`, a `SECRET_KEY` shorter than 50 characters or a placeholder also stops startup. Errors name the variable and never print its value. The container runs `manage.py check` before migrations when `DEBUG=false`, and the check also refuses a key that starts with `django-insecure-`.
 
 ## Secrets
 
@@ -189,8 +189,8 @@ See [Newsletters](newsletters.md).
 | `CORS_ALLOW_PRIVATE_NETWORK` | `true` | Chrome private-network preflight |
 | `SECURE_SSL_REDIRECT` | true when `DEBUG=false` | Redirect HTTP to HTTPS |
 | `SECURE_HSTS_SECONDS` | `31536000` when `DEBUG=false`, otherwise `0` | HSTS max-age |
-| `SESSION_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the session cookie |
-| `CSRF_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the CSRF cookie |
+| `SESSION_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the session cookie. When true, the name is `__Host-sessionid`. The cookie has no Domain |
+| `CSRF_COOKIE_SECURE` | true when `DEBUG=false` | Secure flag on the CSRF cookie. The cookie is HttpOnly and has no Domain. When this flag is true, the name is `__Host-csrftoken` |
 | `GUNICORN_WORKERS` | `2` | Gunicorn worker processes |
 | `GUNICORN_THREADS` | `2` | Threads per worker |
 | `GUNICORN_TIMEOUT` | `120` | Worker timeout, seconds |
