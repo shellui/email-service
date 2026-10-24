@@ -125,9 +125,9 @@ storage-service and hosting-service refuse a private or loopback `EMAIL_SERVICE_
 
 ## Run it in production
 
-The image defaults to `DEBUG=false`. It will not start until these are set:
+The image defaults to `DEBUG=false`. It runs `manage.py check` before migrations. It will not start until these are set:
 
-- `SECRET_KEY`
+- `SECRET_KEY` (at least 50 characters, and not a published placeholder)
 - `IDENTITY_ISSUER` and `IDENTITY_AUDIENCE` (match identity-service)
 - `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` (a pinned document, not only a JWKS URL)
 - `POSTGRES_DATABASE_URL`
