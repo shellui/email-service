@@ -22,7 +22,7 @@ Company credentials: `{"api_key": "re_example"}`.
 
 The adapter POSTs `https://api.resend.com/emails` with `Authorization: Bearer`, `User-Agent: shellui-email-service/1.0`, and `Idempotency-Key` set to the message id. HTTP 429 and 5xx are retryable. 401 and 403 pause the lane.
 
-Platform fallback: `EMAIL_FALLBACK_PROVIDER=resend` and `RESEND_API_KEY`, or `EMAIL_FALLBACK_PROVIDER=ses` with `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` and `SES_REGION`. See [Integration](integration.md) for the fallback caps.
+Platform fallback (off by default): `EMAIL_FALLBACK_PROVIDER=resend` and `RESEND_API_KEY`, or `EMAIL_FALLBACK_PROVIDER=ses` with `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` and `SES_REGION`. See [Integration](integration.md) for the fallback caps.
 
 Inbound events: `POST /api/v1/provider-webhooks/resend/{stream}` with Svix verification. The `{stream}` segment is a label stored on the event. It does not pick a lane.
 

@@ -41,7 +41,6 @@ REQUIRED = (
     Required('EMAIL_CREDENTIALS_KEY', 'Fernet key for provider credentials. Generated.'),
     Required('EMAIL_VARIABLES_KEY', 'Fernet key for template variables. Generated.'),
     Required('EMAIL_HASH_PEPPER', 'HMAC secret for recipient addresses. Generated.'),
-    Required('RESEND_API_KEY', 'Platform fallback key when EMAIL_FALLBACK_PROVIDER=resend.'),
 )
 
 OPTIONAL = (
@@ -68,7 +67,8 @@ OPTIONAL = (
     Var('EMAIL_AUTH_LINK_HOSTS', 'id.shellui.com'),
     Var('EMAIL_AUTH_DEFAULT_TTL_SECONDS', '120'),
     Var('EMAIL_AUTH_MAX_TTL_SECONDS', '300'),
-    Var('EMAIL_FALLBACK_PROVIDER', 'resend', 'Provider fallback'),
+    Var('EMAIL_FALLBACK_PROVIDER', 'none', 'Provider fallback (off by default: resend, ses, smtp, or none)'),
+    Var('RESEND_API_KEY', ''),
     Var('EMAIL_PLATFORM_COMPANY_IDS', ''),
     Var('SES_ACCESS_KEY_ID', ''),
     Var('SES_SECRET_ACCESS_KEY', ''),
@@ -193,7 +193,6 @@ REDIS_URL=
 EMAIL_CREDENTIALS_KEY=
 EMAIL_VARIABLES_KEY=
 EMAIL_HASH_PEPPER=
-RESEND_API_KEY=
 
 # Optional (defaults shown)"""
 

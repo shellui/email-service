@@ -10,8 +10,19 @@ def fallback_provider_configured(app_configs, **kwargs):
     from apps.email.service import platform_fallback_configured
 
     name = settings.EMAIL_FALLBACK_PROVIDER
-    if settings.DEBUG or name in {'none', 'fake'} or platform_fallback_configured():
+    if settings.DEBUG or name == 'fake' or platform_fallback_configured():
         return []
+    if name == 'none':
+        if not settings.EMAIL_PLATFORM_COMPANY_IDS:
+            return []
+        return [
+            Warning(
+                'EMAIL_PLATFORM_COMPANY_IDS is set but EMAIL_FALLBACK_PROVIDER=none. Platform companies '
+                'without their own provider cannot send (provider_not_configured).',
+                hint='Set EMAIL_FALLBACK_PROVIDER and its keys, or give those companies a provider.',
+                id='email.W002',
+            )
+        ]
     needed = {
         'resend': 'RESEND_API_KEY',
         'ses': 'SES_ACCESS_KEY_ID and SES_SECRET_ACCESS_KEY',

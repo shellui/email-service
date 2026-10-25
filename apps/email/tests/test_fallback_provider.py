@@ -193,6 +193,15 @@ class FallbackSettingsTests(TestCase):
         self.assertEqual([item.id for item in warnings], ['email.W001'])
         self.assertNotIn('s3cret', warnings[0].msg + warnings[0].hint)
 
-    @override_settings(EMAIL_FALLBACK_PROVIDER='none')
-    def test_disabled_fallback_has_no_warning(self):
+    @override_settings(DEBUG=False, EMAIL_FALLBACK_PROVIDER='none', RESEND_API_KEY='', EMAIL_PLATFORM_COMPANY_IDS=[])
+    def test_disabled_fallback_needs_no_keys_and_has_no_warning(self):
         self.assertEqual(fallback_provider_configured(None), [])
+
+    @override_settings(DEBUG=False, EMAIL_FALLBACK_PROVIDER='none', EMAIL_PLATFORM_COMPANY_IDS=[7])
+    def test_platform_companies_without_fallback_warn(self):
+        self.assertEqual([item.id for item in fallback_provider_configured(None)], ['email.W002'])
+
+    def test_fallback_is_off_by_default(self):
+        from django.conf import settings
+
+        self.assertEqual(settings.EMAIL_FALLBACK_PROVIDER, 'none')

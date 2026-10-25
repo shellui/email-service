@@ -490,7 +490,7 @@ Send `credentials` only when they change. If `provider` is unchanged and `creden
 
 Staff may choose `to`. A company owner may only send to the email on their JWT. Response: `{"status": "sent", "provider": "resend", "provider_message_id": "re_example"}`.
 
-Platform fallback (no company row): `EMAIL_FALLBACK_PROVIDER` (`resend`, `ses` or `smtp`) plus `RESEND_API_KEY`, the `SES_*` keys, or `EMAIL_HOST` and related SMTP variables. New Shellui projects can send sign-in mail from day one without setting up a provider.
+Platform fallback (no company row, off by default): `EMAIL_FALLBACK_PROVIDER` (`resend`, `ses` or `smtp`) plus `RESEND_API_KEY`, the `SES_*` keys, or `EMAIL_HOST` and related SMTP variables. New Shellui projects can send sign-in mail from day one without setting up a provider.
 
 Who may use it:
 
@@ -509,7 +509,7 @@ Rules for companies on the fallback (not in `EMAIL_PLATFORM_COMPANY_IDS`):
 - **Disable Shellui fallback provider** on the company profile in Django admin refuses its mail with `409 fallback_disabled`.
 - `GET /api/v1/provider` returns `fallback_usage` (`applies`, `disabled`, `day`, `used`, `limit`, `recipient_hourly_limit`). Metrics: `shellui_email_fallback_sent_today` and `shellui_email_fallback_refused_today`.
 
-Set `EMAIL_FALLBACK_PROVIDER=none` to require a company provider for auth mail as well (sends then fail with `provider_not_configured`).
+With `EMAIL_FALLBACK_PROVIDER=none` (the default), every company needs its own provider, auth mail included (sends fail with `provider_not_configured`). Companies in `EMAIL_PLATFORM_COMPANY_IDS` also need the fallback configured unless they have their own provider.
 
 Auth rate limits: 5 messages per recipient per company per 10 minutes (`recipient_rate_limited`), and 30 messages per company per 60 seconds (`company_rate_limited`, `EMAIL_COMPANY_AUTH_LIMIT` and `EMAIL_COMPANY_AUTH_WINDOW_SECONDS`). A provider HTTP 401 or 403 pauses that company's lane only. `POST /api/v1/lanes/{lane}/pause` is still staff-only and pauses the lane for every company.
 
