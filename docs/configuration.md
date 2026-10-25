@@ -112,8 +112,15 @@ identity-service also has `EMAIL_SERVICE_TIMEOUT_SECONDS` (default 5), `EMAIL_SE
 
 | Variable | Default | Role |
 | --- | --- | --- |
-| `EMAIL_FALLBACK_PROVIDER` | `resend` | `resend`, `smtp`, or `none` |
-| `RESEND_API_KEY` | empty | Platform Resend key. Broadcasts need Full access |
+| `EMAIL_FALLBACK_PROVIDER` | `none` | Off by default. `resend`, `ses` or `smtp` turns it on and needs that provider's keys |
+| `RESEND_API_KEY` | empty | Platform Resend key, only for `EMAIL_FALLBACK_PROVIDER=resend`. Broadcasts need Full access |
+| `SES_ACCESS_KEY_ID` | empty | Platform SES access key, for `EMAIL_FALLBACK_PROVIDER=ses` |
+| `SES_SECRET_ACCESS_KEY` | empty | Platform SES secret key |
+| `SES_REGION` | `eu-central-2` | Platform SES region |
+| `SES_CONFIGURATION_SET` | empty | Optional SES configuration set |
+| `EMAIL_FALLBACK_COMPANY_DAILY_LIMIT` | `50` | Fallback mail per company per UTC day. `0` means no limit |
+| `EMAIL_FALLBACK_GLOBAL_DAILY_LIMIT` | `500` | Fallback mail across all companies per UTC day. `0` means no limit |
+| `EMAIL_FALLBACK_RECIPIENT_HOURLY_LIMIT` | `5` | Fallback mail per recipient per company per hour |
 | `RESEND_WEBHOOK_SECRET` | empty | Svix secret for the platform Resend account |
 | `EMAIL_HOST` | empty | Platform SMTP host. Not gated by `EMAIL_ALLOW_COMPANY_SMTP` |
 | `EMAIL_PORT` | `587` | Platform SMTP port |
@@ -122,6 +129,8 @@ identity-service also has `EMAIL_SERVICE_TIMEOUT_SECONDS` (default 5), `EMAIL_SE
 | `EMAIL_USE_TLS` | `true` | STARTTLS |
 | `EMAIL_USE_SSL` | `false` | Implicit TLS |
 | `EMAIL_ALLOW_FAKE_PROVIDER` | true when `DEBUG=true` | Test double. Off in production unless set |
+
+When `DEBUG=false` and the chosen fallback has no credentials, `manage.py check` warns (`email.W001`) and the service still starts. Auth mail for companies without their own provider then fails with `provider_not_configured`. The warning never prints key values. With `none`, no provider key is needed. Companies in `EMAIL_PLATFORM_COMPANY_IDS` without their own provider need a fallback configured, otherwise their mail, newsletters and broadcasts fail with `provider_not_configured` (`manage.py check` warns with `email.W002`).
 
 ## Rate limits and retention
 

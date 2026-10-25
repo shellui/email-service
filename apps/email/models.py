@@ -314,6 +314,11 @@ class CompanyProfile(models.Model):
             "Hostnames of this company's identity application URLs. Synced from identity. Not edited here."
         ),
     )
+    fallback_disabled = models.BooleanField(
+        default=False,
+        verbose_name='Disable Shellui fallback provider',
+        help_text='Refuse mail for this company on the Shellui fallback provider. Its own provider is not affected.',
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
@@ -511,3 +516,15 @@ def parse_message_id(value: str) -> uuid.UUID:
     if raw.startswith('msg_'):
         raw = raw[4:]
     return uuid.UUID(raw)
+
+
+class FallbackUsage(models.Model):
+    """Mail sent and refused per company and UTC day on the Shellui fallback provider. company_id 0 is the global total."""
+
+    company_id = models.PositiveIntegerField()
+    day = models.DateField()
+    sent = models.PositiveIntegerField(default=0)
+    refused = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['company_id', 'day'], name='email_fallback_usage_unique')]

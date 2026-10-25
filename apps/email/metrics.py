@@ -8,7 +8,7 @@ from django.db.models import Count, Min
 from django.utils import timezone
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
 
-from apps.email.models import Message
+from apps.email.models import FallbackUsage, Message
 
 METRICS_CONTENT_TYPE = CONTENT_TYPE_LATEST
 
@@ -52,6 +52,16 @@ def metrics_http_body(*, company_id: int | None = None) -> bytes:
         'Auth-lane messages expired before provider handoff.',
         registry=registry,
     )
+    fallback_sent = Gauge(
+        'shellui_email_fallback_sent_today',
+        'Mail accepted today (UTC) on the Shellui fallback provider.',
+        registry=registry,
+    )
+    fallback_refused = Gauge(
+        'shellui_email_fallback_refused_today',
+        'Mail refused today (UTC) by the Shellui fallback provider caps or kill switch.',
+        registry=registry,
+    )
     now = timezone.now()
     base = Message.objects.all()
     if company_id is not None:
@@ -85,6 +95,9 @@ def metrics_http_body(*, company_id: int | None = None) -> bytes:
             error_code=row['last_error_code'],
         ).set(row['n'])
     expiries.set(base.filter(lane='auth', status=Message.STATUS_EXPIRED).count())
+    usage = FallbackUsage.objects.filter(company_id=company_id or 0, day=now.date()).first()
+    fallback_sent.set(usage.sent if usage else 0)
+    fallback_refused.set(usage.refused if usage else 0)
     return generate_latest(registry)
 
 

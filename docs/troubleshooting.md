@@ -58,7 +58,7 @@ A message stuck in `queued` means the lane worker is not running. The image star
 | `platform_sender_not_allowed` | Non-auth mail, the company has no provider, and the company is not in `EMAIL_PLATFORM_COMPANY_IDS`. Auth mail still uses the platform fallback. The same code is HTTP 403 when a company sets `from_email` to the platform From address |
 | `company_smtp_disabled` | Company SMTP is off (`EMAIL_ALLOW_COMPANY_SMTP` defaults to false) |
 | `provider_host_not_public` | The company SMTP host is missing, private, or not a public address |
-| `provider_not_available` | The name is not `resend` or `smtp`. Mailjet is not registered |
+| `provider_not_available` | The name is not `resend`, `ses`, or `smtp`. Mailjet is not registered |
 | `lane_paused` | Staff paused the lane, or this company's provider returned 401 or 403. Other companies keep sending. Resume with `POST /api/v1/lanes/{lane}/resume` |
 | `provider_unauthorized` on a broadcast | The Resend key is Sending access. Broadcasts need Full access. See [Providers](providers.md) |
 | `provider_test_failed` | The test send was refused. Read the provider response in the admin, not a sentence in this JSON |

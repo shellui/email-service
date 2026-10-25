@@ -15,6 +15,7 @@ from django.utils import timezone
 
 from apps.actions.emit import emit_email_event
 from apps.email.catalog import LANE_AUTH, LANE_BULK, get_definition
+from apps.email import fallback
 from apps.email.companies import apply_company_name, company_name_may_be_stored
 from apps.email.unsubscribe import unsubscribe_url
 from apps.providers.credentials import strip_internal_credentials
@@ -116,6 +117,11 @@ def _check_rates(*, company_id: int, lane: str, hmac_value: str) -> None:
         key = f'email:auth:{company_id}:{hmac_value}'
         if not _rate_allow(key, settings.EMAIL_RECIPIENT_AUTH_LIMIT, settings.EMAIL_RECIPIENT_AUTH_WINDOW_SECONDS):
             raise SendError(429, 'recipient_rate_limited')
+        if fallback.applies(company_id):
+            try:
+                fallback.consume(company_id, hmac_value)
+            except fallback.FallbackRefused as exc:
+                raise SendError(409 if exc.code == 'fallback_disabled' else 429, exc.code) from None
         return
     hour = timezone.now().strftime('%Y%m%d%H')
     key = f'email:company:{company_id}:{lane}:{hour}'
@@ -840,6 +846,15 @@ def _credentials_for(message: Message) -> tuple[str, dict, str, str]:
 def _platform_credentials(provider_name: str) -> dict | None:
     if provider_name == 'resend' and settings.RESEND_API_KEY:
         return {'api_key': settings.RESEND_API_KEY}
+    if provider_name == 'ses' and settings.SES_ACCESS_KEY_ID and settings.SES_SECRET_ACCESS_KEY:
+        creds = {
+            'access_key_id': settings.SES_ACCESS_KEY_ID,
+            'secret_access_key': settings.SES_SECRET_ACCESS_KEY,
+            'region': settings.SES_REGION,
+        }
+        if settings.SES_CONFIGURATION_SET:
+            creds['configuration_set'] = settings.SES_CONFIGURATION_SET
+        return creds
     if provider_name == 'smtp' and settings.EMAIL_HOST:
         return {
             'host': settings.EMAIL_HOST,
@@ -886,6 +901,7 @@ def deliver_message(message_id) -> None:
             'to_email': message.to_email,
             'public_id': message.public_id,
             'expires_at': message.expires_at,
+            'event_type': message.event_type,
         }
     definition = get_definition(snapshot['template_key'])
     template = None
@@ -918,6 +934,19 @@ def deliver_message(message_id) -> None:
     except SendError as exc:
         _finish_failed(message_id, exc.code)
         return
+    on_fallback = snapshot['lane'] == LANE_AUTH and fallback.applies(snapshot['company_id'])
+    if on_fallback:
+        if fallback.disabled(snapshot['company_id']):
+            _finish_failed(message_id, 'fallback_disabled')
+            return
+        # Shellui's own wording only: no company copy goes out on the platform provider.
+        from apps.email.builtin_auth import COPY, builtin_content
+
+        definition = get_definition(snapshot['event_type'] or snapshot['template_key'])
+        if definition is None or definition.get('lane_class') != LANE_AUTH or definition['key'] not in COPY:
+            _finish_failed(message_id, 'fallback_template_not_allowed')
+            return
+        content = builtin_content(definition, snapshot['language'], snapshot['variables'])
     url_tokens = _url_tokens(definition, snapshot['company_id'])
     try:
         subject, _missing_subject = substitute(
@@ -945,6 +974,10 @@ def deliver_message(message_id) -> None:
     except SubstitutionError as exc:
         _finish_failed(message_id, exc.code if exc.code != 'invalid_url_scheme' else 'variable_url_not_allowed')
         return
+    if on_fallback:
+        html, text = fallback.add_footer(
+            html, text, str(snapshot['variables'].get('company_name') or ''), content.get('language') or 'en'
+        )
     provider_name, credentials, from_email, from_name = _credentials_for(Message.objects.get(pk=message_id))
     platform_from = {settings.DEFAULT_FROM_EMAIL.lower(), settings.BULK_FROM_EMAIL.lower()}
     uses_platform_from = (from_email or '').lower() in platform_from

@@ -142,6 +142,6 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 `EMAIL_CREDENTIALS_KEY` and `EMAIL_VARIABLES_KEY` must be Fernet keys. `EMAIL_HASH_PEPPER` is the HMAC secret for addresses. The same command produces a value that works. With `DEBUG=true`, those three are derived from `SECRET_KEY`. Do not rely on that derivation when `DEBUG=false`.
 
-Set `EMAIL_FALLBACK_PROVIDER` to `resend` or `smtp`, and set that provider's credentials, before auth mail can leave the platform. Set it to `none` to disable the fallback. Companies that are not listed in `EMAIL_PLATFORM_COMPANY_IDS` must bring their own provider for non-auth mail. Auth mail still uses the fallback.
+The fallback is off by default (`EMAIL_FALLBACK_PROVIDER=none`). Set it to `resend`, `ses` or `smtp`, plus that provider's credentials, so companies without a provider can send auth mail. Platform companies need it too unless they have their own provider. Companies that are not listed in `EMAIL_PLATFORM_COMPANY_IDS` must bring their own provider for non-auth mail. Auth mail still uses the fallback.
 
 Every variable is in [Configuration](configuration.md). Production defaults for HTTPS, CORS, and link hosts are in [Security](security.md). The Resend account steps are in [Providers](providers.md). Image tags are in [PUBLISH.md](../PUBLISH.md).

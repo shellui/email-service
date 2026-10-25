@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.authapi.service_auth import ServicePrincipal
+from apps.email.fallback import usage as fallback_usage
 from apps.email.access import company_from_request, require_admin, require_staff
 from apps.email.catalog import all_definitions, get_definition
 from apps.email.crypto import decrypt_json, email_hmac, encrypt_json, mask_email, mask_secret
@@ -899,6 +900,7 @@ def _provider_common(company_id: int, authorization: str = '') -> dict:
     return {
         'fallback_provider': settings.EMAIL_FALLBACK_PROVIDER,
         'fallback_configured': platform_fallback_configured(),
+        'fallback_usage': fallback_usage(company_id),
         'smtp_allowed': bool(settings.EMAIL_ALLOW_COMPANY_SMTP),
         'auth_link_hosts': effective_auth_link_hosts(company_id),
     }
@@ -1013,7 +1015,19 @@ class ProviderView(APIView):
                         resolve_public_host(host, port)
                     except SSRFError:
                         raise SendError(400, 'provider_host_not_public', {'host': ['not_public']})
-                secret = credentials.get('api_key') or credentials.get('password') or ''
+                if provider == 'ses':
+                    from apps.providers.ses import normalize_credentials, validate_credentials
+
+                    field_errors = validate_credentials(credentials)
+                    if field_errors:
+                        raise SendError(400, 'validation_failed', field_errors)
+                    credentials = normalize_credentials(credentials)
+                secret = (
+                    credentials.get('api_key')
+                    or credentials.get('password')
+                    or credentials.get('secret_access_key')
+                    or ''
+                )
                 credentials = strip_internal_credentials(credentials)
                 ciphertext = encrypt_json(credentials, setting='EMAIL_CREDENTIALS_KEY')
                 hint = mask_secret(str(secret))

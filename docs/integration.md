@@ -105,7 +105,7 @@ JSON errors never contain translated sentences. Shape:
 | `auth_link_missing` | 400 | An auth-lane copy dropped a required link variable such as `magic_link_url` |
 | `auth_link_host_not_allowed` | 400 | An auth-lane link (link mark, button, or linked image) is not an allowlisted `https` host, a declared URL variable, or `system.message_id`. `allowed_link_hosts: ["not_allowlisted"]` means add the hostname under Allowed link hosts |
 | `auth_literal_link` | 400 | An auth-lane copy has a literal URL in the subject, preheader, or document text |
-| `provider_not_available` | 400 | Provider name is not `resend` or `smtp` |
+| `provider_not_available` | 400 | Provider name is not `resend`, `ses`, or `smtp` |
 | `provider_test_failed` | 502 | The test send was refused by the provider |
 | `message_not_found` | 404 | Unknown message id |
 | `message_not_cancellable` | 409 | Status is not `queued` or `retrying` |
@@ -490,7 +490,7 @@ Send `credentials` only when they change. If `provider` is unchanged and `creden
 
 Staff may choose `to`. A company owner may only send to the email on their JWT. Response: `{"status": "sent", "provider": "resend", "provider_message_id": "re_example"}`.
 
-Platform fallback (no company row): `EMAIL_FALLBACK_PROVIDER` (`resend` or `smtp`) plus `RESEND_API_KEY` or `EMAIL_HOST` and related SMTP variables.
+Platform fallback (no company row, off by default): `EMAIL_FALLBACK_PROVIDER` (`resend`, `ses` or `smtp`) plus `RESEND_API_KEY`, the `SES_*` keys, or `EMAIL_HOST` and related SMTP variables. New Shellui projects can send sign-in mail from day one without setting up a provider.
 
 Who may use it:
 
@@ -500,7 +500,16 @@ Who may use it:
 | Company id in `EMAIL_PLATFORM_COMPANY_IDS` | any lane the key allows | Platform provider and the platform From for that lane |
 | Any other company | `transactional` | `409 platform_sender_not_allowed` |
 
-Set `EMAIL_FALLBACK_PROVIDER=none` to require a company provider for auth mail as well (sends then fail with `provider_not_configured`).
+Rules for companies on the fallback (not in `EMAIL_PLATFORM_COMPANY_IDS`):
+
+- Only auth events with Shellui's own copy go out (`identity.auth.magic_link.requested` and `identity.auth.magic_link.staff_blocked`). The company copy is ignored. Other events fail with `fallback_template_not_allowed`.
+- One recipient: the address in the request.
+- From `DEFAULT_FROM_EMAIL`, no reply-to, plus a footer line naming the project.
+- Caps, checked on accept: `EMAIL_FALLBACK_RECIPIENT_HOURLY_LIMIT` (`429 fallback_recipient_limit`), `EMAIL_FALLBACK_COMPANY_DAILY_LIMIT` (`429 fallback_company_limit`) and `EMAIL_FALLBACK_GLOBAL_DAILY_LIMIT` (`429 fallback_global_limit`). Daily caps reset at 00:00 UTC.
+- **Disable Shellui fallback provider** on the company profile in Django admin refuses its mail with `409 fallback_disabled`.
+- `GET /api/v1/provider` returns `fallback_usage` (`applies`, `disabled`, `day`, `used`, `limit`, `recipient_hourly_limit`). Metrics: `shellui_email_fallback_sent_today` and `shellui_email_fallback_refused_today`.
+
+With `EMAIL_FALLBACK_PROVIDER=none` (the default), every company needs its own provider, auth mail included (sends fail with `provider_not_configured`). Companies in `EMAIL_PLATFORM_COMPANY_IDS` also need the fallback configured unless they have their own provider.
 
 Auth rate limits: 5 messages per recipient per company per 10 minutes (`recipient_rate_limited`), and 30 messages per company per 60 seconds (`company_rate_limited`, `EMAIL_COMPANY_AUTH_LIMIT` and `EMAIL_COMPANY_AUTH_WINDOW_SECONDS`). A provider HTTP 401 or 403 pauses that company's lane only. `POST /api/v1/lanes/{lane}/pause` is still staff-only and pauses the lane for every company.
 

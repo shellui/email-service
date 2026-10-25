@@ -19,7 +19,8 @@ from rest_framework.test import APIClient
 from apps.actions.models import ActionOutbox, EventLog
 from apps.authapi.principal import EmailPrincipal
 from apps.email.keys import issue_service_key
-from apps.email.models import CompanyProfile, Message, MessageEvent
+from apps.email.crypto import encrypt_json
+from apps.email.models import CompanyProfile, CompanyProvider, Message, MessageEvent
 from apps.providers.registry import fake_provider
 
 MAGIC = 'identity.auth.magic_link.requested'
@@ -307,6 +308,14 @@ class AuthLinkHostTests(TestCase):
                 self.assertEqual(refused.status_code, 400, refused.content)
                 self.assertEqual(refused.json()['error_code'], 'auth_event_rule_forbidden')
 
+        # The company copy only goes out on the company's own provider, never on the Shellui fallback.
+        CompanyProvider.objects.create(
+            company_id=40,
+            provider='fake',
+            from_email='ops@acme.com',
+            credentials_ciphertext=encrypt_json({'marker': 'company'}, setting='EMAIL_CREDENTIALS_KEY'),
+            configured=True,
+        )
         sent = self._identity().post(
             '/api/v1/send',
             {

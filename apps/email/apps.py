@@ -15,6 +15,8 @@ class EmailConfig(AppConfig):
     verbose_name = 'Email'
 
     def ready(self):
+        from apps.email import checks  # noqa: F401
+
         post_migrate.connect(_sync_library, sender=self, dispatch_uid='email-library-sync')
         from corsheaders.signals import check_request_enabled
 

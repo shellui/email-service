@@ -1,7 +1,7 @@
 ---
 title: Providers
 sidebar_label: Providers
-description: Resend and SMTP, the platform fallback, company credentials, and the Resend account steps before mail can leave.
+description: Resend, Amazon SES, and SMTP, the platform fallback, company credentials, and the Resend account steps before mail can leave.
 ---
 
 # Providers
@@ -14,7 +14,7 @@ ProviderMessage -> EmailProvider.send(message, credentials) -> ProviderResult
 
 `ProviderResult.ok` means the provider accepted the message. `retryable` schedules another attempt. `error_code` `provider_unauthorized` (HTTP 401 or 403) fails the message and pauses that company's lane until staff resume it.
 
-Active names (`ACTIVE_PROVIDER_NAMES`): `resend` (default) and `smtp`. `mailjet` is in the tree and is not registered, so the API rejects `provider: "mailjet"`.
+Active names (`ACTIVE_PROVIDER_NAMES`): `resend` (default), `ses`, and `smtp`. `mailjet` is in the tree and is not registered, so the API rejects `provider: "mailjet"`.
 
 ## Resend
 
@@ -22,7 +22,7 @@ Company credentials: `{"api_key": "re_example"}`.
 
 The adapter POSTs `https://api.resend.com/emails` with `Authorization: Bearer`, `User-Agent: shellui-email-service/1.0`, and `Idempotency-Key` set to the message id. HTTP 429 and 5xx are retryable. 401 and 403 pause the lane.
 
-Platform fallback: `EMAIL_FALLBACK_PROVIDER=resend` and `RESEND_API_KEY`.
+Platform fallback (off by default): `EMAIL_FALLBACK_PROVIDER=resend` and `RESEND_API_KEY`, or `EMAIL_FALLBACK_PROVIDER=ses` with `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` and `SES_REGION`. See [Integration](integration.md) for the fallback caps.
 
 Inbound events: `POST /api/v1/provider-webhooks/resend/{stream}` with Svix verification. The `{stream}` segment is a label stored on the event. It does not pick a lane.
 
@@ -88,6 +88,79 @@ curl -X PUT "https://email.shellui.com/api/v1/provider?company_id=42" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"provider":"resend","from_email":"no-reply@acme.com","webhook_secret":"whsec_example"}'
+```
+
+## Amazon SES
+
+Amazon SES is a company provider. It is not a platform fallback.
+
+Company credentials:
+
+```json
+{
+  "access_key_id": "AKIAEXAMPLE",
+  "secret_access_key": "secret",
+  "region": "eu-central-2",
+  "configuration_set": "shellui-events"
+}
+```
+
+- `access_key_id` and `secret_access_key` are required. Both are encrypted with the rest of the credentials and never returned. `credentials_hint` shows the last four characters of the secret
+- `region` defaults to `eu-central-2` (Zurich). It must look like an AWS region, for example `eu-west-1`, or the save returns `validation_failed` with `field_errors.region` set to `invalid_region`
+- `configuration_set` is optional. Set it to send SES events to a configuration set
+
+The adapter calls the SESv2 API (`POST https://email.{region}.amazonaws.com/v2/email/outbound-emails`) and signs each request with AWS Signature Version 4. It does not use SMTP, so it works in regions with no SES SMTP endpoint, such as Zurich.
+
+What the adapter sends:
+
+- HTML and text bodies, the From name, and the recipient
+- Message headers, including `List-Unsubscribe` and `List-Unsubscribe-Post` on the bulk lane. A `Reply-To` header becomes `ReplyToAddresses`
+- Message tags as SES `EmailTags`, plus a `message_id` tag. Characters SES refuses in tags become `_`
+
+How errors map:
+
+| SES answer | Result |
+| --- | --- |
+| HTTP 429, `TooManyRequestsException`, `LimitExceededException` | Retryable, `provider_rate_limited` |
+| HTTP 5xx | Retryable, `provider_unavailable` |
+| HTTP 401 or 403, `AccountSuspendedException`, `SendingPausedException` | `provider_unauthorized`, the company lane is paused |
+| `MessageRejected`, `MailFromDomainNotVerifiedException`, `NotFoundException`, other 4xx | Fails, `provider_rejected` |
+
+SES has no idempotency key. A retry after a timeout can send the message twice.
+
+Broadcasts from a company on SES go through the bulk lane, one message per recipient.
+
+Bounce and complaint events from SES are not read yet. Suppress bad addresses with the SES account-level suppression list.
+
+### Amazon SES account, before mail leaves
+
+1. In **SES > Identities** in the region you use, verify the sending domain (Easy DKIM) or the From address
+2. Request production access. A sandbox account only sends to verified addresses
+3. Create an IAM user for email-service with only this policy, then create an access key for it:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ses:SendEmail",
+      "Resource": [
+        "arn:aws:ses:eu-central-2:123456789012:identity/acme.com",
+        "arn:aws:ses:eu-central-2:123456789012:configuration-set/shellui-events"
+      ]
+    }
+  ]
+}
+```
+
+Drop the configuration set line if you do not use one. Then save the provider:
+
+```bash
+curl -X PUT "https://email.shellui.com/api/v1/provider?company_id=42" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"ses","from_email":"no-reply@acme.com","credentials":{"access_key_id":"AKIAEXAMPLE","secret_access_key":"secret","region":"eu-central-2"}}'
 ```
 
 ## SMTP
