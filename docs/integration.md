@@ -490,7 +490,7 @@ Send `credentials` only when they change. If `provider` is unchanged and `creden
 
 Staff may choose `to`. A company owner may only send to the email on their JWT. Response: `{"status": "sent", "provider": "resend", "provider_message_id": "re_example"}`.
 
-Platform fallback (no company row): `EMAIL_FALLBACK_PROVIDER` (`resend` or `smtp`) plus `RESEND_API_KEY` or `EMAIL_HOST` and related SMTP variables.
+Platform fallback (no company row): `EMAIL_FALLBACK_PROVIDER` (`resend`, `ses` or `smtp`) plus `RESEND_API_KEY`, the `SES_*` keys, or `EMAIL_HOST` and related SMTP variables. New Shellui projects can send sign-in mail from day one without setting up a provider.
 
 Who may use it:
 
@@ -499,6 +499,15 @@ Who may use it:
 | Any company | `auth` | Platform provider and `no-reply@shellui.com` |
 | Company id in `EMAIL_PLATFORM_COMPANY_IDS` | any lane the key allows | Platform provider and the platform From for that lane |
 | Any other company | `transactional` | `409 platform_sender_not_allowed` |
+
+Rules for companies on the fallback (not in `EMAIL_PLATFORM_COMPANY_IDS`):
+
+- Only auth events with Shellui's own copy go out (`identity.auth.magic_link.requested` and `identity.auth.magic_link.staff_blocked`). The company copy is ignored. Other events fail with `fallback_template_not_allowed`.
+- One recipient: the address in the request.
+- From `DEFAULT_FROM_EMAIL`, no reply-to, plus a footer line naming the project.
+- Caps, checked on accept: `EMAIL_FALLBACK_RECIPIENT_HOURLY_LIMIT` (`429 fallback_recipient_limit`), `EMAIL_FALLBACK_COMPANY_DAILY_LIMIT` (`429 fallback_company_limit`) and `EMAIL_FALLBACK_GLOBAL_DAILY_LIMIT` (`429 fallback_global_limit`). Daily caps reset at 00:00 UTC.
+- **Disable Shellui fallback provider** on the company profile in Django admin refuses its mail with `409 fallback_disabled`.
+- `GET /api/v1/provider` returns `fallback_usage` (`applies`, `disabled`, `day`, `used`, `limit`, `recipient_hourly_limit`). Metrics: `shellui_email_fallback_sent_today` and `shellui_email_fallback_refused_today`.
 
 Set `EMAIL_FALLBACK_PROVIDER=none` to require a company provider for auth mail as well (sends then fail with `provider_not_configured`).
 

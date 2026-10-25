@@ -26,6 +26,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### ✨ Feature
 
 - **Amazon SES:** Companies can send through the SES API, which works in regions without SMTP such as Zurich.
+- **Fallback provider:** Projects without a provider send sign-in mail through Shellui's Resend or SES account, with daily caps.
 
 ## [0.3.0] - 2026-10-24
 

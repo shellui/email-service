@@ -41,7 +41,7 @@ REQUIRED = (
     Required('EMAIL_CREDENTIALS_KEY', 'Fernet key for provider credentials. Generated.'),
     Required('EMAIL_VARIABLES_KEY', 'Fernet key for template variables. Generated.'),
     Required('EMAIL_HASH_PEPPER', 'HMAC secret for recipient addresses. Generated.'),
-    Required('RESEND_API_KEY', 'Platform fallback provider (Resend).'),
+    Required('RESEND_API_KEY', 'Platform fallback key when EMAIL_FALLBACK_PROVIDER=resend.'),
 )
 
 OPTIONAL = (
@@ -70,6 +70,13 @@ OPTIONAL = (
     Var('EMAIL_AUTH_MAX_TTL_SECONDS', '300'),
     Var('EMAIL_FALLBACK_PROVIDER', 'resend', 'Provider fallback'),
     Var('EMAIL_PLATFORM_COMPANY_IDS', ''),
+    Var('SES_ACCESS_KEY_ID', ''),
+    Var('SES_SECRET_ACCESS_KEY', ''),
+    Var('SES_REGION', 'eu-central-2'),
+    Var('SES_CONFIGURATION_SET', ''),
+    Var('EMAIL_FALLBACK_COMPANY_DAILY_LIMIT', '50'),
+    Var('EMAIL_FALLBACK_GLOBAL_DAILY_LIMIT', '500'),
+    Var('EMAIL_FALLBACK_RECIPIENT_HOURLY_LIMIT', '5'),
     Var('EMAIL_ALLOW_COMPANY_SMTP', 'false'),
     Var('EMAIL_ALLOW_FAKE_PROVIDER', 'false'),
     Var('RESEND_WEBHOOK_SECRET', ''),

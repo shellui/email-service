@@ -14,6 +14,8 @@ from __future__ import annotations
 from apps.email.rendering import compose
 
 STAFF_BLOCKED = 'identity.auth.magic_link.staff_blocked'
+# Companies may edit this one. The copy below is only used on the Shellui fallback provider.
+MAGIC_LINK = 'identity.auth.magic_link.requested'
 
 _FONT = 'font-family:Inter,system-ui,Arial,sans-serif'
 _HEADING_STYLE = f'font-size:24px;font-weight:600;line-height:1.3;color:rgb(20,23,30);margin:0 0 16px;{_FONT}'
@@ -24,9 +26,27 @@ _BUTTON_STYLE = (
 )
 
 # URL variable each built-in email may link to. The button only shows when it has a value.
-LINK_VARIABLE = {STAFF_BLOCKED: 'sign_in_url'}
+LINK_VARIABLE = {STAFF_BLOCKED: 'sign_in_url', MAGIC_LINK: 'magic_link_url'}
 
 COPY = {
+    MAGIC_LINK: {
+        'en': {
+            'heading': 'Sign in to {{ company_name }}',
+            'paragraph': (
+                'Use the button below to sign in to {{ company_name }}. The link expires in a few minutes. '
+                "If you didn't ask for this, you can ignore this email."
+            ),
+            'button': 'Sign in',
+        },
+        'fr': {
+            'heading': 'Connexion à {{ company_name }}',
+            'paragraph': (
+                'Utilisez le bouton ci-dessous pour vous connecter à {{ company_name }}. Le lien expire dans quelques minutes. '
+                "Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail."
+            ),
+            'button': 'Se connecter',
+        },
+    },
     STAFF_BLOCKED: {
         'en': {
             'heading': 'No sign-in link for staff accounts',

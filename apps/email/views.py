@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.authapi.service_auth import ServicePrincipal
+from apps.email.fallback import usage as fallback_usage
 from apps.email.access import company_from_request, require_admin, require_staff
 from apps.email.catalog import all_definitions, get_definition
 from apps.email.crypto import decrypt_json, email_hmac, encrypt_json, mask_email, mask_secret
@@ -899,6 +900,7 @@ def _provider_common(company_id: int, authorization: str = '') -> dict:
     return {
         'fallback_provider': settings.EMAIL_FALLBACK_PROVIDER,
         'fallback_configured': platform_fallback_configured(),
+        'fallback_usage': fallback_usage(company_id),
         'smtp_allowed': bool(settings.EMAIL_ALLOW_COMPANY_SMTP),
         'auth_link_hosts': effective_auth_link_hosts(company_id),
     }
