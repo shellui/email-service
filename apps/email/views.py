@@ -1013,7 +1013,19 @@ class ProviderView(APIView):
                         resolve_public_host(host, port)
                     except SSRFError:
                         raise SendError(400, 'provider_host_not_public', {'host': ['not_public']})
-                secret = credentials.get('api_key') or credentials.get('password') or ''
+                if provider == 'ses':
+                    from apps.providers.ses import normalize_credentials, validate_credentials
+
+                    field_errors = validate_credentials(credentials)
+                    if field_errors:
+                        raise SendError(400, 'validation_failed', field_errors)
+                    credentials = normalize_credentials(credentials)
+                secret = (
+                    credentials.get('api_key')
+                    or credentials.get('password')
+                    or credentials.get('secret_access_key')
+                    or ''
+                )
                 credentials = strip_internal_credentials(credentials)
                 ciphertext = encrypt_json(credentials, setting='EMAIL_CREDENTIALS_KEY')
                 hint = mask_secret(str(secret))

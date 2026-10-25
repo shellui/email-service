@@ -105,7 +105,7 @@ JSON errors never contain translated sentences. Shape:
 | `auth_link_missing` | 400 | An auth-lane copy dropped a required link variable such as `magic_link_url` |
 | `auth_link_host_not_allowed` | 400 | An auth-lane link (link mark, button, or linked image) is not an allowlisted `https` host, a declared URL variable, or `system.message_id`. `allowed_link_hosts: ["not_allowlisted"]` means add the hostname under Allowed link hosts |
 | `auth_literal_link` | 400 | An auth-lane copy has a literal URL in the subject, preheader, or document text |
-| `provider_not_available` | 400 | Provider name is not `resend` or `smtp` |
+| `provider_not_available` | 400 | Provider name is not `resend`, `ses`, or `smtp` |
 | `provider_test_failed` | 502 | The test send was refused by the provider |
 | `message_not_found` | 404 | Unknown message id |
 | `message_not_cancellable` | 409 | Status is not `queued` or `retrying` |
