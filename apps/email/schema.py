@@ -377,6 +377,10 @@ class ProviderCredentialsSerializer(serializers.Serializer):
     password = serializers.CharField(required=False)
     use_tls = serializers.BooleanField(required=False)
     use_ssl = serializers.BooleanField(required=False)
+    access_key_id = serializers.CharField(required=False, help_text='Amazon SES access key id.')
+    secret_access_key = serializers.CharField(required=False, help_text='Amazon SES secret access key. Write-only.')
+    region = serializers.CharField(required=False, help_text='Amazon SES region. Defaults to eu-central-2.')
+    configuration_set = serializers.CharField(required=False, allow_blank=True, help_text='Optional Amazon SES configuration set.')
 
 
 class ProviderSerializer(serializers.Serializer):
@@ -409,7 +413,7 @@ class AuthLinkHostsWriteSerializer(serializers.Serializer):
 
 
 class ProviderWriteSerializer(serializers.Serializer):
-    provider = serializers.ChoiceField(choices=['resend', 'smtp'])
+    provider = serializers.ChoiceField(choices=['resend', 'ses', 'smtp'])
     from_email = serializers.EmailField()
     from_name = serializers.CharField(required=False, allow_blank=True)
     sending_domain = serializers.CharField(required=False, allow_blank=True)

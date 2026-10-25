@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### ✨ Feature
+
+- **Amazon SES:** Companies can send through the SES API, which works in regions without SMTP such as Zurich.
+
 ## [0.3.0] - 2026-10-24
 
 ### ✨ Feature
