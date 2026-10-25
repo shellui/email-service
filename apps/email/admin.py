@@ -87,7 +87,8 @@ class CompanyProfileAdminForm(forms.ModelForm):
 @admin.register(CompanyProfile)
 class CompanyProfileAdmin(admin.ModelAdmin):
     form = CompanyProfileAdminForm
-    list_display = ('company_id', 'name', 'updated_at')
+    list_display = ('company_id', 'name', 'fallback_disabled', 'updated_at')
+    list_filter = ('fallback_disabled',)
     search_fields = ('company_id', 'name')
     readonly_fields = ('application_link_hosts',)
 

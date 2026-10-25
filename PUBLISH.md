@@ -134,7 +134,7 @@ uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_
 uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Also set `ALLOWED_HOSTS`, `PUBLIC_BASE_URL`, `IDENTITY_SERVICE_URL`, `EMAIL_AUTH_LINK_HOSTS` (the identity host, for example `id.shellui.com`), and the platform provider (`RESEND_API_KEY`, `DEFAULT_FROM_EMAIL`, `BULK_FROM_EMAIL`). See [docs/configuration.md](docs/configuration.md).
+Also set `ALLOWED_HOSTS`, `PUBLIC_BASE_URL`, `IDENTITY_SERVICE_URL`, `EMAIL_AUTH_LINK_HOSTS` (the identity host, for example `id.shellui.com`), and, to turn on the platform fallback, `EMAIL_FALLBACK_PROVIDER` with its keys (for example `RESEND_API_KEY`), `DEFAULT_FROM_EMAIL` and `BULK_FROM_EMAIL`. See [docs/configuration.md](docs/configuration.md).
 
 ### Run the containers
 
@@ -171,7 +171,7 @@ The container applies migrations, which also sync the built-in library designs, 
 > Mail looks fine on day one without these, then quietly degrades: bounces are not suppressed, statuses stay at "handed to the provider", broadcasts fail, and Resend unsubscribes are lost. The full steps are in [Providers: Resend account](docs/providers.md#resend-account-before-mail-leaves).
 
 - [ ] Main domain (`DEFAULT_FROM_EMAIL`) and news subdomain (`BULK_FROM_EMAIL`) are both **verified** in Resend > Domains.
-- [ ] `RESEND_API_KEY` is a **Full access** key. A Sending access key makes every broadcast fail with `provider_unauthorized`.
+- [ ] With `EMAIL_FALLBACK_PROVIDER=resend`, `RESEND_API_KEY` is a **Full access** key. A Sending access key makes every broadcast fail with `provider_unauthorized`.
 - [ ] A Resend webhook points at `{PUBLIC_BASE_URL}/api/v1/provider-webhooks/resend/all`.
 - [ ] The webhook sends `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained`, `email.failed`, `email.suppressed`, and **`contact.updated`**.
 - [ ] Its signing secret is in `RESEND_WEBHOOK_SECRET`, and Resend's webhook page shows `200` responses (`401` means the secret does not match).

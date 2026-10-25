@@ -33,7 +33,7 @@ For production, `python manage.py generate_env --host email.example.com` prints 
 | `PUBLIC_BASE_URL` | Public origin, used in unsubscribe links |
 | `IDENTITY_JWKS` | Pinned identity public keys, required when `DEBUG=false` |
 | `EMAIL_CREDENTIALS_KEY` | Encrypts company provider credentials |
-| `RESEND_API_KEY` | Platform fallback provider |
+| `EMAIL_FALLBACK_PROVIDER` | Off (`none`) by default. `resend` with `RESEND_API_KEY`, or `ses` with the `SES_*` keys |
 
 Every setting is in [Configuration](docs/configuration.md). Before the first real send, finish the [Resend account steps](docs/providers.md#resend-account-before-mail-leaves).
 

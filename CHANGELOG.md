@@ -26,6 +26,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### ✨ Feature
 
 - **Amazon SES:** Companies can send through the SES API, which works in regions without SMTP such as Zurich.
+- **Fallback provider:** Opt-in `EMAIL_FALLBACK_PROVIDER` (Resend or SES, off by default) sends capped sign-in mail for projects without a provider.
 
 ## [0.3.0] - 2026-10-24
 

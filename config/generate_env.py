@@ -36,7 +36,6 @@ def _values(host: str) -> dict[str, str]:
         'EMAIL_CREDENTIALS_KEY': _fernet_key(),
         'EMAIL_VARIABLES_KEY': _fernet_key(),
         'EMAIL_HASH_PEPPER': _fernet_key(),
-        'RESEND_API_KEY': ph,
     }
 
 
