@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.5.0] - yyyy-mm-dd
+
+### ✨ Feature
+
+- **Email and webhooks rules:** Newsletter sign-up, confirm and unsubscribe events trigger webhooks and email rules, both filterable by list.
+- **Newsletter metadata:** Sign-ups accept an optional `metadata` object, for example for walkthrough requests.
+
 ## [0.4.0] - 2026-10-25
 
 ### ✨ Feature

@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import re
 import secrets
 from datetime import timedelta
@@ -41,7 +42,11 @@ ORIGIN_RE = re.compile(r'^https?://[a-z0-9.-]+(:\d{1,5})?$')
 SUBSCRIBE_PATH_RE = re.compile(r'^/api/v1/public/newsletters/(?P<key>[^/]+)/subscribe$')
 UNSUBSCRIBE_PREFIX = 'list-'
 ORIGINS_CACHE_SECONDS = 60
-CSV_FIELDS = ('email', 'first_name', 'language', 'status', 'source', 'created_at', 'confirmed_at', 'unsubscribed_at')
+METADATA_KEY_RE = re.compile(r'^[a-z][a-z0-9_]{0,31}$')
+METADATA_MAX_KEYS = 10
+METADATA_MAX_VALUE = 2000
+METADATA_MAX_BYTES = 8192
+CSV_FIELDS = ('email', 'first_name', 'language', 'status', 'source', 'created_at', 'confirmed_at', 'unsubscribed_at', 'metadata')
 MODE_CONFIRM = 'confirm'
 MODE_CONSENTED = 'consented'
 
@@ -457,6 +462,7 @@ def subscribe(newsletter: NewsletterList, data, *, ip: str, accept_language: str
     if str(data.get('website') or '').strip():
         return
     email = _clean_email(data.get('email'))
+    metadata = clean_metadata(data.get('metadata'))
     hour = timezone.now().strftime('%Y%m%d%H')
     if not _rate_allow(f'email:nl:ip:{_opaque(ip or "unknown")}:{hour}', settings.EMAIL_NEWSLETTER_IP_PER_HOUR, 3700):
         raise SendError(429, 'rate_limited')
@@ -471,7 +477,30 @@ def subscribe(newsletter: NewsletterList, data, *, ip: str, accept_language: str
         language=pick_language(newsletter, data.get('language'), accept_language),
         first_name=str(data.get('first_name') or '').strip()[:150],
         source=NewsletterSubscriber.SOURCE_FORM,
+        metadata=metadata,
     )
+
+
+def clean_metadata(raw) -> dict | None:
+    """Optional flat string map. None means the field was not sent. Never logs the values."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise _invalid('metadata', 'metadata_invalid')
+    if len(raw) > METADATA_MAX_KEYS:
+        raise _invalid('metadata', 'metadata_too_many_keys')
+    clean = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not METADATA_KEY_RE.match(key):
+            raise _invalid('metadata', 'metadata_key_invalid')
+        if not isinstance(value, str):
+            raise _invalid('metadata', 'metadata_value_invalid')
+        if len(value) > METADATA_MAX_VALUE:
+            raise _invalid('metadata', 'metadata_value_too_long')
+        clean[key] = value
+    if len(json.dumps(clean, ensure_ascii=False).encode()) > METADATA_MAX_BYTES:
+        raise _invalid('metadata', 'metadata_too_large')
+    return clean
 
 
 def _store_address(row: NewsletterSubscriber, email: str) -> None:
@@ -487,6 +516,7 @@ def request_confirmation(
     first_name: str,
     source: str,
     check_rates: bool = True,
+    metadata: dict | None = None,
 ) -> str:
     """Create or refresh a pending subscriber and send the confirmation. Returns what happened."""
     hmac_value = email_hmac(email)
@@ -497,6 +527,11 @@ def request_confirmation(
             email_hmac=hmac_value,
             defaults={'email_masked': mask_email(email), 'language': language, 'source': source},
         )
+        if metadata is not None:
+            # Latest sign-up wins: sent metadata replaces what was stored, even for confirmed rows.
+            row.metadata = metadata
+            if not created:
+                row.save(update_fields=['metadata'])
         if not created:
             if row.status == NewsletterSubscriber.STATUS_CONFIRMED:
                 return OUTCOME_EXISTING
@@ -546,6 +581,8 @@ def request_confirmation(
             expires_at=None,
             event_type='newsletter_confirmation',
         )
+        row.list = newsletter
+        _emit(row, 'email.newsletter.requested', {'source': row.source})
     _notify(LANE_TRANSACTIONAL)
     if settings.EMAIL_DELIVER_SYNC:
         deliver_due(LANE_TRANSACTIONAL)
@@ -577,17 +614,25 @@ def _address(row: NewsletterSubscriber) -> str:
 
 
 def _emit(row: NewsletterSubscriber, event_type: str, extra: dict) -> None:
-    emit_email_event(
-        company_id=row.list.company_id,
-        event_type=event_type,
-        data={
-            'list_id': row.list_id,
-            'list_name': row.list.name,
-            'email': _address(row) or row.email_masked,
-            'language': row.language,
-            **extra,
-        },
-    )
+    """Webhook rules and email rules for a newsletter event. Never carries the confirmation token or link."""
+    from apps.email.newsletter_events import send_event_email
+
+    data = {
+        'list_id': row.list_id,
+        'list_name': row.list.name,
+        'email': _address(row) or row.email_masked,
+        'first_name': row.first_name,
+        'language': row.language,
+        'status': row.status,
+        'metadata': row.metadata or {},
+        'created_at': _iso(row.created_at),
+        'confirmed_at': _iso(row.confirmed_at),
+        'unsubscribed_at': _iso(row.unsubscribed_at),
+        **extra,
+    }
+    emit_email_event(company_id=row.list.company_id, event_type=event_type, data=data)
+    company_id = row.list.company_id
+    transaction.on_commit(lambda: send_event_email(company_id, event_type, data))
 
 
 def confirm(token: str) -> NewsletterSubscriber | None:
@@ -648,6 +693,7 @@ def subscriber_payload(row: NewsletterSubscriber) -> dict:
         'id': row.pk,
         'email': _address(row) or row.email_masked,
         'first_name': row.first_name,
+        'metadata': row.metadata or {},
         'language': row.language,
         'status': row.status,
         'source': row.source,
@@ -829,6 +875,7 @@ def export_csv(newsletter: NewsletterList, *, status: str = '') -> str:
     writer.writerow(CSV_FIELDS)
     for row in rows.iterator():
         payload = subscriber_payload(row)
+        payload['metadata'] = json.dumps(payload['metadata'], ensure_ascii=False) if payload['metadata'] else ''
         writer.writerow([_cell(payload[field]) for field in CSV_FIELDS])
     return buffer.getvalue()
 
@@ -866,6 +913,6 @@ def purge(now=None) -> tuple[int, int]:
     cleared = (
         NewsletterSubscriber.objects.filter(status=NewsletterSubscriber.STATUS_UNSUBSCRIBED, unsubscribed_at__lt=cutoff)
         .exclude(email_ciphertext='')
-        .update(email_ciphertext='', first_name='')
+        .update(email_ciphertext='', first_name='', metadata={})
     )
     return deleted, cleared

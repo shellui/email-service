@@ -1,0 +1,69 @@
+{
+  "key": "email.newsletter.confirmed",
+  "owner_service": "email",
+  "lane_class": "transactional",
+  "default_lane": "transactional",
+  "category": "transactional",
+  "default_enabled": false,
+  "default_ttl_seconds": null,
+  "variables": [
+    {
+      "token": "company_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.company_name",
+      "example": "Acme",
+      "is_url": false
+    },
+    {
+      "token": "list_id",
+      "type": "number",
+      "required": false,
+      "description": "email.var.list_id",
+      "example": 12,
+      "is_url": false
+    },
+    {
+      "token": "list_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.list_name",
+      "example": "Walkthrough requests",
+      "is_url": false
+    },
+    {
+      "token": "subscriber_email",
+      "type": "string",
+      "required": false,
+      "description": "email.var.subscriber_email",
+      "example": "ada@example.org",
+      "is_url": false
+    },
+    {
+      "token": "first_name",
+      "type": "string",
+      "required": false,
+      "description": "email.var.first_name",
+      "example": "Ada",
+      "is_url": false
+    },
+    {
+      "token": "language",
+      "type": "string",
+      "required": false,
+      "description": "email.var.language",
+      "example": "en",
+      "is_url": false
+    },
+    {
+      "token": "metadata_text",
+      "type": "string",
+      "required": false,
+      "description": "email.var.metadata_text",
+      "example": "project: Acme\nmessage: Hello",
+      "is_url": false
+    }
+  ],
+  "link_token": "",
+  "default_template": "barebone.text-only"
+}

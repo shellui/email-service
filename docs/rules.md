@@ -24,6 +24,7 @@ The HTTP contract is also in [integration.md](integration.md). Catalog events ar
 | `enabled` | `false` skips this rule. Built-in rules cannot be set to `false`. |
 | `recipient_mode` | `hints` uses the event's recipients. `static` uses `static_recipients`. Built-in rules are always `hints`. |
 | `static_recipients` | Email strings. On write, a string or `{"email": "…"}` is accepted. |
+| `newsletter_id` | `email.newsletter.*` rules only. Sends only for that newsletter list of the company. `null` (default) sends for every list. |
 | `language` | `en`, `fr`, or blank. Blank follows the recipient language, then the event language, then `en`. The copy sends that language's [translation](templates.md#languages) when it has one. |
 | `template_id` | The rule's copy: the company template this rule sends. |
 | `built_in` | Read-only. `true` for auth-lane rules created by the service. |
@@ -48,11 +49,11 @@ Creates any missing built-in rules, then returns `{company_id, rules}`. Order is
 
 `content.library_id` is a library template the company can see: a built-in or one of its own (`GET /api/v1/library`). email-service copies that design onto the event, publishes it, and links it. The copy is named with the event label and uses the catalog subject and preheader in the rule's language. The response `template_id` is the copy the editor opens. Two rules never share a copy.
 
-Optional fields: `service` (must own the event), `enabled` (default `true`), `recipient_mode` (default `hints`), `static_recipients`, `language`.
+Optional fields: `service` (must own the event), `enabled` (default `true`), `recipient_mode` (default `hints`), `static_recipients`, `language`, `newsletter_id`.
 
 `GET /api/v1/rules/{id}?company_id=42` returns one rule.
 
-`PATCH /api/v1/rules/{id}?company_id=42` accepts `enabled`, `recipient_mode`, `static_recipients`, and `language`. To change the design, start the copy over from another library template (`POST /api/v1/templates/{id}/versions` with `library_id`).
+`PATCH /api/v1/rules/{id}?company_id=42` accepts `enabled`, `recipient_mode`, `static_recipients`, `language`, and `newsletter_id` (`null` clears it). To change the design, start the copy over from another library template (`POST /api/v1/templates/{id}/versions` with `library_id`).
 
 `DELETE /api/v1/rules/{id}?company_id=42` returns `204` and deletes the rule's copy.
 
@@ -67,6 +68,7 @@ JSON uses `error_code` only. No translated sentence.
 | `rule_built_in` | 409 | Delete, `{"enabled": false}`, `recipient_mode: static`, or a non-empty `static_recipients` on a built-in rule |
 | `auth_event_rule_forbidden` | 400 | `POST` on an auth-lane event (`field_errors.event_type: ["auth_event"]`), or `PATCH` on a company rule written on one before this check |
 | `language_not_available` | 400 | Language is not `en` or `fr` |
+| `validation_failed` | 400 | `newsletter_id` is not a list of this company (`field_errors.newsletter_id: ["not_found"]`), not a number (`invalid`), or set on an event outside `email.newsletter.*` (`not_newsletter_event`) |
 | `not_found` | 404 | Rule id is not in this company |
 | `validation_failed` | 400 | `content.library_id` is missing (`library_id_required`), `recipient_mode` is not `hints` or `static`, or `static_recipients` is not a list of addresses |
 | `library_not_synced` | 503 | A built-in rule's default design is missing because migrations have not run |
