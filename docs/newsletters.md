@@ -58,7 +58,7 @@ No auth. Body (JSON or form):
 | `turnstile_token` | Required when the list has a Turnstile secret |
 | `metadata` | Optional flat object of extra details, for example `{"project": "Acme", "message": "Hi"}`. Keys match `^[a-z][a-z0-9_]{0,31}$`, values are strings of up to 2000 characters, at most 10 keys and 8 KB of JSON in total. Shown in the admin, the subscriber API and the CSV export. Never logged. |
 
-When `metadata` is sent, it replaces what was stored for that address, even if the address is already confirmed. A sign-up without `metadata` keeps the stored one. It is visitor text: treat it as untrusted.
+When `metadata` is sent on a new or pending sign-up that gets a confirmation email, it replaces what was stored. A sign-up for an address that is already confirmed, or that is throttled, never changes the stored `metadata`: the form is public, so anyone could post someone else's address. A sign-up without `metadata` keeps the stored one. It is visitor text: treat it as untrusted.
 
 `metadata` goes into newsletter webhooks (`data.metadata`) and into email rules (`metadata_text`). It never goes into the confirmation email sent to the visitor. It is cleared with the address and first name when an unsubscribed row is purged, and deleted with the row by `POST /api/v1/privacy/erase` or when the list is deleted.
 
@@ -77,10 +77,10 @@ The answer is `202 {"status": "pending"}` whether the address is new, already pe
 ### Abuse protection
 
 - **Double opt-in**: nobody is on the list until they click the link in their own inbox.
-- **Rate limits**: `EMAIL_NEWSLETTER_IP_PER_HOUR` (10) per IP, `EMAIL_NEWSLETTER_ADDRESS_PER_DAY` (3) confirmation emails per address and list, and `EMAIL_NEWSLETTER_LIST_PER_HOUR` (500) per list. Behind a proxy, set `EMAIL_CLIENT_IP_HEADER` (for example `CF-Connecting-IP`) so the limit applies to the visitor and not the proxy.
+- **Rate limits**: `EMAIL_NEWSLETTER_IP_PER_HOUR` (10) per IP, `EMAIL_NEWSLETTER_ADDRESS_PER_DAY` (3) confirmation emails per address and list, and `EMAIL_NEWSLETTER_LIST_PER_HOUR` (500) per list. Behind a proxy, set `EMAIL_CLIENT_IP_HEADER` (for example `X-Real-IP` or `CF-Connecting-IP`) so the limit applies to the visitor and not the proxy. With `X-Forwarded-For`, the address is read from the right (`EMAIL_CLIENT_IP_TRUSTED_PROXIES`). See [Configuration](configuration.md).
 - **Honeypot**: the `website` field.
 - **Cloudflare Turnstile** (optional): set the site key and secret on the list. The secret is stored encrypted and never returned.
-- **Allowed origins**: browsers may only post from the list's `allowed_origins` (empty means any website). The endpoint answers CORS for those origins only.
+- **Allowed origins**: browsers may only post from the list's `allowed_origins` (empty means any website). The endpoint answers CORS for those origins only. This is a browser control: a request without an `Origin` header, such as a server-side script, is accepted, so rely on the rate limits and Turnstile against scripted sign-ups.
 
 ## Unsubscribing
 

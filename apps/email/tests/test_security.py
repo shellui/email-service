@@ -164,7 +164,7 @@ class SecurityRegressionTests(TestCase):
             def ehlo(self):
                 return None
 
-            def starttls(self):
+            def starttls(self, **kwargs):
                 return None
 
             def quit(self):

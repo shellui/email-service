@@ -63,6 +63,7 @@ GUNICORN_ARGS=(
   --threads "${GUNICORN_THREADS:-2}"
   --timeout "${GUNICORN_TIMEOUT:-120}"
   --access-logfile -
+  --logger-class config.gunicorn_logging.RedactingLogger
   --error-logfile -
   config.wsgi:application
 )

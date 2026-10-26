@@ -28,6 +28,8 @@ That copy has no link and no token. Variables are `company_name` and `sign_in_ur
 
 `email.message.*` webhook data is `message_id`, `template_key`, `lane`, `service`, `to_email`, and `to_user_id`. It does not include the sign-in URL or the token. The service's own log lines do not write those values either. An SMTP library exception can still contain whatever the relay returned.
 
+The gunicorn access log replaces the token in newsletter confirmation (`/n/confirm/…`) and unsubscribe (`/u/…`) paths with `[redacted]`, and never writes the `Referer`, `Authorization` or `Cookie` headers. A failed JWT is logged with its `alg`, `kid` and the error type only, never its claims.
+
 Auth copy cannot put the link variable in an image `src`, a `style`, or an `alt` (`auth_link_misplaced`). Subject, preheader, and document text cannot contain a literal URL (`auth_literal_link`).
 
 ## What a company can change
@@ -74,6 +76,8 @@ The token `kid` must name a key in that document. A missing or unknown `kid` fai
 ## Transport
 
 When `DEBUG=false`, `SECURE_SSL_REDIRECT`, HSTS (one year), and secure session and CSRF cookies default to on. Postgres TLS is required unless `POSTGRES_SSL_REQUIRE=false`.
+
+SMTP relays are reached over verified TLS: the certificate and hostname are checked on STARTTLS and implicit TLS. A relay that fails the check returns `provider_tls_unverified` and is not retried. Only the platform relay (`EMAIL_HOST`) can opt out with `EMAIL_SMTP_VERIFY_CERT=false`.
 
 ## Links in auth mail
 

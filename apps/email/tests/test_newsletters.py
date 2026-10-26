@@ -127,7 +127,7 @@ class NewsletterTests(TestCase):
         self.assertEqual((again.status_code, again.json()), (202, {'status': 'pending'}))
         self.assertEqual(len(fake_provider().sent), sent)
 
-    def test_sign_up_stores_metadata_and_latest_wins(self):
+    def test_sign_up_stores_metadata_and_a_public_post_cannot_rewrite_a_confirmed_row(self):
         newsletter = self._create()
         meta = {'project': 'Zebulon', 'message': 'Line one\n<b>two</b>'}
         with self.assertNoLogs('apps', level='INFO'):
@@ -137,15 +137,21 @@ class NewsletterTests(TestCase):
         [message] = fake_provider().sent
         self.assertNotIn('Zebulon', message.html + message.text)
         self.public.post(f'/n/confirm/{self._token()}')
-        self.assertEqual(self._subscribe(newsletter, metadata={'project': 'Beta'}).status_code, 202)
+        self.assertEqual(self._subscribe(newsletter, metadata={'project': 'Forged'}).status_code, 202)
         row.refresh_from_db()
-        self.assertEqual(row.metadata, {'project': 'Beta'})
+        self.assertEqual(row.metadata, meta)
         self._subscribe(newsletter)
         row.refresh_from_db()
-        self.assertEqual(row.metadata, {'project': 'Beta'})
+        self.assertEqual(row.metadata, meta)
         base = f'/api/v1/newsletters/{newsletter["id"]}'
-        self.assertEqual(self.owner.get(f'{base}/subscribers').json()['results'][0]['metadata'], {'project': 'Beta'})
-        self.assertIn('"{""project"": ""Beta""}"', self.owner.get(f'{base}/subscribers.csv').content.decode())
+        self.assertEqual(self.owner.get(f'{base}/subscribers').json()['results'][0]['metadata'], meta)
+        self.assertIn('""project"": ""Zebulon""', self.owner.get(f'{base}/subscribers.csv').content.decode())
+
+    def test_throttled_pending_sign_up_keeps_its_metadata(self):
+        newsletter = self._create()
+        self._subscribe(newsletter, metadata={'project': 'First'})
+        self.assertEqual(self._subscribe(newsletter, metadata={'project': 'Second'}).status_code, 202)
+        self.assertEqual(NewsletterSubscriber.objects.get().metadata, {'project': 'First'})
 
     @mock.patch('apps.actions.ssrf.validate_webhook_url', side_effect=lambda url, **kw: url)
     def test_newsletter_events_reach_filtered_webhooks_and_email_rules(self, _validate):

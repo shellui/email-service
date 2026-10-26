@@ -18,35 +18,15 @@ _GENERIC_TOKEN_DETAIL = 'Token is invalid or could not be verified against ident
 
 
 def _safe_jwt_meta(raw_token: str) -> dict[str, Any]:
-    """Header/claim fields that are safe to log (never the token or signature)."""
+    """Header fields that are safe to log. Never the token, its signature or its claims."""
     meta: dict[str, Any] = {'token_segments': raw_token.count('.') + 1 if raw_token else 0}
     try:
         header = jwt.get_unverified_header(raw_token)
     except Exception as exc:
-        meta['header_error'] = f'{type(exc).__name__}: {exc}'
+        meta['header_error'] = type(exc).__name__
         return meta
     meta['alg'] = header.get('alg')
     meta['kid'] = header.get('kid')
-    meta['typ'] = header.get('typ')
-    try:
-        payload = jwt.decode(
-            raw_token,
-            options={
-                'verify_signature': False,
-                'verify_exp': False,
-                'verify_nbf': False,
-                'verify_aud': False,
-                'verify_iss': False,
-            },
-            algorithms=[header['alg']] if header.get('alg') else ['RS256', 'HS256'],
-        )
-    except Exception as exc:
-        meta['payload_error'] = f'{type(exc).__name__}: {exc}'
-        return meta
-    meta['iss'] = payload.get('iss')
-    meta['aud'] = payload.get('aud')
-    meta['exp'] = payload.get('exp')
-    meta['sub'] = payload.get('sub')
     return meta
 
 
@@ -66,9 +46,8 @@ def _jwks_meta() -> dict[str, Any]:
     try:
         client = get_jwks_client()
         info['jwks_key_count'] = client.key_count()
-        info['jwks_kids'] = client.key_ids()
     except Exception as exc:
-        info['jwks_error'] = f'{type(exc).__name__}: {exc}'
+        info['jwks_error'] = type(exc).__name__
     return info
 
 
@@ -131,8 +110,8 @@ class IdentityJWKSAuthentication(authentication.BaseAuthentication):
             return principal_from_claims(claims)
         except ValueError as exc:
             logger.warning(
-                'JWT claims rejected: %s. %s',
-                exc,
+                'JWT claims rejected (%s). %s',
+                type(exc).__name__,
                 _format_context(_safe_jwt_meta(raw_token)),
             )
             raise exceptions.AuthenticationFailed(str(exc)) from exc
@@ -171,17 +150,15 @@ class IdentityJWKSAuthentication(authentication.BaseAuthentication):
             raise exceptions.AuthenticationFailed('Token has expired.') from exc
         except jwt.InvalidTokenError as exc:
             logger.warning(
-                'JWT JWKS verification failed (%s): %s. %s',
+                'JWT JWKS verification failed (%s). %s',
                 type(exc).__name__,
-                exc,
                 _format_context(token_meta, _jwks_meta()),
             )
             errors.append(exc)
         except Exception as exc:
             logger.warning(
-                'JWT JWKS verification error (%s): %s. %s',
+                'JWT JWKS verification error (%s). %s',
                 type(exc).__name__,
-                exc,
                 _format_context(token_meta, _jwks_meta()),
             )
             errors.append(exc)
@@ -206,9 +183,8 @@ class IdentityJWKSAuthentication(authentication.BaseAuthentication):
                 raise exceptions.AuthenticationFailed('Token has expired.') from exc
             except jwt.InvalidTokenError as exc:
                 logger.warning(
-                    'JWT HS256 fallback failed (%s): %s. %s',
+                    'JWT HS256 fallback failed (%s). %s',
                     type(exc).__name__,
-                    exc,
                     _format_context(token_meta),
                 )
                 errors.append(exc)

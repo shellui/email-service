@@ -872,14 +872,21 @@ def _recipient_address(data: dict) -> str:
     return str(to or '').strip()
 
 
-def apply_broadcast_event(event_name: str, data: dict) -> bool:
-    """A Resend delivery event for one recipient of a broadcast."""
+def apply_broadcast_event(event_name: str, data: dict, company_id: int | None = None) -> bool:
+    """A Resend delivery event for one recipient of a broadcast.
+
+    ``company_id`` is set when the event came in on a company's own webhook secret: it can
+    then only touch that company's broadcasts. The broadcast id must match exactly.
+    """
     status = RESEND_EVENT_STATUS.get(event_name)
     broadcast_id = str(data.get('broadcast_id') or '')
     address = _recipient_address(data)
     if status is None or not broadcast_id or not address:
         return False
-    broadcast = Broadcast.objects.filter(resend_lookup__contains=broadcast_id).first()
+    candidates = Broadcast.objects.filter(resend_lookup__contains=broadcast_id)
+    if company_id is not None:
+        candidates = candidates.filter(company_id=company_id)
+    broadcast = next((row for row in candidates if broadcast_id in row.resend_lookup.split()), None)
     if broadcast is None:
         return False
     hmac_value = email_hmac(address)

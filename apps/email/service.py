@@ -1184,13 +1184,21 @@ def sweep() -> dict:
     return {'expired': expired, 'released': released}
 
 
-def apply_provider_event(*, provider_message_id: str, event_name: str, provider_event_id: str, detail: dict) -> bool:
+def apply_provider_event(
+    *, provider_message_id: str, event_name: str, provider_event_id: str, detail: dict, company_id: int | None = None
+) -> bool:
     from apps.providers.webhooks import RESEND_STATUS
 
     status = RESEND_STATUS.get(event_name)
     if status is None or event_name in {'email.opened', 'email.clicked'}:
         return False
-    message = Message.objects.filter(provider_message_id=provider_message_id).first()
+    if not provider_message_id:
+        return False
+    messages = Message.objects.filter(provider_message_id=provider_message_id)
+    if company_id is not None:
+        # A company webhook secret only speaks for that company's messages.
+        messages = messages.filter(company_id=company_id)
+    message = messages.first()
     if message is None:
         return False
     if provider_event_id and MessageEvent.objects.filter(provider_event_id=provider_event_id).exists():

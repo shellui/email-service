@@ -3,12 +3,15 @@
 ``POST /api/v1/send`` and ``/events`` bodies carry ``magic_link_url``. Frame locals in
 the send path hold the rendered HTML and text, which contain it too. Neither is a
 named secret that Sentry's default denylist would catch, so request bodies and locals
-are never attached, and query strings are dropped from URLs.
+are never attached, query strings are dropped from URLs, and confirmation and
+unsubscribe tokens are removed from URL paths.
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+from config.log_redaction import redact_path
 
 FILTERED = '[Filtered]'
 
@@ -39,7 +42,8 @@ def before_send(event: dict, hint: dict | None = None) -> dict:
     request = event.get('request')
     if isinstance(request, dict):
         if 'url' in request:
-            request['url'] = _without_query(request['url'])
+            url = _without_query(request['url'])
+            request['url'] = redact_path(url) if isinstance(url, str) else url
         if request.get('query_string'):
             request['query_string'] = FILTERED
         if request.get('data'):

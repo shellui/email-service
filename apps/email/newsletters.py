@@ -411,11 +411,20 @@ def list_payload(newsletter: NewsletterList, *, detail: bool = False) -> dict:
 
 
 def client_ip(request) -> str:
+    """The visitor IP for rate limits.
+
+    ``X-Forwarded-For`` is a list the client can prefill, so the address is read from the
+    right: the hop added by the ``EMAIL_CLIENT_IP_TRUSTED_PROXIES``-th proxy (default 1).
+    Other headers (``CF-Connecting-IP``, ``X-Real-IP``) hold one address set by the proxy.
+    """
     header = settings.EMAIL_CLIENT_IP_HEADER
     if header:
-        value = str(request.headers.get(header) or '').split(',')[0].strip()
-        if value:
-            return value
+        hops = [hop.strip() for hop in str(request.headers.get(header) or '').split(',') if hop.strip()]
+        if hops:
+            if header.lower() != 'x-forwarded-for':
+                return hops[0]
+            trusted = max(1, settings.EMAIL_CLIENT_IP_TRUSTED_PROXIES)
+            return hops[-trusted] if len(hops) >= trusted else hops[0]
     return str(request.META.get('REMOTE_ADDR') or '')
 
 
@@ -527,11 +536,6 @@ def request_confirmation(
             email_hmac=hmac_value,
             defaults={'email_masked': mask_email(email), 'language': language, 'source': source},
         )
-        if metadata is not None:
-            # Latest sign-up wins: sent metadata replaces what was stored, even for confirmed rows.
-            row.metadata = metadata
-            if not created:
-                row.save(update_fields=['metadata'])
         if not created:
             if row.status == NewsletterSubscriber.STATUS_CONFIRMED:
                 return OUTCOME_EXISTING
@@ -552,6 +556,10 @@ def request_confirmation(
         ):
             row.save()
             return OUTCOME_THROTTLED
+        if metadata is not None:
+            # Only a new or pending sign-up that passed the throttles: an anonymous form post
+            # must not rewrite what a confirmed subscriber already gave.
+            row.metadata = metadata
         if suppressed(newsletter.company_id, hmac_value, LANE_TRANSACTIONAL):
             row.save()
             return OUTCOME_SUPPRESSED
@@ -866,7 +874,8 @@ def import_csv(newsletter: NewsletterList, text, mode_raw) -> dict:
 
 def _cell(value) -> str:
     text = '' if value is None else str(value)
-    return "'" + text if text[:1] in {'=', '+', '-', '@', '\t', '\r'} else text
+    # Spreadsheets skip leading spaces before reading a formula.
+    return "'" + text if text.lstrip(' ')[:1] in {'=', '+', '-', '@', '\t', '\r', '\n'} else text
 
 
 def export_csv(newsletter: NewsletterList, *, status: str = '') -> str:

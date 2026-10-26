@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import smtplib
+import ssl
 from email.message import EmailMessage
 
 from django.conf import settings
@@ -48,9 +49,20 @@ def host_of(creds: dict) -> str:
     return sanitize_header_value(creds.get('host') or '').strip()
 
 
-def _open_client(hostname: str, connect_host: str, port: int, *, use_ssl: bool):
+def tls_context(*, trusted_platform: bool) -> ssl.SSLContext:
+    """Verified TLS (certificate and hostname). Only the operator relay may opt out."""
+    if trusted_platform and not settings.EMAIL_SMTP_VERIFY_CERT:
+        logger.warning('EMAIL_SMTP_VERIFY_CERT=false: the SMTP relay certificate is not verified')
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+    return ssl.create_default_context()
+
+
+def _open_client(hostname: str, connect_host: str, port: int, *, use_ssl: bool, context: ssl.SSLContext):
     if use_ssl:
-        client = _PinnedSMTPSSL(timeout=SMTP_TIMEOUT_SECONDS, tls_hostname=hostname)
+        client = _PinnedSMTPSSL(timeout=SMTP_TIMEOUT_SECONDS, tls_hostname=hostname, context=context)
         client.connect(connect_host, port)
         client._host = hostname
         return client
@@ -106,11 +118,12 @@ class SmtpProvider:
             return ProviderResult(ok=False, retryable=False, error_code='provider_rejected')
 
         try:
-            client = _open_client(host, connect_host, port, use_ssl=use_ssl)
+            context = tls_context(trusted_platform=trusted_platform)
+            client = _open_client(host, connect_host, port, use_ssl=use_ssl, context=context)
             try:
                 client.ehlo()
                 if use_tls and not use_ssl:
-                    client.starttls()
+                    client.starttls(context=context)
                     client.ehlo()
                 if username:
                     client.login(username, password)
@@ -122,6 +135,9 @@ class SmtpProvider:
                     client.close()
         except smtplib.SMTPAuthenticationError:
             return ProviderResult(ok=False, retryable=False, error_code='provider_unauthorized')
+        except ssl.SSLCertVerificationError:
+            logger.warning('SMTP relay certificate could not be verified for host %s', host)
+            return ProviderResult(ok=False, retryable=False, error_code='provider_tls_unverified')
         except (TimeoutError, smtplib.SMTPServerDisconnected, OSError):
             return ProviderResult(ok=False, retryable=True, error_code='provider_unreachable')
         except smtplib.SMTPResponseException as exc:

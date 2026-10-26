@@ -512,6 +512,8 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
 EMAIL_USE_TLS = _env_bool('EMAIL_USE_TLS', True)
 EMAIL_USE_SSL = _env_bool('EMAIL_USE_SSL', False)
+# Verify the relay certificate. Only for EMAIL_HOST: company relays are always verified.
+EMAIL_SMTP_VERIFY_CERT = _env_bool('EMAIL_SMTP_VERIFY_CERT', True)
 # Library images load from {EMAIL_PUBLIC_URL}/static/library/ in sent mail.
 EMAIL_PUBLIC_URL = os.getenv('EMAIL_PUBLIC_URL', '').strip().rstrip('/') or PUBLIC_BASE_URL
 EMAIL_NODE_BINARY = os.getenv('EMAIL_NODE_BINARY', 'node').strip() or 'node'
@@ -547,6 +549,8 @@ EMAIL_NEWSLETTER_CONFIRM_HOURS = _env_int('EMAIL_NEWSLETTER_CONFIRM_HOURS', 48)
 EMAIL_NEWSLETTER_PENDING_DAYS = _env_int('EMAIL_NEWSLETTER_PENDING_DAYS', 7)
 # Header carrying the visitor's IP behind a proxy (for example CF-Connecting-IP). Empty uses REMOTE_ADDR.
 EMAIL_CLIENT_IP_HEADER = os.getenv('EMAIL_CLIENT_IP_HEADER', '').strip()
+# With X-Forwarded-For: how many proxies in front of the service append to it.
+EMAIL_CLIENT_IP_TRUSTED_PROXIES = _env_int('EMAIL_CLIENT_IP_TRUSTED_PROXIES', 1)
 EMAIL_TURNSTILE_VERIFY_URL = os.getenv(
     'EMAIL_TURNSTILE_VERIFY_URL', 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 ).strip()
@@ -639,6 +643,9 @@ LOGGING = {
         'request_id': {
             '()': 'config.request_context.RequestIdFilter',
         },
+        'redact_token_paths': {
+            '()': 'config.log_redaction.RedactTokenPathsFilter',
+        },
     },
     'formatters': {
         'console': {
@@ -651,7 +658,7 @@ LOGGING = {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'console',
-            'filters': ['request_id'],
+            'filters': ['request_id', 'redact_token_paths'],
         },
     },
     'root': {

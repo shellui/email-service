@@ -28,6 +28,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Email and webhooks rules:** Newsletter sign-up, confirm and unsubscribe events trigger webhooks and email rules, both filterable by list.
 - **Newsletter metadata:** Sign-ups accept an optional `metadata` object, for example for demo requests.
 
+### 🔒 Security
+
+- **Security hardening:** Company-scoped Resend webhooks, verified SMTP TLS, redacted tokens in access logs, protected subscriber metadata and safer client IP handling.
+
 ## [0.4.0] - 2026-10-25
 
 ### ✨ Feature

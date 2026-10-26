@@ -1403,6 +1403,7 @@ class ProviderWebhookView(APIView):
         raw = request.body or b''
         headers = {key.lower(): value for key, value in request.headers.items()}
         company_id = request.query_params.get('company_id')
+        company_int = None
         if company_id:
             try:
                 company_int = int(company_id)
@@ -1434,7 +1435,7 @@ class ProviderWebhookView(APIView):
             apply_contact_unsubscribe(company_ids, data)
             return Response({'status': 'ok'})
         if data.get('broadcast_id'):
-            apply_broadcast_event(event_name, data)
+            apply_broadcast_event(event_name, data, company_id=company_int)
             return Response({'status': 'ok'})
         provider_message_id = str(data.get('email_id') or data.get('id') or '')
         provider_event_id = headers.get('svix-id') or ''
@@ -1445,6 +1446,7 @@ class ProviderWebhookView(APIView):
             event_name=event_name,
             provider_event_id=provider_event_id,
             detail={'stream': stream, 'bounce_type': (data.get('bounce') or {}).get('type') or data.get('bounce_type') or 'permanent'},
+            company_id=company_int,
         )
         return Response({'status': 'ok'})
 
