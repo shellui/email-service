@@ -88,6 +88,8 @@ An auth message that becomes `expired` missed its TTL before the provider accept
 
 ## Broadcasts and newsletters
 
+**Every sign-up hits the per-IP limit (HTTP 429).** All visitors share one address, usually the proxy. Check that the proxy sets `EMAIL_CLIENT_IP_HEADER` (default `X-Forwarded-For`) and that `EMAIL_CLIENT_IP_TRUSTED_PROXIES` matches the number of proxies that append to it (default 1 for Coolify). A missing header or a value that is not an IP falls back to `REMOTE_ADDR`. Visitors in the same IPv6 `/64` share one limit. If the service has no proxy in front, set `EMAIL_CLIENT_IP_HEADER=` (empty).
+
 `audience_too_large`: the audience is over `EMAIL_BROADCAST_MAX_RECIPIENTS` (default 10000).
 
 `newsletter_unavailable`: the company cannot send the confirmation email because it has no provider.

@@ -548,7 +548,8 @@ EMAIL_NEWSLETTER_RESEND_MINUTES = _env_int('EMAIL_NEWSLETTER_RESEND_MINUTES', 10
 EMAIL_NEWSLETTER_CONFIRM_HOURS = _env_int('EMAIL_NEWSLETTER_CONFIRM_HOURS', 48)
 EMAIL_NEWSLETTER_PENDING_DAYS = _env_int('EMAIL_NEWSLETTER_PENDING_DAYS', 7)
 # Header carrying the visitor's IP behind a proxy (for example CF-Connecting-IP). Empty uses REMOTE_ADDR.
-EMAIL_CLIENT_IP_HEADER = os.getenv('EMAIL_CLIENT_IP_HEADER', '').strip()
+# Coolify (Traefik) appends the visitor IP to X-Forwarded-For. Set it empty to use REMOTE_ADDR.
+EMAIL_CLIENT_IP_HEADER = os.getenv('EMAIL_CLIENT_IP_HEADER', 'X-Forwarded-For').strip()
 # With X-Forwarded-For: how many proxies in front of the service append to it.
 EMAIL_CLIENT_IP_TRUSTED_PROXIES = _env_int('EMAIL_CLIENT_IP_TRUSTED_PROXIES', 1)
 EMAIL_TURNSTILE_VERIFY_URL = os.getenv(

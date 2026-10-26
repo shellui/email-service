@@ -37,18 +37,3 @@ def fallback_provider_configured(app_configs, **kwargs):
             id='email.W001',
         )
     ]
-
-
-@register()
-def client_ip_header_configured(app_configs, **kwargs):
-    """Behind a proxy, every visitor shares the proxy address and one sign-up rate limit."""
-    if settings.DEBUG or settings.EMAIL_CLIENT_IP_HEADER:
-        return []
-    return [
-        Warning(
-            'EMAIL_CLIENT_IP_HEADER is empty. Behind a reverse proxy, all public newsletter sign-ups '
-            'share the proxy address and one per-IP rate limit.',
-            hint='Set EMAIL_CLIENT_IP_HEADER to a header your proxy sets, for example X-Real-IP or CF-Connecting-IP.',
-            id='email.W003',
-        )
-    ]

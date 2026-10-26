@@ -77,7 +77,7 @@ The answer is `202 {"status": "pending"}` whether the address is new, already pe
 ### Abuse protection
 
 - **Double opt-in**: nobody is on the list until they click the link in their own inbox.
-- **Rate limits**: `EMAIL_NEWSLETTER_IP_PER_HOUR` (10) per IP, `EMAIL_NEWSLETTER_ADDRESS_PER_DAY` (3) confirmation emails per address and list, and `EMAIL_NEWSLETTER_LIST_PER_HOUR` (500) per list. Behind a proxy, set `EMAIL_CLIENT_IP_HEADER` (for example `X-Real-IP` or `CF-Connecting-IP`) so the limit applies to the visitor and not the proxy. With `X-Forwarded-For`, the address is read from the right (`EMAIL_CLIENT_IP_TRUSTED_PROXIES`). See [Configuration](configuration.md).
+- **Rate limits**: `EMAIL_NEWSLETTER_IP_PER_HOUR` (10) per IP, `EMAIL_NEWSLETTER_ADDRESS_PER_DAY` (3) confirmation emails per address and list, and `EMAIL_NEWSLETTER_LIST_PER_HOUR` (500) per list. The visitor IP comes from `X-Forwarded-For` by default, read from the right (`EMAIL_CLIENT_IP_TRUSTED_PROXIES`), so the limit applies to the visitor and not the proxy. IPv6 visitors count per `/64`. See [Configuration](configuration.md).
 - **Honeypot**: the `website` field.
 - **Cloudflare Turnstile** (optional): set the site key and secret on the list. The secret is stored encrypted and never returned.
 - **Allowed origins**: browsers may only post from the list's `allowed_origins` (empty means any website). The endpoint answers CORS for those origins only. This is a browser control: a request without an `Origin` header, such as a server-side script, is accepted, so rely on the rate limits and Turnstile against scripted sign-ups.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import ipaddress
 import io
 import json
 import re
@@ -410,22 +411,62 @@ def list_payload(newsletter: NewsletterList, *, detail: bool = False) -> dict:
 # Sign-up and confirmation
 
 
+def parse_ip(raw) -> str | None:
+    """One address from a header or REMOTE_ADDR, normalized, or None when it is not an IP.
+
+    Accepts ``2001:db8::1``, ``[2001:db8::1]:443``, ``203.0.113.9:8080`` and IPv4-mapped
+    IPv6 (returned as IPv4).
+    """
+    value = str(raw or '').strip()
+    if value.startswith('['):
+        end = value.find(']')
+        if end == -1:
+            return None
+        value = value[1:end]
+    elif value.count(':') == 1:
+        value = value.split(':', 1)[0]
+    try:
+        ip = ipaddress.ip_address(value)
+    except ValueError:
+        return None
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return str(ip)
+
+
 def client_ip(request) -> str:
     """The visitor IP for rate limits.
 
-    ``X-Forwarded-For`` is a list the client can prefill, so the address is read from the
-    right: the hop added by the ``EMAIL_CLIENT_IP_TRUSTED_PROXIES``-th proxy (default 1).
-    Other headers (``CF-Connecting-IP``, ``X-Real-IP``) hold one address set by the proxy.
+    ``X-Forwarded-For`` (the default) is a list the client can prefill, so the address is
+    read from the right: the hop added by the ``EMAIL_CLIENT_IP_TRUSTED_PROXIES``-th proxy
+    (default 1). Other headers (``CF-Connecting-IP``, ``X-Real-IP``) hold one address set
+    by the proxy. A missing header or an invalid value falls back to ``REMOTE_ADDR``.
     """
     header = settings.EMAIL_CLIENT_IP_HEADER
     if header:
         hops = [hop.strip() for hop in str(request.headers.get(header) or '').split(',') if hop.strip()]
         if hops:
-            if header.lower() != 'x-forwarded-for':
-                return hops[0]
-            trusted = max(1, settings.EMAIL_CLIENT_IP_TRUSTED_PROXIES)
-            return hops[-trusted] if len(hops) >= trusted else hops[0]
-    return str(request.META.get('REMOTE_ADDR') or '')
+            if header.lower() == 'x-forwarded-for':
+                trusted = max(1, settings.EMAIL_CLIENT_IP_TRUSTED_PROXIES)
+                picked = hops[-trusted] if len(hops) >= trusted else hops[0]
+            else:
+                picked = hops[0]
+            ip = parse_ip(picked)
+            if ip:
+                return ip
+    remote = request.META.get('REMOTE_ADDR')
+    return parse_ip(remote) or str(remote or '')
+
+
+def rate_key_ip(ip: str) -> str:
+    """IPv4 counts per address, IPv6 per /64: one host usually holds a whole /64."""
+    try:
+        parsed = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip or 'unknown'
+    if isinstance(parsed, ipaddress.IPv6Address):
+        return str(ipaddress.ip_network(f'{parsed}/64', strict=False))
+    return str(parsed)
 
 
 def pick_language(newsletter: NewsletterList, raw, accept_language: str) -> str:
@@ -473,7 +514,7 @@ def subscribe(newsletter: NewsletterList, data, *, ip: str, accept_language: str
     email = _clean_email(data.get('email'))
     metadata = clean_metadata(data.get('metadata'))
     hour = timezone.now().strftime('%Y%m%d%H')
-    if not _rate_allow(f'email:nl:ip:{_opaque(ip or "unknown")}:{hour}', settings.EMAIL_NEWSLETTER_IP_PER_HOUR, 3700):
+    if not _rate_allow(f'email:nl:ip:{_opaque(rate_key_ip(ip))}:{hour}', settings.EMAIL_NEWSLETTER_IP_PER_HOUR, 3700):
         raise SendError(429, 'rate_limited')
     if not _rate_allow(f'email:nl:list:{newsletter.pk}:{hour}', settings.EMAIL_NEWSLETTER_LIST_PER_HOUR, 3700):
         raise SendError(429, 'rate_limited')

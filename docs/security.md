@@ -79,6 +79,10 @@ When `DEBUG=false`, `SECURE_SSL_REDIRECT`, HSTS (one year), and secure session a
 
 SMTP relays are reached over verified TLS: the certificate and hostname are checked on STARTTLS and implicit TLS. A relay that fails the check returns `provider_tls_unverified` and is not retried. Only the platform relay (`EMAIL_HOST`) can opt out with `EMAIL_SMTP_VERIFY_CERT=false`.
 
+## Visitor IP
+
+The public sign-up rate limit reads the visitor IP from `X-Forwarded-For` by default, taking the entry added by the trusted proxy (`EMAIL_CLIENT_IP_TRUSTED_PROXIES`, default 1) from the right, because a visitor can prefill the left side. A missing header or a value that is not an IP falls back to `REMOTE_ADDR`. IPv6 counts per `/64`, so one host cannot rotate addresses inside its own prefix. If the service is reachable without the proxy, set `EMAIL_CLIENT_IP_HEADER=` (empty): otherwise a direct client could choose its own address. The IP is used for the rate limit and Turnstile only; it is not logged or stored.
+
 ## Links in auth mail
 
 `magic_link_url` must use `https` and a host in the company's auth link hosts. That set is `EMAIL_AUTH_LINK_HOSTS` (the platform floor, default `id.shellui.com`), plus hostnames of the company's identity application URLs, plus any extra hostnames on Allowed link hosts. When `DEBUG=false`, `localhost`, `127.0.0.1`, and `::1` are refused even if a list includes them. A host that is not on the set is refused, including a host another company added. Other URL variables must be `https`, `mailto`, or `tel`.

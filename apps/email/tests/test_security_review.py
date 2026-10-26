@@ -7,14 +7,14 @@ import ssl
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.conf import settings
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 
 from apps.email.broadcasts import apply_broadcast_event
-from apps.email.checks import client_ip_header_configured
 from apps.email.crypto import email_hmac
 from apps.email.models import Broadcast, BroadcastRecipient, EmailTemplate, Message, Suppression
-from apps.email.newsletters import _cell, client_ip
+from apps.email.newsletters import _cell, client_ip, parse_ip, rate_key_ip
 from apps.email.service import apply_provider_event
 from apps.providers.base import ProviderMessage
 from apps.providers.smtp import SmtpProvider, tls_context
@@ -129,28 +129,53 @@ class SmtpTlsTests(SimpleTestCase):
 
 
 class ClientIpTests(SimpleTestCase):
-    def _request(self, **headers):
-        return RequestFactory().post('/', REMOTE_ADDR='10.0.0.2', **headers)
+    def _request(self, remote='10.0.0.2', **headers):
+        return RequestFactory().post('/', REMOTE_ADDR=remote, **headers)
 
-    def test_forwarded_for_is_read_from_the_right(self):
+    def test_default_reads_x_forwarded_for_from_the_right(self):
+        self.assertEqual(settings.EMAIL_CLIENT_IP_HEADER, 'X-Forwarded-For')
+        self.assertEqual(settings.EMAIL_CLIENT_IP_TRUSTED_PROXIES, 1)
         request = self._request(HTTP_X_FORWARDED_FOR='6.6.6.6, 203.0.113.9')
-        with override_settings(EMAIL_CLIENT_IP_HEADER='X-Forwarded-For', EMAIL_CLIENT_IP_TRUSTED_PROXIES=1):
-            self.assertEqual(client_ip(request), '203.0.113.9')
+        self.assertEqual(client_ip(request), '203.0.113.9')
         request = self._request(HTTP_X_FORWARDED_FOR='6.6.6.6, 203.0.113.9, 172.16.0.1')
-        with override_settings(EMAIL_CLIENT_IP_HEADER='X-Forwarded-For', EMAIL_CLIENT_IP_TRUSTED_PROXIES=2):
+        with override_settings(EMAIL_CLIENT_IP_TRUSTED_PROXIES=2):
             self.assertEqual(client_ip(request), '203.0.113.9')
 
-    def test_single_value_headers_and_the_default_are_unchanged(self):
-        with override_settings(EMAIL_CLIENT_IP_HEADER='CF-Connecting-IP'):
-            self.assertEqual(client_ip(self._request(HTTP_CF_CONNECTING_IP='198.51.100.4')), '198.51.100.4')
+    def test_missing_or_invalid_values_fall_back_to_remote_addr(self):
+        self.assertEqual(client_ip(self._request()), '10.0.0.2')
+        self.assertEqual(client_ip(self._request(HTTP_X_FORWARDED_FOR='1.1.1.1, not-an-ip')), '10.0.0.2')
+        self.assertEqual(client_ip(self._request(HTTP_X_FORWARDED_FOR=' , ')), '10.0.0.2')
+
+    def test_empty_header_setting_uses_remote_addr(self):
         with override_settings(EMAIL_CLIENT_IP_HEADER=''):
             self.assertEqual(client_ip(self._request(HTTP_X_FORWARDED_FOR='6.6.6.6')), '10.0.0.2')
+        with override_settings(EMAIL_CLIENT_IP_HEADER='CF-Connecting-IP'):
+            self.assertEqual(client_ip(self._request(HTTP_CF_CONNECTING_IP='198.51.100.4')), '198.51.100.4')
 
-    def test_production_warns_when_the_header_is_empty(self):
-        with override_settings(DEBUG=False, EMAIL_CLIENT_IP_HEADER=''):
-            self.assertEqual([w.id for w in client_ip_header_configured(None)], ['email.W003'])
-        with override_settings(DEBUG=False, EMAIL_CLIENT_IP_HEADER='X-Real-IP'):
-            self.assertEqual(client_ip_header_configured(None), [])
+    def test_ip_formats(self):
+        cases = {
+            '2001:db8::1': '2001:db8::1',
+            '[2001:db8::1]:443': '2001:db8::1',
+            '[2001:DB8::1]': '2001:db8::1',
+            '203.0.113.9:8080': '203.0.113.9',
+            '  203.0.113.9  ': '203.0.113.9',
+            '::ffff:203.0.113.9': '203.0.113.9',
+            '[::ffff:203.0.113.9]:80': '203.0.113.9',
+        }
+        for raw, expected in cases.items():
+            self.assertEqual(parse_ip(raw), expected, raw)
+        for raw in ('', 'unknown', '[2001:db8::1', '999.1.1.1', '1.2.3.4:5:6x', None):
+            self.assertIsNone(parse_ip(raw), raw)
+        request = self._request(HTTP_X_FORWARDED_FOR='6.6.6.6, [2001:db8::7]:5000')
+        self.assertEqual(client_ip(request), '2001:db8::7')
+
+    def test_rate_buckets_group_ipv6_by_64(self):
+        self.assertEqual(rate_key_ip('2001:db8:1:2:aaaa::1'), rate_key_ip('2001:db8:1:2:bbbb::9'))
+        self.assertNotEqual(rate_key_ip('2001:db8:1:2::1'), rate_key_ip('2001:db8:1:3::1'))
+        self.assertEqual(rate_key_ip('2001:db8:1:2::1'), '2001:db8:1:2::/64')
+        self.assertEqual(rate_key_ip('203.0.113.9'), '203.0.113.9')
+        self.assertNotEqual(rate_key_ip('203.0.113.9'), rate_key_ip('203.0.113.10'))
+        self.assertEqual(rate_key_ip(''), 'unknown')
 
 
 class CsvGuardTests(SimpleTestCase):
