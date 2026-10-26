@@ -94,7 +94,7 @@ Unsubscribed rows keep their status and address hash so an import cannot add the
 
 `email.newsletter.requested` (confirmation email sent, address not verified yet), `email.newsletter.confirmed`, and `email.newsletter.unsubscribed`, with `list_id`, `list_name`, `email`, `first_name`, `language`, `status`, `metadata`, `source`, `created_at`, `confirmed_at`, and `unsubscribed_at`. It never includes the confirmation token or link. Use them to copy subscribers into a CRM or to handle walkthrough requests. A webhook rule can be limited to one list with `newsletter_id`. See [actions.md](actions.md).
 
-The same three events can also have **email rules**, sent by email-service itself with no HTTP call. They only go to the rule's static recipients (for example your team), never to the subscriber, so a public sign-up cannot make email-service mail an address it chose. Variables: `company_name`, `list_id`, `list_name`, `subscriber_email`, `first_name`, `language`, and `metadata_text` (one `key: value` line per metadata entry). Email rules are not filtered by list yet. `email` is masked once the stored address has been cleared.
+The same three events can also have **email rules**, sent by email-service itself with no HTTP call. They only go to the rule's static recipients (for example your team), never to the subscriber, so a public sign-up cannot make email-service mail an address it chose. Variables: `company_name`, `list_id`, `list_name`, `subscriber_email`, `first_name`, `language`, and `metadata_text` (one `key: value` line per metadata entry). Like webhook rules, an email rule can be bound to one list with `newsletter_id` (`null` sends for every list), so a list such as a walkthrough request can notify its own team. These notifications go out on the transactional lane, which has its own worker, so they never wait behind broadcasts or newsletter issues on the bulk lane. See [Lanes](lanes.md). `email` is masked once the stored address has been cleared.
 
 ## Admin endpoints
 
@@ -120,4 +120,4 @@ The list payload: `id`, `name`, `description`, `public_key`, `default_language`,
 
 ## The confirmation email
 
-Edited like an event copy through `/api/v1/templates/{confirmation_template_id}/versions`. Variables: `company_name`, `list_name`, `confirm_url` (required), `first_name`, `recipient_email`. It starts in English and French and goes out on the transactional lane from the company's regular From address.
+Edited like an event copy through `/api/v1/templates/{confirmation_template_id}/versions`. Variables: `company_name`, `list_name`, `confirm_url` (required), `first_name`, `recipient_email`. It starts in English and French and goes out on the transactional lane from the company's regular From address, so it never waits behind bulk sends.

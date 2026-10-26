@@ -189,6 +189,52 @@ class NewsletterTests(TestCase):
         self.assertEqual(len(team), 2)
         self.assertNotIn('/n/confirm/', team[0].html + team[0].text)
 
+    def test_email_rules_can_be_bound_to_one_newsletter_and_use_the_transactional_lane(self):
+        from apps.email import rules
+        from apps.email.models import Message
+        from apps.email.tests.helpers import library_content
+
+        walk = self._create(name='Book a walkthrough')
+        other = self._create(name='Other')
+
+        def rule(to, **extra):
+            return rules.create_rule(
+                COMPANY,
+                {
+                    'event_type': 'email.newsletter.requested',
+                    'recipient_mode': 'static',
+                    'static_recipients': [to],
+                    'content': library_content(),
+                    **extra,
+                },
+            )
+
+        bound = rule('sales@acme.com', newsletter_id=walk['id'])
+        rule('team@acme.com')
+        self.assertEqual(rules.rule_payload(bound)['newsletter_id'], walk['id'])
+        with self.captureOnCommitCallbacks(execute=True):
+            self._subscribe(walk)
+        with self.captureOnCommitCallbacks(execute=True):
+            self._subscribe(other, 'bea@example.org')
+        sent = [m.to_email for m in fake_provider().sent]
+        self.assertEqual(sent.count('sales@acme.com'), 1)
+        self.assertEqual(sent.count('team@acme.com'), 2)
+        # Rule notifications and the double opt-in confirmation never wait behind bulk sends.
+        self.assertEqual(set(Message.objects.values_list('lane', flat=True)), {'transactional'})
+
+        response = self.owner.patch(f'/api/v1/rules/{bound.pk}', {'newsletter_id': None}, format='json')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIsNone(response.json()['newsletter_id'])
+        with self.assertRaises(rules.SendError) as missing:
+            rule('x@acme.com', newsletter_id=999999)
+        self.assertEqual(missing.exception.field_errors, {'newsletter_id': ['not_found']})
+        with self.assertRaises(rules.SendError) as wrong_event:
+            rules.create_rule(
+                COMPANY,
+                {'event_type': 'storage.object.deleted', 'newsletter_id': walk['id'], 'content': library_content()},
+            )
+        self.assertEqual(wrong_event.exception.field_errors, {'newsletter_id': ['not_newsletter_event']})
+
     def test_invalid_metadata_is_rejected(self):
         newsletter = self._create()
         cases = {

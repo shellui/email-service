@@ -343,6 +343,7 @@ class EmailRuleSerializer(serializers.Serializer):
     language = serializers.CharField(allow_blank=True)
     template_id = serializers.IntegerField()
     built_in = serializers.BooleanField()
+    newsletter_id = serializers.IntegerField(allow_null=True)
     created_at = serializers.CharField()
     updated_at = serializers.CharField()
 
@@ -359,6 +360,9 @@ class EmailRuleWriteSerializer(serializers.Serializer):
     recipient_mode = serializers.CharField(required=False)
     static_recipients = serializers.ListField(child=serializers.CharField(), required=False)
     language = serializers.CharField(required=False, allow_blank=True)
+    newsletter_id = serializers.IntegerField(
+        required=False, allow_null=True, help_text='`email.newsletter.*` rules only: one newsletter list, or null for every list.'
+    )
     content = EmailRuleContentSerializer()
 
 
@@ -367,6 +371,9 @@ class EmailRulePatchSerializer(serializers.Serializer):
     recipient_mode = serializers.CharField(required=False)
     static_recipients = serializers.ListField(child=serializers.CharField(), required=False)
     language = serializers.CharField(required=False, allow_blank=True)
+    newsletter_id = serializers.IntegerField(
+        required=False, allow_null=True, help_text='`email.newsletter.*` rules only: one newsletter list, or null for every list.'
+    )
 
 
 class ProviderCredentialsSerializer(serializers.Serializer):

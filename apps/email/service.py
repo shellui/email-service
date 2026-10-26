@@ -11,6 +11,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, connection, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.actions.emit import emit_email_event
@@ -656,6 +657,12 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
         # Auth-lane events carry a sign-in or invitation link. Only the built-in rule
         # sends them, to the event's own recipient. A company rule never does.
         rules_qs = rules_qs.filter(built_in=True)
+    if event_type.startswith('email.newsletter.'):
+        # A rule bound to one newsletter list only sends for that list. Null means every list.
+        raw_payload = body.get('payload')
+        list_id = raw_payload.get('list_id') if isinstance(raw_payload, dict) else None
+        bound = Q(newsletter_id=list_id) if isinstance(list_id, int) and not isinstance(list_id, bool) else Q()
+        rules_qs = rules_qs.filter(Q(newsletter_id__isnull=True) | bound) if bound else rules_qs.filter(newsletter_id__isnull=True)
     rules = list(rules_qs.select_related('template').order_by('created_at', 'id'))
     if definition.get('company_editable', True) is False:
         # Built-in copy only (``apps.email.builtin_auth``): direct send, never a rule.

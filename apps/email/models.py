@@ -145,6 +145,8 @@ class EmailRule(models.Model):
     language = models.CharField(max_length=8, blank=True)
     recipient_mode = models.CharField(max_length=16, default=MODE_HINTS)
     static_recipients = models.JSONField(default=list, blank=True)
+    # ``email.newsletter.*`` rules only: send for this newsletter list, or every list when null.
+    newsletter_id = models.PositiveIntegerField(null=True, blank=True)
     built_in = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

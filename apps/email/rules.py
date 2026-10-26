@@ -74,6 +74,7 @@ def rule_payload(rule: EmailRule) -> dict:
         'enabled': rule.enabled,
         'recipient_mode': rule.recipient_mode,
         'static_recipients': list(rule.static_recipients or []),
+        'newsletter_id': rule.newsletter_id,
         'language': rule.language or '',
         'template_id': rule.template_id,
         'built_in': rule.built_in,
@@ -345,6 +346,28 @@ def ensure_builtin_rules(company_id: int) -> None:
             continue
 
 
+NEWSLETTER_EVENT_PREFIX = 'email.newsletter.'
+
+
+def _newsletter_id(company_id: int, event_type: str, raw) -> int | None:
+    """Optional filter on ``email.newsletter.*`` rules: one list of the company, or null for all."""
+    if raw in (None, '', 0):
+        return None
+    if not event_type.startswith(NEWSLETTER_EVENT_PREFIX):
+        raise SendError(400, 'validation_failed', {'newsletter_id': ['not_newsletter_event']})
+    from apps.email.models import NewsletterList
+
+    if isinstance(raw, bool):
+        raise SendError(400, 'validation_failed', {'newsletter_id': ['invalid']})
+    try:
+        list_id = int(raw)
+    except (TypeError, ValueError):
+        raise SendError(400, 'validation_failed', {'newsletter_id': ['invalid']})
+    if not NewsletterList.objects.filter(pk=list_id, company_id=company_id).exists():
+        raise SendError(400, 'validation_failed', {'newsletter_id': ['not_found']})
+    return list_id
+
+
 def create_rule(company_id: int, data: dict, *, user_id: int | None = None) -> EmailRule:
     if not isinstance(data, dict):
         raise SendError(400, 'validation_failed')
@@ -360,6 +383,7 @@ def create_rule(company_id: int, data: dict, *, user_id: int | None = None) -> E
     language = _language(definition, data.get('language'))
     mode = _mode(data.get('recipient_mode'))
     static_recipients = _static_recipients(data.get('static_recipients'))
+    newsletter_id = _newsletter_id(company_id, event_type, data.get('newsletter_id'))
     enabled = True if data.get('enabled') is None else bool(data.get('enabled'))
     content = data.get('content')
     if not isinstance(content, dict) or content.get('library_id') in (None, ''):
@@ -384,6 +408,7 @@ def create_rule(company_id: int, data: dict, *, user_id: int | None = None) -> E
             language=language,
             recipient_mode=mode,
             static_recipients=static_recipients,
+            newsletter_id=newsletter_id,
             built_in=False,
         )
 
@@ -411,6 +436,8 @@ def update_rule(rule: EmailRule, data: dict) -> EmailRule:
         rule.recipient_mode = _mode(data.get('recipient_mode'))
     if 'static_recipients' in data:
         rule.static_recipients = _static_recipients(data.get('static_recipients'))
+    if 'newsletter_id' in data:
+        rule.newsletter_id = _newsletter_id(rule.company_id, rule.event_type, data.get('newsletter_id'))
     if 'enabled' in data:
         rule.enabled = bool(data.get('enabled'))
     rule.save()
