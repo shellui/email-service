@@ -271,6 +271,8 @@ class NewsletterSubscriber(models.Model):
     email_hmac = models.CharField(max_length=64)
     email_masked = models.CharField(max_length=255)
     first_name = models.CharField(max_length=150, blank=True)
+    # Extra details from the sign-up form (flat str -> str). Untrusted visitor text, never logged.
+    metadata = models.JSONField(default=dict, blank=True)
     language = models.CharField(max_length=8)
     status = models.CharField(max_length=16, default=STATUS_PENDING)
     source = models.CharField(max_length=16, default=SOURCE_FORM)

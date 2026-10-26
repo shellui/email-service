@@ -56,12 +56,15 @@ No auth. Body (JSON or form):
 | `first_name` | Optional. Available in the confirmation email and in issues. |
 | `website` | Honeypot. Must be empty. When filled, the answer is `202` and nothing happens. |
 | `turnstile_token` | Required when the list has a Turnstile secret |
+| `metadata` | Optional flat object of extra details, for example `{"project": "Acme", "message": "Hi"}`. Keys match `^[a-z][a-z0-9_]{0,31}$`, values are strings of up to 2000 characters, at most 10 keys and 8 KB in total. Shown to admins and in the CSV export, never put in emails or logs. |
+
+When `metadata` is sent, it replaces what was stored for that address, even if the address is already confirmed. A sign-up without `metadata` keeps the stored one. It is visitor text: treat it as untrusted.
 
 The answer is `202 {"status": "pending"}` whether the address is new, already pending, or already confirmed, so the form cannot be used to find out who is subscribed. An already confirmed address gets no new email, and a pending one gets at most one email every `EMAIL_NEWSLETTER_RESEND_MINUTES` (10).
 
 | Error | Status | When |
 | --- | --- | --- |
-| `validation_failed` | 400 | Missing or invalid `email` |
+| `validation_failed` | 400 | Missing or invalid `email`, or invalid `metadata` (`field_errors.metadata` is one of `metadata_invalid`, `metadata_key_invalid`, `metadata_value_invalid`, `metadata_value_too_long`, `metadata_too_many_keys`, `metadata_too_large`) |
 | `turnstile_failed` | 400 | The Turnstile token is missing or rejected |
 | `origin_not_allowed` | 403 | The browser `Origin` is not in the list's `allowed_origins` |
 | `newsletter_not_found` | 404 | Unknown or rotated key |
@@ -89,7 +92,9 @@ Unsubscribed rows keep their status and address hash so an import cannot add the
 
 ## Shellui Actions events
 
-`email.newsletter.confirmed` and `email.newsletter.unsubscribed`, with `list_id`, `list_name`, `email`, `language`, and `source`. Use them to copy subscribers into a CRM. `email` is masked once the stored address has been cleared.
+`email.newsletter.requested` (confirmation email sent, address not verified yet), `email.newsletter.confirmed`, and `email.newsletter.unsubscribed`, with `list_id`, `list_name`, `email`, `first_name`, `language`, `status`, `metadata`, `source`, `created_at`, `confirmed_at`, and `unsubscribed_at`. It never includes the confirmation token or link. Use them to copy subscribers into a CRM or to handle walkthrough requests. A webhook rule can be limited to one list with `newsletter_id`. See [actions.md](actions.md).
+
+The same three events can also have **email rules**, sent by email-service itself with no HTTP call. They only go to the rule's static recipients (for example your team), never to the subscriber, so a public sign-up cannot make email-service mail an address it chose. Variables: `company_name`, `list_id`, `list_name`, `subscriber_email`, `first_name`, `language`, and `metadata_text` (one `key: value` line per metadata entry). Email rules are not filtered by list yet. `email` is masked once the stored address has been cleared.
 
 ## Admin endpoints
 

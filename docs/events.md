@@ -52,5 +52,8 @@ Login events `identity.auth.login.succeeded` and `identity.auth.login.failed` ar
 | `hosting.app.deleted` | transactional | disabled | Informational. |
 | `hosting.deployment.created` | transactional | disabled | The artifact may not exist yet. |
 | `hosting.deployment.succeeded` | transactional | disabled | Success is visible in the hosting UI. Create a rule for release mail. |
+| `email.newsletter.requested` | transactional | disabled | email-service's own event, sent in process. Static recipients only. |
+| `email.newsletter.confirmed` | transactional | disabled | Same. |
+| `email.newsletter.unsubscribed` | transactional | disabled | Same. |
 
 Source files: `defaults/<service>/<event>/` (`definition.json` with `link_token` and `default_template`, `subjects.json`, and `en.json` / `fr.json` with the subject and preheader), generated from the catalog by `export_defaults` in `apps/email/catalog.py`.

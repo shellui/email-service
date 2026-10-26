@@ -680,6 +680,7 @@ class NewsletterSubscriberSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     email = serializers.CharField(help_text='Masked once the address is cleared after unsubscribing.')
     first_name = serializers.CharField(allow_blank=True)
+    metadata = serializers.DictField(child=serializers.CharField(allow_blank=True), help_text='Extra details sent with the sign-up. Untrusted text.')
     language = serializers.CharField()
     status = serializers.ChoiceField(choices=['pending', 'confirmed', 'unsubscribed'])
     source = serializers.ChoiceField(choices=['form', 'admin', 'import'])
@@ -728,6 +729,11 @@ class NewsletterSubscribeRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
     language = serializers.CharField(required=False, allow_blank=True)
     first_name = serializers.CharField(required=False, allow_blank=True)
+    metadata = serializers.DictField(
+        child=serializers.CharField(allow_blank=True, max_length=2000),
+        required=False,
+        help_text='Optional flat map of extra details. Keys match ^[a-z][a-z0-9_]{0,31}$, at most 10 keys, 8 KB in total.',
+    )
     website = serializers.CharField(required=False, allow_blank=True, help_text='Honeypot. Leave empty.')
     turnstile_token = serializers.CharField(required=False, allow_blank=True)
 

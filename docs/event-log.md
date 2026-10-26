@@ -18,7 +18,7 @@ Company events use the webhook catalog:
 - `email.message.bounced`, `email.message.complained`, `email.message.failed`
 - `email.message.expired`, `email.message.suppressed`
 - `email.unsubscribe.created`
-- `email.newsletter.confirmed`, `email.newsletter.unsubscribed`
+- `email.newsletter.requested`, `email.newsletter.confirmed`, `email.newsletter.unsubscribed`
 
 `data` for a message event is `message_id`, `template_key`, `lane`, `service`, `to_email`, and `to_user_id`. It does not include the rendered HTML, the template variables, or a sign-in link.
 

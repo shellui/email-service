@@ -29,6 +29,9 @@ def emit_email_event(*, company_id: int, event_type: str, data: dict, service: s
     rules = ActionRule.objects.filter(company_id=company_id, event_type=event_type, enabled=True)
     now = timezone.now()
     for rule in rules:
+        wanted = (rule.config or {}).get('newsletter_id')
+        if wanted and data.get('list_id') != wanted:
+            continue
         secret = (rule.config or {}).get('secret') or ''
         if secret.startswith('enc:'):
             secret = decrypt_text(secret[4:])
