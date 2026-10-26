@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
@@ -163,6 +164,11 @@ class EmailRule(models.Model):
         indexes = [
             models.Index(fields=['company_id', 'service', 'event_type'], name='email_rule_lookup_idx'),
         ]
+
+    def clean(self):
+        super().clean()
+        if self.newsletter_id and not self.event_type.startswith('email.newsletter.'):
+            raise ValidationError({'newsletter_id': 'Only applies to email.newsletter.* events.'})
 
 
 class Broadcast(models.Model):

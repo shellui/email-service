@@ -50,10 +50,12 @@ def _public_webhook_url(url: str) -> str:
         raise SendError(400, 'validation_failed', {'url': ['not_public']}) from exc
 
 
-def _newsletter_filter(company_id: int, raw) -> int | None:
+def _newsletter_filter(company_id: int, event_type: str, raw) -> int | None:
     """Optional rule filter: only events of this newsletter list (``email.newsletter.*``)."""
     if raw in (None, '', 0):
         return None
+    if not event_type.startswith('email.newsletter.'):
+        raise SendError(400, 'validation_failed', {'newsletter_id': ['not_newsletter_event']})
     from apps.email.models import NewsletterList
 
     try:
@@ -169,7 +171,7 @@ class ActionRuleListCreateView(APIView):
             url = _public_webhook_url(url)
             secret = store_rule_secret(str(request.data.get('secret') or ''))
             config = {'url': url, 'secret': secret}
-            newsletter_id = _newsletter_filter(company_id, request.data.get('newsletter_id'))
+            newsletter_id = _newsletter_filter(company_id, event_type, request.data.get('newsletter_id'))
             if newsletter_id:
                 config['newsletter_id'] = newsletter_id
             rule = ActionRule.objects.create(
@@ -233,7 +235,7 @@ class ActionRuleDetailView(APIView):
             if 'newsletter_id' in request.data:
                 config = dict(rule.config or {})
                 config.pop('newsletter_id', None)
-                newsletter_id = _newsletter_filter(rule.company_id, request.data.get('newsletter_id'))
+                newsletter_id = _newsletter_filter(rule.company_id, rule.event_type, request.data.get('newsletter_id'))
                 if newsletter_id:
                     config['newsletter_id'] = newsletter_id
                 rule.config = config

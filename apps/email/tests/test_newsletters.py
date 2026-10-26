@@ -235,6 +235,69 @@ class NewsletterTests(TestCase):
             )
         self.assertEqual(wrong_event.exception.field_errors, {'newsletter_id': ['not_newsletter_event']})
 
+    @mock.patch('apps.actions.ssrf.validate_webhook_url', side_effect=lambda url, **kw: url)
+    def test_newsletter_filter_is_rejected_on_other_events(self, _validate):
+        from django.core.exceptions import ValidationError
+
+        from apps.actions.models import ActionRule
+        from apps.email.models import EmailRule
+
+        walk = self._create(name='Request a demo')
+        bad = self.owner.post(
+            '/api/v1/actions/rules',
+            {'name': 'Hook', 'event_type': 'email.message.bounced', 'url': 'https://hooks.example.com/x', 'newsletter_id': walk['id']},
+            format='json',
+        )
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(bad.json()['field_errors'], {'newsletter_id': ['not_newsletter_event']})
+        made = self.owner.post(
+            '/api/v1/actions/rules',
+            {'name': 'Hook', 'event_type': 'email.message.bounced', 'url': 'https://hooks.example.com/x'},
+            format='json',
+        )
+        patched = self.owner.patch(f"/api/v1/actions/rules/{made.json()['id']}", {'newsletter_id': walk['id']}, format='json')
+        self.assertEqual(patched.json()['field_errors'], {'newsletter_id': ['not_newsletter_event']})
+        # Model clean, used by Django admin.
+        hook = ActionRule(company_id=COMPANY, name='h', event_type='email.message.bounced', config={'newsletter_id': walk['id']})
+        with self.assertRaises(ValidationError):
+            hook.clean()
+        hook.event_type = 'email.newsletter.confirmed'
+        hook.clean()
+        rule = EmailRule(company_id=COMPANY, service='storage', event_type='email.message.bounced', newsletter_id=walk['id'])
+        with self.assertRaises(ValidationError):
+            rule.clean()
+        rule.event_type = 'email.newsletter.requested'
+        rule.clean()
+
+    @mock.patch('apps.actions.ssrf.validate_webhook_url', side_effect=lambda url, **kw: url)
+    def test_newsletter_webhooks_wait_for_commit_and_never_carry_tokens(self, _validate):
+        from apps.actions.models import ActionOutbox
+
+        newsletter = self._create()
+        for event in ('email.newsletter.requested', 'email.newsletter.confirmed', 'email.newsletter.unsubscribed'):
+            self.owner.post(
+                '/api/v1/actions/rules',
+                {'name': event, 'event_type': event, 'url': 'https://hooks.example.com/x'},
+                format='json',
+            )
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            self._subscribe(newsletter)
+        self.assertFalse(ActionOutbox.objects.exists())
+        for callback in callbacks:
+            callback()
+        self.assertEqual(ActionOutbox.objects.count(), 1)
+        token = self._token()
+        with self.captureOnCommitCallbacks(execute=True):
+            self.public.post(f'/n/confirm/{token}')
+        events = {o.event_type: o.envelope for o in ActionOutbox.objects.all()}
+        self.assertIn('email.newsletter.confirmed', events)
+        for envelope in events.values():
+            text = str(envelope)
+            self.assertNotIn(token, text)
+            self.assertNotIn('/n/confirm/', text)
+            self.assertNotIn('confirm_url', text)
+            self.assertNotIn('token', envelope['data'])
+
     def test_invalid_metadata_is_rejected(self):
         newsletter = self._create()
         cases = {
@@ -320,7 +383,8 @@ class NewsletterTests(TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, 'Confirm subscription')
         self.assertEqual(NewsletterSubscriber.objects.get().status, 'pending')
-        done = self.public.post(f'/n/confirm/{token}')
+        with self.captureOnCommitCallbacks(execute=True):
+            done = self.public.post(f'/n/confirm/{token}')
         self.assertContains(done, 'You are subscribed')
         row = NewsletterSubscriber.objects.get()
         self.assertEqual(row.status, 'confirmed')
@@ -352,7 +416,8 @@ class NewsletterTests(TestCase):
         token = unsubscribe_token(COMPANY, 'ada@example.org', newsletters.unsubscribe_category(first['id']))
         page = self.public.get(f'/u/{token}')
         self.assertContains(page, 'Stop receiving Product news.')
-        self.assertEqual(self.public.post(f'/u/{token}').status_code, 200)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(self.public.post(f'/u/{token}').status_code, 200)
         statuses = dict(NewsletterSubscriber.objects.values_list('list_id', 'status'))
         self.assertEqual(statuses, {first['id']: 'unsubscribed', second['id']: 'confirmed'})
         self.assertFalse(Unsubscribe.objects.exists())

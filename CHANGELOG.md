@@ -26,7 +26,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### ✨ Feature
 
 - **Email and webhooks rules:** Newsletter sign-up, confirm and unsubscribe events trigger webhooks and email rules, both filterable by list.
-- **Newsletter metadata:** Sign-ups accept an optional `metadata` object, for example for walkthrough requests.
+- **Newsletter metadata:** Sign-ups accept an optional `metadata` object, for example for demo requests.
 
 ## [0.4.0] - 2026-10-25
 

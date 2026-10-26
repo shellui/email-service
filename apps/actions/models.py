@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -29,6 +30,11 @@ class ActionRule(models.Model):
         indexes = [
             models.Index(fields=['company_id', 'event_type', 'enabled']),
         ]
+
+    def clean(self):
+        super().clean()
+        if (self.config or {}).get('newsletter_id') and not self.event_type.startswith('email.newsletter.'):
+            raise ValidationError({'config': 'newsletter_id only applies to email.newsletter.* events.'})
 
 
 class ActionOutbox(models.Model):

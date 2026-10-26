@@ -630,9 +630,14 @@ def _emit(row: NewsletterSubscriber, event_type: str, extra: dict) -> None:
         'unsubscribed_at': _iso(row.unsubscribed_at),
         **extra,
     }
-    emit_email_event(company_id=row.list.company_id, event_type=event_type, data=data)
     company_id = row.list.company_id
-    transaction.on_commit(lambda: send_event_email(company_id, event_type, data))
+
+    def fire() -> None:
+        # After commit only: a rolled-back sign-up never reaches a webhook or an email rule.
+        emit_email_event(company_id=company_id, event_type=event_type, data=data)
+        send_event_email(company_id, event_type, data)
+
+    transaction.on_commit(fire)
 
 
 def confirm(token: str) -> NewsletterSubscriber | None:
