@@ -48,7 +48,7 @@ Keep these on the release version:
 ### Smoke test
 
 ```bash
-VERSION=0.4.0
+VERSION=0.5.0
 docker build -t "shellui/email-service:${VERSION}" .
 
 docker run --rm -d --name email-release-smoke -p 18003:8000 \
@@ -90,7 +90,7 @@ For the runtime env, `python manage.py generate_env --host email.example.com` pr
 On Apple Silicon a plain `docker build` produces `linux/arm64` only, and most servers expect `linux/amd64`. Publish both with buildx:
 
 ```bash
-VERSION=0.4.0
+VERSION=0.5.0
 IMAGE=shellui/email-service
 
 docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
@@ -139,7 +139,7 @@ Also set `ALLOWED_HOSTS`, `PUBLIC_BASE_URL`, `IDENTITY_SERVICE_URL`, `EMAIL_AUTH
 ### Run the containers
 
 ```bash
-docker pull shellui/email-service:0.4.0
+docker pull shellui/email-service:0.5.0
 ```
 
 ```bash
@@ -148,7 +148,7 @@ docker volume create email-service-data
 docker run -d --name email-service -p 8003:8000 \
   -v email-service-data:/app/data \
   --env-file .env \
-  shellui/email-service:0.4.0
+  shellui/email-service:0.5.0
 ```
 
 The container applies migrations, which also sync the built-in library designs, then starts gunicorn, the three lane workers, and the scheduled jobs (`retry_webhooks` and `sweep_email_queue` every minute, `purge_expired_data` every hour). There is no cron to set up. If you had Coolify Scheduled Tasks for these commands, remove them. To run the workers in their own container, see [docs/scheduled-jobs.md](docs/scheduled-jobs.md#run-the-workers-in-their-own-container).

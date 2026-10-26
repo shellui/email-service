@@ -58,6 +58,7 @@ A message stuck in `queued` means the lane worker is not running. The image star
 | `platform_sender_not_allowed` | Non-auth mail, the company has no provider, and the company is not in `EMAIL_PLATFORM_COMPANY_IDS`. Auth mail still uses the platform fallback. The same code is HTTP 403 when a company sets `from_email` to the platform From address |
 | `company_smtp_disabled` | Company SMTP is off (`EMAIL_ALLOW_COMPANY_SMTP` defaults to false) |
 | `provider_host_not_public` | The company SMTP host is missing, private, or not a public address |
+| `provider_tls_unverified` | The SMTP relay certificate or hostname failed TLS verification. Fix the relay certificate. For a private platform relay only, `EMAIL_SMTP_VERIFY_CERT=false` |
 | `provider_not_available` | The name is not `resend`, `ses`, or `smtp`. Mailjet is not registered |
 | `lane_paused` | Staff paused the lane, or this company's provider returned 401 or 403. Other companies keep sending. Resume with `POST /api/v1/lanes/{lane}/resume` |
 | `provider_unauthorized` on a broadcast | The Resend key is Sending access. Broadcasts need Full access. See [Providers](providers.md) |
@@ -86,6 +87,8 @@ Statuses that stay at "handed to the provider": the Resend webhook is missing `e
 An auth message that becomes `expired` missed its TTL before the provider accepted it. The variables are deleted. `shellui_email_auth_ttl_expiries` counts those rows.
 
 ## Broadcasts and newsletters
+
+**Every sign-up hits the per-IP limit (HTTP 429).** All visitors share one address, usually the proxy. Check that the proxy sets `EMAIL_CLIENT_IP_HEADER` (default `X-Forwarded-For`) and that `EMAIL_CLIENT_IP_TRUSTED_PROXIES` matches the number of proxies that append to it (default 1 for Coolify). A missing header or a value that is not an IP falls back to `REMOTE_ADDR`. Visitors in the same IPv6 `/64` share one limit. If the service has no proxy in front, set `EMAIL_CLIENT_IP_HEADER=` (empty).
 
 `audience_too_large`: the audience is over `EMAIL_BROADCAST_MAX_RECIPIENTS` (default 10000).
 

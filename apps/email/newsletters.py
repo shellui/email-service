@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import ipaddress
 import io
+import json
 import re
 import secrets
 from datetime import timedelta
@@ -41,7 +43,11 @@ ORIGIN_RE = re.compile(r'^https?://[a-z0-9.-]+(:\d{1,5})?$')
 SUBSCRIBE_PATH_RE = re.compile(r'^/api/v1/public/newsletters/(?P<key>[^/]+)/subscribe$')
 UNSUBSCRIBE_PREFIX = 'list-'
 ORIGINS_CACHE_SECONDS = 60
-CSV_FIELDS = ('email', 'first_name', 'language', 'status', 'source', 'created_at', 'confirmed_at', 'unsubscribed_at')
+METADATA_KEY_RE = re.compile(r'^[a-z][a-z0-9_]{0,31}$')
+METADATA_MAX_KEYS = 10
+METADATA_MAX_VALUE = 2000
+METADATA_MAX_BYTES = 8192
+CSV_FIELDS = ('email', 'first_name', 'language', 'status', 'source', 'created_at', 'confirmed_at', 'unsubscribed_at', 'metadata')
 MODE_CONFIRM = 'confirm'
 MODE_CONSENTED = 'consented'
 
@@ -405,13 +411,62 @@ def list_payload(newsletter: NewsletterList, *, detail: bool = False) -> dict:
 # Sign-up and confirmation
 
 
+def parse_ip(raw) -> str | None:
+    """One address from a header or REMOTE_ADDR, normalized, or None when it is not an IP.
+
+    Accepts ``2001:db8::1``, ``[2001:db8::1]:443``, ``203.0.113.9:8080`` and IPv4-mapped
+    IPv6 (returned as IPv4).
+    """
+    value = str(raw or '').strip()
+    if value.startswith('['):
+        end = value.find(']')
+        if end == -1:
+            return None
+        value = value[1:end]
+    elif value.count(':') == 1:
+        value = value.split(':', 1)[0]
+    try:
+        ip = ipaddress.ip_address(value)
+    except ValueError:
+        return None
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return str(ip)
+
+
 def client_ip(request) -> str:
+    """The visitor IP for rate limits.
+
+    ``X-Forwarded-For`` (the default) is a list the client can prefill, so the address is
+    read from the right: the hop added by the ``EMAIL_CLIENT_IP_TRUSTED_PROXIES``-th proxy
+    (default 1). Other headers (``CF-Connecting-IP``, ``X-Real-IP``) hold one address set
+    by the proxy. A missing header or an invalid value falls back to ``REMOTE_ADDR``.
+    """
     header = settings.EMAIL_CLIENT_IP_HEADER
     if header:
-        value = str(request.headers.get(header) or '').split(',')[0].strip()
-        if value:
-            return value
-    return str(request.META.get('REMOTE_ADDR') or '')
+        hops = [hop.strip() for hop in str(request.headers.get(header) or '').split(',') if hop.strip()]
+        if hops:
+            if header.lower() == 'x-forwarded-for':
+                trusted = max(1, settings.EMAIL_CLIENT_IP_TRUSTED_PROXIES)
+                picked = hops[-trusted] if len(hops) >= trusted else hops[0]
+            else:
+                picked = hops[0]
+            ip = parse_ip(picked)
+            if ip:
+                return ip
+    remote = request.META.get('REMOTE_ADDR')
+    return parse_ip(remote) or str(remote or '')
+
+
+def rate_key_ip(ip: str) -> str:
+    """IPv4 counts per address, IPv6 per /64: one host usually holds a whole /64."""
+    try:
+        parsed = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip or 'unknown'
+    if isinstance(parsed, ipaddress.IPv6Address):
+        return str(ipaddress.ip_network(f'{parsed}/64', strict=False))
+    return str(parsed)
 
 
 def pick_language(newsletter: NewsletterList, raw, accept_language: str) -> str:
@@ -457,8 +512,9 @@ def subscribe(newsletter: NewsletterList, data, *, ip: str, accept_language: str
     if str(data.get('website') or '').strip():
         return
     email = _clean_email(data.get('email'))
+    metadata = clean_metadata(data.get('metadata'))
     hour = timezone.now().strftime('%Y%m%d%H')
-    if not _rate_allow(f'email:nl:ip:{_opaque(ip or "unknown")}:{hour}', settings.EMAIL_NEWSLETTER_IP_PER_HOUR, 3700):
+    if not _rate_allow(f'email:nl:ip:{_opaque(rate_key_ip(ip))}:{hour}', settings.EMAIL_NEWSLETTER_IP_PER_HOUR, 3700):
         raise SendError(429, 'rate_limited')
     if not _rate_allow(f'email:nl:list:{newsletter.pk}:{hour}', settings.EMAIL_NEWSLETTER_LIST_PER_HOUR, 3700):
         raise SendError(429, 'rate_limited')
@@ -471,7 +527,30 @@ def subscribe(newsletter: NewsletterList, data, *, ip: str, accept_language: str
         language=pick_language(newsletter, data.get('language'), accept_language),
         first_name=str(data.get('first_name') or '').strip()[:150],
         source=NewsletterSubscriber.SOURCE_FORM,
+        metadata=metadata,
     )
+
+
+def clean_metadata(raw) -> dict | None:
+    """Optional flat string map. None means the field was not sent. Never logs the values."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise _invalid('metadata', 'metadata_invalid')
+    if len(raw) > METADATA_MAX_KEYS:
+        raise _invalid('metadata', 'metadata_too_many_keys')
+    clean = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not METADATA_KEY_RE.match(key):
+            raise _invalid('metadata', 'metadata_key_invalid')
+        if not isinstance(value, str):
+            raise _invalid('metadata', 'metadata_value_invalid')
+        if len(value) > METADATA_MAX_VALUE:
+            raise _invalid('metadata', 'metadata_value_too_long')
+        clean[key] = value
+    if len(json.dumps(clean, ensure_ascii=False).encode()) > METADATA_MAX_BYTES:
+        raise _invalid('metadata', 'metadata_too_large')
+    return clean
 
 
 def _store_address(row: NewsletterSubscriber, email: str) -> None:
@@ -487,6 +566,7 @@ def request_confirmation(
     first_name: str,
     source: str,
     check_rates: bool = True,
+    metadata: dict | None = None,
 ) -> str:
     """Create or refresh a pending subscriber and send the confirmation. Returns what happened."""
     hmac_value = email_hmac(email)
@@ -517,6 +597,10 @@ def request_confirmation(
         ):
             row.save()
             return OUTCOME_THROTTLED
+        if metadata is not None:
+            # Only a new or pending sign-up that passed the throttles: an anonymous form post
+            # must not rewrite what a confirmed subscriber already gave.
+            row.metadata = metadata
         if suppressed(newsletter.company_id, hmac_value, LANE_TRANSACTIONAL):
             row.save()
             return OUTCOME_SUPPRESSED
@@ -546,6 +630,8 @@ def request_confirmation(
             expires_at=None,
             event_type='newsletter_confirmation',
         )
+        row.list = newsletter
+        _emit(row, 'email.newsletter.requested', {'source': row.source})
     _notify(LANE_TRANSACTIONAL)
     if settings.EMAIL_DELIVER_SYNC:
         deliver_due(LANE_TRANSACTIONAL)
@@ -577,17 +663,30 @@ def _address(row: NewsletterSubscriber) -> str:
 
 
 def _emit(row: NewsletterSubscriber, event_type: str, extra: dict) -> None:
-    emit_email_event(
-        company_id=row.list.company_id,
-        event_type=event_type,
-        data={
-            'list_id': row.list_id,
-            'list_name': row.list.name,
-            'email': _address(row) or row.email_masked,
-            'language': row.language,
-            **extra,
-        },
-    )
+    """Webhook rules and email rules for a newsletter event. Never carries the confirmation token or link."""
+    from apps.email.newsletter_events import send_event_email
+
+    data = {
+        'list_id': row.list_id,
+        'list_name': row.list.name,
+        'email': _address(row) or row.email_masked,
+        'first_name': row.first_name,
+        'language': row.language,
+        'status': row.status,
+        'metadata': row.metadata or {},
+        'created_at': _iso(row.created_at),
+        'confirmed_at': _iso(row.confirmed_at),
+        'unsubscribed_at': _iso(row.unsubscribed_at),
+        **extra,
+    }
+    company_id = row.list.company_id
+
+    def fire() -> None:
+        # After commit only: a rolled-back sign-up never reaches a webhook or an email rule.
+        emit_email_event(company_id=company_id, event_type=event_type, data=data)
+        send_event_email(company_id, event_type, data)
+
+    transaction.on_commit(fire)
 
 
 def confirm(token: str) -> NewsletterSubscriber | None:
@@ -648,6 +747,7 @@ def subscriber_payload(row: NewsletterSubscriber) -> dict:
         'id': row.pk,
         'email': _address(row) or row.email_masked,
         'first_name': row.first_name,
+        'metadata': row.metadata or {},
         'language': row.language,
         'status': row.status,
         'source': row.source,
@@ -815,7 +915,8 @@ def import_csv(newsletter: NewsletterList, text, mode_raw) -> dict:
 
 def _cell(value) -> str:
     text = '' if value is None else str(value)
-    return "'" + text if text[:1] in {'=', '+', '-', '@', '\t', '\r'} else text
+    # Spreadsheets skip leading spaces before reading a formula.
+    return "'" + text if text.lstrip(' ')[:1] in {'=', '+', '-', '@', '\t', '\r', '\n'} else text
 
 
 def export_csv(newsletter: NewsletterList, *, status: str = '') -> str:
@@ -829,6 +930,7 @@ def export_csv(newsletter: NewsletterList, *, status: str = '') -> str:
     writer.writerow(CSV_FIELDS)
     for row in rows.iterator():
         payload = subscriber_payload(row)
+        payload['metadata'] = json.dumps(payload['metadata'], ensure_ascii=False) if payload['metadata'] else ''
         writer.writerow([_cell(payload[field]) for field in CSV_FIELDS])
     return buffer.getvalue()
 
@@ -866,6 +968,6 @@ def purge(now=None) -> tuple[int, int]:
     cleared = (
         NewsletterSubscriber.objects.filter(status=NewsletterSubscriber.STATUS_UNSUBSCRIBED, unsubscribed_at__lt=cutoff)
         .exclude(email_ciphertext='')
-        .update(email_ciphertext='', first_name='')
+        .update(email_ciphertext='', first_name='', metadata={})
     )
     return deleted, cleared

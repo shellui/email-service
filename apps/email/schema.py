@@ -343,6 +343,7 @@ class EmailRuleSerializer(serializers.Serializer):
     language = serializers.CharField(allow_blank=True)
     template_id = serializers.IntegerField()
     built_in = serializers.BooleanField()
+    newsletter_id = serializers.IntegerField(allow_null=True)
     created_at = serializers.CharField()
     updated_at = serializers.CharField()
 
@@ -359,6 +360,9 @@ class EmailRuleWriteSerializer(serializers.Serializer):
     recipient_mode = serializers.CharField(required=False)
     static_recipients = serializers.ListField(child=serializers.CharField(), required=False)
     language = serializers.CharField(required=False, allow_blank=True)
+    newsletter_id = serializers.IntegerField(
+        required=False, allow_null=True, help_text='`email.newsletter.*` rules only: one newsletter list, or null for every list.'
+    )
     content = EmailRuleContentSerializer()
 
 
@@ -367,6 +371,9 @@ class EmailRulePatchSerializer(serializers.Serializer):
     recipient_mode = serializers.CharField(required=False)
     static_recipients = serializers.ListField(child=serializers.CharField(), required=False)
     language = serializers.CharField(required=False, allow_blank=True)
+    newsletter_id = serializers.IntegerField(
+        required=False, allow_null=True, help_text='`email.newsletter.*` rules only: one newsletter list, or null for every list.'
+    )
 
 
 class ProviderCredentialsSerializer(serializers.Serializer):
@@ -680,6 +687,7 @@ class NewsletterSubscriberSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     email = serializers.CharField(help_text='Masked once the address is cleared after unsubscribing.')
     first_name = serializers.CharField(allow_blank=True)
+    metadata = serializers.DictField(child=serializers.CharField(allow_blank=True), help_text='Extra details sent with the sign-up. Untrusted text.')
     language = serializers.CharField()
     status = serializers.ChoiceField(choices=['pending', 'confirmed', 'unsubscribed'])
     source = serializers.ChoiceField(choices=['form', 'admin', 'import'])
@@ -728,6 +736,11 @@ class NewsletterSubscribeRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
     language = serializers.CharField(required=False, allow_blank=True)
     first_name = serializers.CharField(required=False, allow_blank=True)
+    metadata = serializers.DictField(
+        child=serializers.CharField(allow_blank=True, max_length=2000),
+        required=False,
+        help_text='Optional flat map of extra details. Keys match ^[a-z][a-z0-9_]{0,31}$, at most 10 keys, 8 KB in total.',
+    )
     website = serializers.CharField(required=False, allow_blank=True, help_text='Honeypot. Leave empty.')
     turnstile_token = serializers.CharField(required=False, allow_blank=True)
 

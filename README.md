@@ -44,7 +44,7 @@ The handbook lives in [`docs/`](docs/index.md) and is published at [docs.shellui
 - [Integration contract](docs/integration.md), [events](docs/events.md) and [authentication](docs/authentication.md)
 - [Providers](docs/providers.md), [email rules](docs/rules.md) and [lanes](docs/lanes.md)
 - [Templates](docs/templates.md) and the [design library](docs/library.md)
-- [Broadcasts](docs/broadcasts.md) and [newsletters](docs/newsletters.md)
+- [Broadcasts](docs/broadcasts.md) and [newsletters](docs/newsletters.md), with sign-up `metadata` and email and webhook rules per list
 - [Webhooks](docs/actions.md), [metrics](docs/metrics.md), [security](docs/security.md) and [troubleshooting](docs/troubleshooting.md)
 
 ## Development

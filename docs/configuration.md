@@ -128,6 +128,7 @@ identity-service also has `EMAIL_SERVICE_TIMEOUT_SECONDS` (default 5), `EMAIL_SE
 | `EMAIL_HOST_PASSWORD` | empty | Platform SMTP password |
 | `EMAIL_USE_TLS` | `true` | STARTTLS |
 | `EMAIL_USE_SSL` | `false` | Implicit TLS |
+| `EMAIL_SMTP_VERIFY_CERT` | `true` | Verify the `EMAIL_HOST` certificate and hostname on STARTTLS and implicit TLS. Set `false` only for a private relay with a self-signed certificate; a warning is logged on each send. Company SMTP relays are always verified |
 | `EMAIL_ALLOW_FAKE_PROVIDER` | true when `DEBUG=true` | Test double. Off in production unless set |
 
 When `DEBUG=false` and the chosen fallback has no credentials, `manage.py check` warns (`email.W001`) and the service still starts. Auth mail for companies without their own provider then fails with `provider_not_configured`. The warning never prints key values. With `none`, no provider key is needed. Companies in `EMAIL_PLATFORM_COMPANY_IDS` without their own provider need a fallback configured, otherwise their mail, newsletters and broadcasts fail with `provider_not_configured` (`manage.py check` warns with `email.W002`).
@@ -171,10 +172,11 @@ See [Broadcasts](broadcasts.md).
 | `EMAIL_NEWSLETTER_RESEND_MINUTES` | `10` | Minimum wait before a pending address gets another confirmation email |
 | `EMAIL_NEWSLETTER_CONFIRM_HOURS` | `48` | How long a confirmation link works |
 | `EMAIL_NEWSLETTER_PENDING_DAYS` | `7` | Unconfirmed sign-ups are deleted, and addresses of unsubscribed people cleared, after this many days |
-| `EMAIL_CLIENT_IP_HEADER` | empty | Header carrying the visitor IP behind a proxy, for example `CF-Connecting-IP`. Empty uses the connection address |
+| `EMAIL_CLIENT_IP_HEADER` | `X-Forwarded-For` | Header carrying the visitor IP for the public sign-up rate limit. The default fits Coolify, whose Traefik proxy appends the visitor IP. Use a header your proxy sets, for example `X-Real-IP` or `CF-Connecting-IP`. Set it to an empty value (`EMAIL_CLIENT_IP_HEADER=`) to use the connection address (`REMOTE_ADDR`), for example when the service is reached without a proxy. A missing header or a value that is not an IP also falls back to `REMOTE_ADDR` |
+| `EMAIL_CLIENT_IP_TRUSTED_PROXIES` | `1` | Only with `X-Forwarded-For`: the number of proxies that append to it. The visitor IP is read that many entries from the right, because the left side is set by the visitor |
 | `EMAIL_TURNSTILE_VERIFY_URL` | `https://challenges.cloudflare.com/turnstile/v0/siteverify` | Turnstile siteverify endpoint |
 
-See [Newsletters](newsletters.md).
+See [Newsletters](newsletters.md). Addresses are read as IPv4 or IPv6, with or without a port (`203.0.113.9:8080`, `[2001:db8::1]:443`); IPv4-mapped IPv6 counts as IPv4. The per-IP limit counts IPv4 per address and IPv6 per `/64`.
 
 ## Composing
 

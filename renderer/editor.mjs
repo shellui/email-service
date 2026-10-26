@@ -4,7 +4,10 @@
  */
 import { Window } from 'happy-dom';
 
-const window = new Window();
+// No script evaluation and no network loads: the DOM only backs the editor schema.
+const window = new Window({
+  settings: { enableJavaScriptEvaluation: false, disableJavaScriptFileLoading: true, disableCSSFileLoading: true },
+});
 for (const key of ['window', 'document', 'navigator', 'DOMParser', 'Node', 'HTMLElement', 'Element', 'getComputedStyle', 'MutationObserver']) {
   if (key === 'window' || !(key in globalThis)) {
     Object.defineProperty(globalThis, key, {

@@ -46,6 +46,7 @@ class ActionRuleCreateSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True)
     enabled = serializers.BooleanField(required=False)
     secret = serializers.CharField(required=False, allow_blank=True)
+    newsletter_id = serializers.IntegerField(required=False, allow_null=True, help_text='email.newsletter.* rules only: only events of this list. Null or 0 clears it.')
 
 
 class ActionRuleUpdateSerializer(serializers.Serializer):
@@ -53,6 +54,7 @@ class ActionRuleUpdateSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True)
     enabled = serializers.BooleanField(required=False)
     url = serializers.CharField(required=False)
+    newsletter_id = serializers.IntegerField(required=False, allow_null=True, help_text='email.newsletter.* rules only: only events of this list. Null or 0 clears it.')
 
 
 class DeliveryAttemptSerializer(serializers.Serializer):

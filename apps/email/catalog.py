@@ -92,6 +92,16 @@ def _definition(
 
 
 _COMPANY = _var('company_name', 'string', example='Acme')
+# email-service's own newsletter events. Rules send them to static recipients only (see newsletter_events).
+_NEWSLETTER_VARS = [
+    _COMPANY,
+    _var('list_id', 'number', example=12),
+    _var('list_name', 'string', example='Walkthrough requests'),
+    _var('subscriber_email', 'string', example='ada@example.org'),
+    _var('first_name', 'string', example='Ada'),
+    _var('language', 'string', example='en'),
+    _var('metadata_text', 'string', example='project: Acme\nmessage: Hello'),
+]
 
 
 def broadcast_definition() -> dict[str, Any]:
@@ -625,6 +635,51 @@ def all_definitions() -> list[dict[str, Any]]:
                 subject_fr='[Shellui] {{ path|default:"Un fichier" }} a été déposé',
                 pre_en='A file was stored.',
                 pre_fr='Un fichier a été enregistré.',
+            ),
+        ),
+        _definition(
+            key='email.newsletter.requested',
+            label='Newsletter sign-up requested',
+            description='Someone signed up to a newsletter and was sent the confirmation email.',
+            lane_class=LANE_TRANSACTIONAL,
+            default_enabled=False,
+            category='transactional',
+            variables=_NEWSLETTER_VARS,
+            languages=_localized(
+                subject_en='[Shellui] New sign-up to {{ list_name }}',
+                subject_fr='[Shellui] Nouvelle inscription à {{ list_name }}',
+                pre_en='Someone asked to join a newsletter.',
+                pre_fr="Quelqu'un souhaite rejoindre une newsletter.",
+            ),
+        ),
+        _definition(
+            key='email.newsletter.confirmed',
+            label='Newsletter confirmed',
+            description='Someone confirmed a newsletter subscription.',
+            lane_class=LANE_TRANSACTIONAL,
+            default_enabled=False,
+            category='transactional',
+            variables=_NEWSLETTER_VARS,
+            languages=_localized(
+                subject_en='[Shellui] {{ list_name }} has a new subscriber',
+                subject_fr='[Shellui] {{ list_name }} a un nouvel abonné',
+                pre_en='A newsletter subscription was confirmed.',
+                pre_fr='Une inscription à une newsletter a été confirmée.',
+            ),
+        ),
+        _definition(
+            key='email.newsletter.unsubscribed',
+            label='Newsletter unsubscribed',
+            description='Someone left a newsletter.',
+            lane_class=LANE_TRANSACTIONAL,
+            default_enabled=False,
+            category='transactional',
+            variables=_NEWSLETTER_VARS,
+            languages=_localized(
+                subject_en='[Shellui] Someone left {{ list_name }}',
+                subject_fr="[Shellui] Quelqu'un a quitté {{ list_name }}",
+                pre_en='A subscriber left a newsletter.',
+                pre_fr='Un abonné a quitté une newsletter.',
             ),
         ),
     ]

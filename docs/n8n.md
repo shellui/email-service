@@ -30,6 +30,10 @@ Default HTTP timeout from Shellui is 5 seconds (`ACTIONS_WEBHOOK_TIMEOUT_SECONDS
 
 Shellui always POSTs to the URL saved on the rule. Use the production URL. n8n returns 404 when the workflow is inactive. Shellui retries 404.
 
+## Newsletter sign-ups
+
+To route a list such as "Request a demo" into n8n, create a rule on `email.newsletter.requested` (or `email.newsletter.confirmed` to wait for a verified address) and set `newsletter_id` to that list. `data` carries `list_id`, `list_name`, `email`, `first_name`, `language`, `status`, `metadata`, `source`, `created_at`, `confirmed_at` and `unsubscribed_at`. `metadata` is visitor text: escape it before you put it in a message or a database. The payload never carries the confirmation token or link. See [Newsletters](newsletters.md#email-and-webhooks).
+
 ## Delivery
 
 - At-least-once. Dedupe on header `webhook-id`.

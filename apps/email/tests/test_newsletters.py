@@ -127,6 +127,199 @@ class NewsletterTests(TestCase):
         self.assertEqual((again.status_code, again.json()), (202, {'status': 'pending'}))
         self.assertEqual(len(fake_provider().sent), sent)
 
+    def test_sign_up_stores_metadata_and_a_public_post_cannot_rewrite_a_confirmed_row(self):
+        newsletter = self._create()
+        meta = {'project': 'Zebulon', 'message': 'Line one\n<b>two</b>'}
+        with self.assertNoLogs('apps', level='INFO'):
+            self.assertEqual(self._subscribe(newsletter, metadata=meta).status_code, 202)
+        row = NewsletterSubscriber.objects.get()
+        self.assertEqual(row.metadata, meta)
+        [message] = fake_provider().sent
+        self.assertNotIn('Zebulon', message.html + message.text)
+        self.public.post(f'/n/confirm/{self._token()}')
+        self.assertEqual(self._subscribe(newsletter, metadata={'project': 'Forged'}).status_code, 202)
+        row.refresh_from_db()
+        self.assertEqual(row.metadata, meta)
+        self._subscribe(newsletter)
+        row.refresh_from_db()
+        self.assertEqual(row.metadata, meta)
+        base = f'/api/v1/newsletters/{newsletter["id"]}'
+        self.assertEqual(self.owner.get(f'{base}/subscribers').json()['results'][0]['metadata'], meta)
+        self.assertIn('""project"": ""Zebulon""', self.owner.get(f'{base}/subscribers.csv').content.decode())
+
+    def test_throttled_pending_sign_up_keeps_its_metadata(self):
+        newsletter = self._create()
+        self._subscribe(newsletter, metadata={'project': 'First'})
+        self.assertEqual(self._subscribe(newsletter, metadata={'project': 'Second'}).status_code, 202)
+        self.assertEqual(NewsletterSubscriber.objects.get().metadata, {'project': 'First'})
+
+    @mock.patch('apps.actions.ssrf.validate_webhook_url', side_effect=lambda url, **kw: url)
+    def test_newsletter_events_reach_filtered_webhooks_and_email_rules(self, _validate):
+        from apps.actions.models import ActionOutbox
+        from apps.email import rules
+        from apps.email.tests.helpers import library_content
+
+        walk = self._create(name='Walkthrough')
+        other = self._create(name='Other')
+        made = self.owner.post(
+            '/api/v1/actions/rules',
+            {'name': 'Hook', 'event_type': 'email.newsletter.requested', 'url': 'https://hooks.example.com/x', 'newsletter_id': walk['id']},
+            format='json',
+        )
+        self.assertEqual(made.status_code, 201, made.content)
+        self.assertEqual(made.json()['config']['newsletter_id'], walk['id'])
+        bad = self.owner.post(
+            '/api/v1/actions/rules',
+            {'name': 'Hook', 'event_type': 'email.newsletter.requested', 'url': 'https://hooks.example.com/x', 'newsletter_id': 999999},
+            format='json',
+        )
+        self.assertEqual(bad.json()['field_errors'], {'newsletter_id': ['not_found']})
+        rules.create_rule(
+            COMPANY,
+            {
+                'event_type': 'email.newsletter.requested',
+                'recipient_mode': 'static',
+                'static_recipients': ['team@acme.com'],
+                'content': library_content(),
+            },
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            self._subscribe(walk, metadata={'project': 'Zebulon'})
+        with self.captureOnCommitCallbacks(execute=True):
+            self._subscribe(other, 'bea@example.org')
+        [outbox] = ActionOutbox.objects.all()
+        data = outbox.envelope['data']
+        self.assertEqual((data['list_id'], data['email'], data['metadata']), (walk['id'], 'ada@example.org', {'project': 'Zebulon'}))
+        self.assertNotIn('/n/confirm/', str(outbox.envelope))
+        team = [m for m in fake_provider().sent if m.to_email == 'team@acme.com']
+        self.assertEqual(len(team), 2)
+        self.assertNotIn('/n/confirm/', team[0].html + team[0].text)
+
+    def test_email_rules_can_be_bound_to_one_newsletter_and_use_the_transactional_lane(self):
+        from apps.email import rules
+        from apps.email.models import Message
+        from apps.email.tests.helpers import library_content
+
+        walk = self._create(name='Book a walkthrough')
+        other = self._create(name='Other')
+
+        def rule(to, **extra):
+            return rules.create_rule(
+                COMPANY,
+                {
+                    'event_type': 'email.newsletter.requested',
+                    'recipient_mode': 'static',
+                    'static_recipients': [to],
+                    'content': library_content(),
+                    **extra,
+                },
+            )
+
+        bound = rule('sales@acme.com', newsletter_id=walk['id'])
+        rule('team@acme.com')
+        self.assertEqual(rules.rule_payload(bound)['newsletter_id'], walk['id'])
+        with self.captureOnCommitCallbacks(execute=True):
+            self._subscribe(walk)
+        with self.captureOnCommitCallbacks(execute=True):
+            self._subscribe(other, 'bea@example.org')
+        sent = [m.to_email for m in fake_provider().sent]
+        self.assertEqual(sent.count('sales@acme.com'), 1)
+        self.assertEqual(sent.count('team@acme.com'), 2)
+        # Rule notifications and the double opt-in confirmation never wait behind bulk sends.
+        self.assertEqual(set(Message.objects.values_list('lane', flat=True)), {'transactional'})
+
+        response = self.owner.patch(f'/api/v1/rules/{bound.pk}', {'newsletter_id': None}, format='json')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIsNone(response.json()['newsletter_id'])
+        with self.assertRaises(rules.SendError) as missing:
+            rule('x@acme.com', newsletter_id=999999)
+        self.assertEqual(missing.exception.field_errors, {'newsletter_id': ['not_found']})
+        with self.assertRaises(rules.SendError) as wrong_event:
+            rules.create_rule(
+                COMPANY,
+                {'event_type': 'storage.object.deleted', 'newsletter_id': walk['id'], 'content': library_content()},
+            )
+        self.assertEqual(wrong_event.exception.field_errors, {'newsletter_id': ['not_newsletter_event']})
+
+    @mock.patch('apps.actions.ssrf.validate_webhook_url', side_effect=lambda url, **kw: url)
+    def test_newsletter_filter_is_rejected_on_other_events(self, _validate):
+        from django.core.exceptions import ValidationError
+
+        from apps.actions.models import ActionRule
+        from apps.email.models import EmailRule
+
+        walk = self._create(name='Request a demo')
+        bad = self.owner.post(
+            '/api/v1/actions/rules',
+            {'name': 'Hook', 'event_type': 'email.message.bounced', 'url': 'https://hooks.example.com/x', 'newsletter_id': walk['id']},
+            format='json',
+        )
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(bad.json()['field_errors'], {'newsletter_id': ['not_newsletter_event']})
+        made = self.owner.post(
+            '/api/v1/actions/rules',
+            {'name': 'Hook', 'event_type': 'email.message.bounced', 'url': 'https://hooks.example.com/x'},
+            format='json',
+        )
+        patched = self.owner.patch(f"/api/v1/actions/rules/{made.json()['id']}", {'newsletter_id': walk['id']}, format='json')
+        self.assertEqual(patched.json()['field_errors'], {'newsletter_id': ['not_newsletter_event']})
+        # Model clean, used by Django admin.
+        hook = ActionRule(company_id=COMPANY, name='h', event_type='email.message.bounced', config={'newsletter_id': walk['id']})
+        with self.assertRaises(ValidationError):
+            hook.clean()
+        hook.event_type = 'email.newsletter.confirmed'
+        hook.clean()
+        rule = EmailRule(company_id=COMPANY, service='storage', event_type='email.message.bounced', newsletter_id=walk['id'])
+        with self.assertRaises(ValidationError):
+            rule.clean()
+        rule.event_type = 'email.newsletter.requested'
+        rule.clean()
+
+    @mock.patch('apps.actions.ssrf.validate_webhook_url', side_effect=lambda url, **kw: url)
+    def test_newsletter_webhooks_wait_for_commit_and_never_carry_tokens(self, _validate):
+        from apps.actions.models import ActionOutbox
+
+        newsletter = self._create()
+        for event in ('email.newsletter.requested', 'email.newsletter.confirmed', 'email.newsletter.unsubscribed'):
+            self.owner.post(
+                '/api/v1/actions/rules',
+                {'name': event, 'event_type': event, 'url': 'https://hooks.example.com/x'},
+                format='json',
+            )
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            self._subscribe(newsletter)
+        self.assertFalse(ActionOutbox.objects.exists())
+        for callback in callbacks:
+            callback()
+        self.assertEqual(ActionOutbox.objects.count(), 1)
+        token = self._token()
+        with self.captureOnCommitCallbacks(execute=True):
+            self.public.post(f'/n/confirm/{token}')
+        events = {o.event_type: o.envelope for o in ActionOutbox.objects.all()}
+        self.assertIn('email.newsletter.confirmed', events)
+        for envelope in events.values():
+            text = str(envelope)
+            self.assertNotIn(token, text)
+            self.assertNotIn('/n/confirm/', text)
+            self.assertNotIn('confirm_url', text)
+            self.assertNotIn('token', envelope['data'])
+
+    def test_invalid_metadata_is_rejected(self):
+        newsletter = self._create()
+        cases = {
+            'metadata_invalid': ['x'],
+            'metadata_key_invalid': {'Project': 'x'},
+            'metadata_value_invalid': {'project': 3},
+            'metadata_value_too_long': {'message': 'x' * 2001},
+            'metadata_too_many_keys': {f'k{i}': 'x' for i in range(11)},
+            'metadata_too_large': {f'k{i}': 'x' * 1000 for i in range(9)},
+        }
+        for code, value in cases.items():
+            response = self._subscribe(newsletter, metadata=value)
+            self.assertEqual(response.status_code, 400, code)
+            self.assertEqual(response.json()['field_errors']['metadata'], [code])
+        self.assertFalse(NewsletterSubscriber.objects.exists())
+
     def test_the_honeypot_answers_like_a_sign_up(self):
         newsletter = self._create()
         response = self._subscribe(newsletter, website='https://spam.example')
@@ -196,7 +389,8 @@ class NewsletterTests(TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, 'Confirm subscription')
         self.assertEqual(NewsletterSubscriber.objects.get().status, 'pending')
-        done = self.public.post(f'/n/confirm/{token}')
+        with self.captureOnCommitCallbacks(execute=True):
+            done = self.public.post(f'/n/confirm/{token}')
         self.assertContains(done, 'You are subscribed')
         row = NewsletterSubscriber.objects.get()
         self.assertEqual(row.status, 'confirmed')
@@ -228,7 +422,8 @@ class NewsletterTests(TestCase):
         token = unsubscribe_token(COMPANY, 'ada@example.org', newsletters.unsubscribe_category(first['id']))
         page = self.public.get(f'/u/{token}')
         self.assertContains(page, 'Stop receiving Product news.')
-        self.assertEqual(self.public.post(f'/u/{token}').status_code, 200)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(self.public.post(f'/u/{token}').status_code, 200)
         statuses = dict(NewsletterSubscriber.objects.values_list('list_id', 'status'))
         self.assertEqual(statuses, {first['id']: 'unsubscribed', second['id']: 'confirmed'})
         self.assertFalse(Unsubscribe.objects.exists())

@@ -50,6 +50,23 @@ def _public_webhook_url(url: str) -> str:
         raise SendError(400, 'validation_failed', {'url': ['not_public']}) from exc
 
 
+def _newsletter_filter(company_id: int, event_type: str, raw) -> int | None:
+    """Optional rule filter: only events of this newsletter list (``email.newsletter.*``)."""
+    if raw in (None, '', 0):
+        return None
+    if not event_type.startswith('email.newsletter.'):
+        raise SendError(400, 'validation_failed', {'newsletter_id': ['not_newsletter_event']})
+    from apps.email.models import NewsletterList
+
+    try:
+        list_id = int(raw)
+    except (TypeError, ValueError):
+        raise SendError(400, 'validation_failed', {'newsletter_id': ['invalid']})
+    if not NewsletterList.objects.filter(pk=list_id, company_id=company_id).exists():
+        raise SendError(400, 'validation_failed', {'newsletter_id': ['not_found']})
+    return list_id
+
+
 def _mask_config(config: dict) -> dict:
     raw = dict(config or {})
     secret = raw.pop('secret', '') or ''
@@ -153,13 +170,17 @@ class ActionRuleListCreateView(APIView):
                 raise SendError(400, 'validation_failed', {'event_type': ['unknown']})
             url = _public_webhook_url(url)
             secret = store_rule_secret(str(request.data.get('secret') or ''))
+            config = {'url': url, 'secret': secret}
+            newsletter_id = _newsletter_filter(company_id, event_type, request.data.get('newsletter_id'))
+            if newsletter_id:
+                config['newsletter_id'] = newsletter_id
             rule = ActionRule.objects.create(
                 company_id=company_id,
                 name=name,
                 description=str(request.data.get('description') or ''),
                 event_type=event_type,
                 enabled=bool(request.data.get('enabled', True)),
-                config={'url': url, 'secret': secret},
+                config=config,
             )
         except SendError as exc:
             return error_response(exc, request)
@@ -210,6 +231,13 @@ class ActionRuleDetailView(APIView):
             if 'url' in request.data:
                 config = dict(rule.config or {})
                 config['url'] = _public_webhook_url(str(request.data.get('url') or ''))
+                rule.config = config
+            if 'newsletter_id' in request.data:
+                config = dict(rule.config or {})
+                config.pop('newsletter_id', None)
+                newsletter_id = _newsletter_filter(rule.company_id, rule.event_type, request.data.get('newsletter_id'))
+                if newsletter_id:
+                    config['newsletter_id'] = newsletter_id
                 rule.config = config
             rule.save()
         except SendError as exc:

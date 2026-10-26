@@ -78,7 +78,7 @@ Each broadcast adds its recipients as Resend contacts, in one segment per langua
 The company repeats the steps on its own account, then:
 
 - Saves its Full access key, From address, and Bulk From address in the admin under **Email > Provider**, with provider **Resend**
-- Points its Resend webhook at `https://email.shellui.com/api/v1/provider-webhooks/resend/all?company_id=42`. That URL accepts only the company's signing secret
+- Points its Resend webhook at `https://email.shellui.com/api/v1/provider-webhooks/resend/all?company_id=42`. That URL accepts only the company's signing secret, and its events only update that company's messages and broadcasts
 - Stores the signing secret through the API. The admin form has no field for it yet
 
 `from_email` is required on every `PUT`. The stored API key is kept when `credentials` is omitted. The request uses an identity JWT of a staff member or the company owner:

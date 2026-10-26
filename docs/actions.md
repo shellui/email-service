@@ -25,10 +25,13 @@ For n8n, see [n8n.md](n8n.md). The caller contract, including the envelope, is i
 | `email.message.expired` | The auth TTL elapsed before handoff. |
 | `email.message.suppressed` | The address was suppressed and the message was not handed to the provider. |
 | `email.unsubscribe.created` | `POST /u/{token}` recorded an unsubscribe. |
+| `email.newsletter.requested` | Someone signed up to a list and was sent the confirmation email. `email` is not verified yet. |
 | `email.newsletter.confirmed` | Someone confirmed a list subscription. |
 | `email.newsletter.unsubscribed` | Someone left a list. |
 
-Message `data` includes `message_id`, `template_key`, `lane`, `service`, `to_email`, and `to_user_id`. It does not include template variables or a sign-in link. `to_email` is personal data. Newsletter `data` includes `list_id`, `list_name`, `email`, `language`, and `source`.
+Message `data` includes `message_id`, `template_key`, `lane`, `service`, `to_email`, and `to_user_id`. It does not include template variables or a sign-in link. `to_email` is personal data. Newsletter `data` includes `list_id`, `list_name`, `email`, `first_name`, `language`, `status`, `metadata`, `source`, `created_at`, `confirmed_at`, and `unsubscribed_at`. It never includes the confirmation token or link. `metadata` is visitor text: treat it as untrusted.
+
+A rule on an `email.newsletter.*` event can be limited to one list with `newsletter_id` on create or update (`null` clears it). The masked rule `config` returns it. It must be a list of the same company, and any other event refuses it with `400 validation_failed` (`field_errors.newsletter_id: ["not_newsletter_event"]`). Newsletter events are queued only after the sign-up is committed. Full payload: [Newsletters](newsletters.md#email-and-webhooks).
 
 Opens and clicks from Resend are ignored and do not emit events.
 
