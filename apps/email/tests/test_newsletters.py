@@ -359,9 +359,24 @@ class NewsletterTests(TestCase):
         blocked = self._subscribe(newsletter, 'bea@example.org', headers={'HTTP_ORIGIN': 'https://evil.example'})
         self.assertEqual(blocked.status_code, 403)
         self.assertEqual(blocked.json()['error_code'], 'origin_not_allowed')
-        self.assertNotIn('Access-Control-Allow-Origin', blocked)
-        missing = self.public.post('/api/v1/public/newsletters/nl_nope/subscribe', {'email': 'a@b.co'}, format='json')
+        self.assertEqual(blocked['Access-Control-Allow-Origin'], 'https://evil.example')
+        self.assertNotIn('Access-Control-Allow-Credentials', blocked)
+        missing_url = '/api/v1/public/newsletters/nl_nope/subscribe'
+        preflight = self.public.options(
+            missing_url, HTTP_ORIGIN='http://localhost:3000', HTTP_ACCESS_CONTROL_REQUEST_METHOD='POST'
+        )
+        self.assertEqual(preflight.status_code, 200)
+        self.assertEqual(preflight['Access-Control-Allow-Origin'], 'http://localhost:3000')
+        missing = self.public.post(
+            missing_url, {'email': 'a@b.co'}, format='json', HTTP_ORIGIN='http://localhost:3000'
+        )
         self.assertEqual(missing.status_code, 404)
+        self.assertEqual(missing.json()['error_code'], 'newsletter_not_found')
+        self.assertEqual(missing['Access-Control-Allow-Origin'], 'http://localhost:3000')
+        closed = self.public.options(
+            '/api/v1/newsletters', HTTP_ORIGIN='https://evil.example', HTTP_ACCESS_CONTROL_REQUEST_METHOD='GET'
+        )
+        self.assertNotIn('Access-Control-Allow-Origin', closed)
 
     def test_turnstile_is_checked_when_configured(self):
         newsletter = self._create()

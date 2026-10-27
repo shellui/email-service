@@ -80,7 +80,7 @@ The answer is `202 {"status": "pending"}` whether the address is new, already pe
 - **Rate limits**: `EMAIL_NEWSLETTER_IP_PER_HOUR` (10) per IP, `EMAIL_NEWSLETTER_ADDRESS_PER_DAY` (3) confirmation emails per address and list, and `EMAIL_NEWSLETTER_LIST_PER_HOUR` (500) per list. The visitor IP comes from `X-Forwarded-For` by default, read from the right (`EMAIL_CLIENT_IP_TRUSTED_PROXIES`), so the limit applies to the visitor and not the proxy. IPv6 visitors count per `/64`. See [Configuration](configuration.md).
 - **Honeypot**: the `website` field.
 - **Cloudflare Turnstile** (optional): set the site key and secret on the list. The secret is stored encrypted and never returned.
-- **Allowed origins**: browsers may only post from the list's `allowed_origins` (empty means any website). The endpoint answers CORS for those origins only. This is a browser control: a request without an `Origin` header, such as a server-side script, is accepted, so rely on the rate limits and Turnstile against scripted sign-ups.
+- **Allowed origins**: browsers may only post from the list's `allowed_origins` (empty means any website). The endpoint answers CORS for any website, without credentials, so the browser can read a `403 origin_not_allowed` or `404 newsletter_not_found` instead of a CORS error. The list still refuses origins it does not allow. This is a browser control: a request without an `Origin` header, such as a server-side script, is accepted, so rely on the rate limits and Turnstile against scripted sign-ups.
 
 ## Unsubscribing
 
