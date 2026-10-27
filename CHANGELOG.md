@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.6.0] - 2026-10-27
+
+### 🐛 Bug Fixes
+
+- **API docs:** ReDoc and Swagger UI load again, served from the service's static files instead of a CDN.
+- **Newsletter CORS:** The public sign-up endpoint answers CORS for any website, so browsers show the real `404` or `403` instead of a CORS error.
+- **Email background:** The design's page color fills the whole email, and links without their own color use the text color instead of blue.
+
 ## [0.5.0] - 2026-10-26
 
 ### ✨ Feature

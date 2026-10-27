@@ -284,12 +284,9 @@ def origin_allowed(public_key: str, origin: str) -> bool:
 
 
 def cors_for_subscribe(sender, request, **kwargs) -> bool:
-    """django-cors-headers asks this per request. Only a list's sign-up endpoint answers its websites."""
-    match = SUBSCRIBE_PATH_RE.match(request.path_info)
-    if match is None:
-        return False
-    origin = request.headers.get('Origin', '')
-    return bool(origin) and origin_allowed(match['key'], origin)
+    """django-cors-headers asks this per request. Only the public sign-up endpoint answers any website,
+    without credentials, so the browser can read its 404 or 403. The view enforces the list's origins."""
+    return bool(request.headers.get('Origin')) and SUBSCRIBE_PATH_RE.match(request.path_info) is not None
 
 
 def create_list(company_id: int, data: dict, user_id: int | None) -> NewsletterList:

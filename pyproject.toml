@@ -1,6 +1,6 @@
 [project]
 name = "email-service"
-version = "0.5.0"
+version = "0.6.0"
 description = "Email templates and delivery for Shellui services"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -8,6 +8,7 @@ dependencies = [
     "django==6.0.8",
     "djangorestframework==3.18.2",
     "drf-spectacular==0.29.0",
+    "drf-spectacular-sidecar==2026.10.1",
     "django-cors-headers==4.9.0",
     "python-dotenv==1.2.2",
     "dj-database-url==3.1.2",
