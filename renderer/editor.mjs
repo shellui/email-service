@@ -101,32 +101,67 @@ const Container = BaseContainer.extend({
   },
 });
 
-function Document({ children, previewText, head }) {
+// Apple Mail turns dates, phones, and domains into blue links. Keep them in the text's color.
+const DATA_DETECTORS =
+  'a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important;font-size:inherit!important;font-family:inherit!important;font-weight:inherit!important;line-height:inherit!important}';
+
+const BACKGROUND = /(?:^|;)\s*background-color\s*:\s*([^;]+)/i;
+const COLOR = /(?:^|;)\s*color\s*:\s*([^;]+)/i;
+
+/** The design's page color: the first table cell reached through the document's leading blocks. */
+export function pageBackground(document) {
+  let node = document?.content?.[0];
+  while (node) {
+    if (node.type === 'tableCell') return node.attrs?.style?.match(BACKGROUND)?.[1].trim() || '';
+    if (!['container', 'table', 'tableRow'].includes(node.type)) return '';
+    node = node.content?.[0];
+  }
+  return '';
+}
+
+/** Links without a color of their own take the surrounding text color, not React Email's default blue. */
+export function inheritLinkColors(node, color = '') {
+  const current = node.attrs?.style?.match(COLOR)?.[1].trim() || color;
+  for (const mark of node.marks ?? []) {
+    const style = mark.attrs?.style || '';
+    if (mark.type === 'link' && current && !COLOR.test(style)) {
+      mark.attrs = { ...mark.attrs, style: style ? `color:${current};${style}` : `color:${current}` };
+    }
+  }
+  for (const child of node.content ?? []) inheritLinkColors(child, current);
+  return node;
+}
+
+function Document({ children, previewText, head, page }) {
+  // The page color goes on html, body, and the body table too, so it fills the whole
+  // window instead of stopping at the content, and clients that drop body styles keep it.
+  const pageStyle = page ? { backgroundColor: page } : {};
   return jsxs(Html, {
+    style: pageStyle,
     children: [
       jsxs(Head, {
         children: [
           jsx('meta', { content: 'width=device-width', name: 'viewport' }),
           jsx('meta', { name: 'x-apple-disable-message-reformatting' }),
-          head ? jsx('style', { dangerouslySetInnerHTML: { __html: head } }) : null,
+          jsx('style', { dangerouslySetInnerHTML: { __html: [DATA_DETECTORS, head].filter(Boolean).join('\n') } }),
         ],
       }),
       jsxs(Body, {
-        style: { margin: 0 },
+        style: page ? { margin: 0, ...pageStyle, minHeight: '100%', paddingBottom: '2rem' } : { margin: 0 },
         children: [previewText ? jsx(Preview, { children: previewText }) : null, children],
       }),
     ],
   });
 }
 
-function serializer(head) {
+function serializer(head, page) {
   return Extension.create({
     name: 'shelluiSerializer',
     addOptions() {
       return {
         serializerPlugin: {
           getNodeStyles: () => ({}),
-          BaseTemplate: (props) => Document({ ...props, head }),
+          BaseTemplate: (props) => Document({ ...props, head, page }),
         },
       };
     },
@@ -146,12 +181,12 @@ const TextId = Extension.create({
   },
 });
 
-export function extensions(head = '') {
-  return [StarterKit.configure({ Container: false }), Container, Image, TextId, serializer(head)];
+export function extensions(head = '', page = '') {
+  return [StarterKit.configure({ Container: false }), Container, Image, TextId, serializer(head, page)];
 }
 
-export function createEditor({ content, head = '' }) {
-  return new Editor({ element: null, extensions: extensions(head), content });
+export function createEditor({ content, head = '', page = '' }) {
+  return new Editor({ element: null, extensions: extensions(head, page), content });
 }
 
 /** Drop attributes that hold their schema default so stored documents stay small. */
@@ -180,7 +215,8 @@ const TEXT_SELECTORS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].map((selector) => ({
 }));
 
 export async function composeDocument({ document, head = '', preheader = '' }) {
-  const editor = createEditor({ content: document, head });
+  const content = inheritLinkColors(structuredClone(document));
+  const editor = createEditor({ content, head, page: pageBackground(document) });
   try {
     const { unformattedHtml } = await composeReactEmail({ editor, preview: preheader });
     return { html: unformattedHtml, text: toPlainText(unformattedHtml, { selectors: TEXT_SELECTORS }) };
