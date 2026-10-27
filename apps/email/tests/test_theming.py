@@ -75,6 +75,47 @@ class TokenizeTests(TestCase):
         self.assertEqual(tokenize(copy.deepcopy(once), 'barebone'), once)
         self.assertEqual(tokenize(copy.deepcopy(document), ''), document)
 
+    def test_the_page_color_fills_the_email_and_links_take_the_text_color(self):
+        page = 'background-color:var(--email-background,rgb(243,244,246));margin:0px'
+        link = {'type': 'link', 'attrs': {'href': 'https://example.com'}}
+        document = {
+            'type': 'doc',
+            'content': [
+                {
+                    'type': 'container',
+                    'content': [
+                        {
+                            'type': 'table',
+                            'content': [
+                                {
+                                    'type': 'tableRow',
+                                    'content': [
+                                        {
+                                            'type': 'tableCell',
+                                            'attrs': {'style': page},
+                                            'content': [
+                                                {
+                                                    'type': 'paragraph',
+                                                    'attrs': {'style': 'color:var(--email-muted-foreground,rgb(123,125,129))'},
+                                                    'content': [{'type': 'text', 'text': 'example.com', 'marks': [link]}],
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        [(html, _text)] = compose_many([{'document': document, 'head': '', 'preheader': '', 'colors': OCEAN['colors']}])
+        self.assertIn('<html style="background-color:#f0f7ff"', html)
+        self.assertRegex(html, r'<body[^>]*style="background-color:#f0f7ff')
+        self.assertIn('<a href="https://example.com" rel="noopener noreferrer nofollow" style="color:#4a6380', html)
+        self.assertNotIn('#067df7', html)
+        self.assertIn('x-apple-data-detectors', html)
+
     def test_resolve_uses_the_theme_or_the_design_color(self):
         style = 'color:var(--email-muted-foreground,rgb(123,125,129));background-color:var(--email-primary,rgb(20,23,30))'
         self.assertEqual(resolve(style, {'primary': '#0a66c2'}), 'color:rgb(123,125,129);background-color:#0a66c2')
