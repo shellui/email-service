@@ -241,7 +241,9 @@ SPECTACULAR_SETTINGS = {
         {'name': 'newsletters', 'description': 'Newsletter lists, subscribers, and the public sign-up endpoint.'},
         {'name': 'platform-metrics', 'description': 'Prometheus metrics.'},
         {'name': 'health', 'description': 'Service health checks.'},
+        {'name': 'mcp-tools', 'description': 'Operations exposed to Shellui MCP agents.'},
     ],
+    'POSTPROCESSING_HOOKS': ['apps.authapi.spectacular_hooks.postprocess_mcp_tool_tags'],
     'ENUM_NAME_OVERRIDES': {
         'AudienceModeEnum': ['filter', 'pick', 'newsletter'],
         'SubscriberAddModeEnum': ['confirm', 'consented'],
@@ -434,6 +436,27 @@ if JWT_HS256_FALLBACK_SECRET and not DEBUG and not ALLOW_JWT_HS256_FALLBACK:
         'or set ALLOW_JWT_HS256_FALLBACK=true only if you fully understand the risk.'
     )
 JWT_ALGORITHMS = _env_csv('JWT_ALGORITHMS', ('RS256',))
+
+_jwt_private_pem = os.getenv('JWT_PRIVATE_KEY', '').strip().replace('\\n', '\n')
+_mcp_jwt_algorithm = 'RS256' if _jwt_private_pem else 'HS256'
+_mcp_jwt_signing_key = _jwt_private_pem or JWT_HS256_FALLBACK_SECRET or (SECRET_KEY if DEBUG else '')
+JWT_KEY_ID = os.getenv('JWT_KEY_ID', '').strip()
+JWT_ACTIVE_KEY_ID = JWT_KEY_ID
+JWT_ISSUER = IDENTITY_ISSUER or ''
+JWT_AUDIENCE = IDENTITY_AUDIENCE or ''
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ALGORITHM': _mcp_jwt_algorithm,
+    'SIGNING_KEY': _mcp_jwt_signing_key,
+    'ISSUER': JWT_ISSUER,
+    'AUDIENCE': JWT_AUDIENCE,
+}
+
+MCP_RATE_LIMITS = {
+    'mcp_agent': {'limit': 120, 'window': 60},
+}
 
 # Allow-all is a local convenience. Production (DEBUG=false) stays off unless set explicitly.
 CORS_ALLOW_ALL_ORIGINS = _env_bool('CORS_ALLOW_ALL_ORIGINS', DEBUG)

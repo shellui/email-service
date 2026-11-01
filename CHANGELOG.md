@@ -26,6 +26,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### ✨ Feature
 
 - OpenAPI `x-mcp` markers for company-owner APIs (templates, rules, Shellui Actions webhooks, template render-preview), plus handbook and homepage notes for Shellui MCP agents.
+- Shellui MCP `POST /mcp` with Identity agent JWTs, protected resource metadata, revocation polling, approval and call-log forwarding, and tests for access modes.
 
 ## [0.7.1] - 2026-11-01
 

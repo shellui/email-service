@@ -74,6 +74,8 @@ The web form stays closed when `DEBUG=false` and `SETUP_TOKEN` is empty. Set `SE
 | `IDENTITY_ISSUER` | empty | Required when `DEBUG=false`. Match identity `JWT_ISSUER` |
 | `IDENTITY_AUDIENCE` | empty | Required when `DEBUG=false`. Match identity `JWT_AUDIENCE`, typically `shellui` |
 | `JWT_HS256_FALLBACK_SECRET` | empty | Local only, when identity is in `DEBUG` with HS256. Refused when `DEBUG=false` unless `ALLOW_JWT_HS256_FALLBACK` is set |
+| `JWT_PRIVATE_KEY` | empty | Optional. RS256 private key for MCP internal assertions to Identity (production fleets use the same key as identity-service) |
+| `JWT_KEY_ID` | empty | Optional `kid` for MCP service assertions when `JWT_PRIVATE_KEY` is set |
 | `JWKS_CACHE_TTL` | `900` | Seconds to cache a fetched JWKS |
 | `JWT_ALGORITHMS` | `RS256` | Accepted algorithms |
 

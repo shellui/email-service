@@ -1,0 +1,163 @@
+"""Shellui MCP agent JWT validation and principals."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import jwt
+from django.conf import settings
+from rest_framework import authentication, exceptions
+
+from apps.authapi.authentication import _safe_jwt_meta
+from apps.authapi.jwks_client import get_jwks_client
+from apps.authapi.principal import EmailPrincipal
+
+logger = logging.getLogger(__name__)
+
+MCP_SERVICE_ID = 'email'
+MCP_ACCESS_AUDIENCE_FALLBACK = 'shellui-mcp'
+
+
+def mcp_resource_audience(*, request=None) -> str:
+    """RFC 8707 resource indicator for this service (``{origin}/mcp``)."""
+    base = (getattr(settings, 'EMAIL_PUBLIC_URL', None) or '').strip().rstrip('/')
+    if not base and request is not None:
+        base = request.build_absolute_uri('/').rstrip('/')
+    if not base:
+        base = (getattr(settings, 'PUBLIC_BASE_URL', None) or '').strip().rstrip('/')
+    return f'{base}/mcp'
+
+
+def _legacy_agent_audience() -> str | None:
+    audience = getattr(settings, 'IDENTITY_AUDIENCE', None) or MCP_ACCESS_AUDIENCE_FALLBACK
+    return audience or None
+
+
+def _scope_allows_email(scope: Any) -> bool:
+    if scope is None:
+        return False
+    if isinstance(scope, str):
+        parts = scope.split()
+    elif isinstance(scope, (list, tuple)):
+        parts = [str(item) for item in scope]
+    else:
+        return False
+    return MCP_SERVICE_ID in parts
+
+
+def _audience_matches(token_aud: Any, expected: str) -> bool:
+    if token_aud is None:
+        return False
+    if isinstance(token_aud, list):
+        return expected in [str(item) for item in token_aud]
+    return str(token_aud) == expected
+
+
+def _decode_agent_jwt(raw_token: str, *, audiences: list[str]) -> dict[str, Any]:
+    algorithms = list(getattr(settings, 'JWT_ALGORITHMS', ['RS256']))
+    options = {
+        'require': ['exp', 'agent_id'],
+        'verify_aud': bool(audiences),
+        'verify_iss': bool(settings.IDENTITY_ISSUER),
+    }
+    decode_kwargs: dict = {'algorithms': algorithms, 'options': options}
+    if settings.IDENTITY_ISSUER:
+        decode_kwargs['issuer'] = settings.IDENTITY_ISSUER
+
+    errors: list[Exception] = []
+    for audience in audiences:
+        kwargs = dict(decode_kwargs)
+        if audience:
+            kwargs['audience'] = audience
+        try:
+            client = get_jwks_client()
+            signing_key = client.get_signing_key(raw_token)
+            if signing_key is not None:
+                return jwt.decode(raw_token, key=signing_key.key, **kwargs)
+        except jwt.InvalidTokenError as exc:
+            errors.append(exc)
+        except Exception as exc:
+            errors.append(exc)
+
+    secret = getattr(settings, 'JWT_HS256_FALLBACK_SECRET', None)
+    allow_hs256 = bool(secret) and (
+        settings.DEBUG or getattr(settings, 'ALLOW_JWT_HS256_FALLBACK', False)
+    )
+    if allow_hs256:
+        for audience in audiences:
+            try:
+                kwargs = dict(decode_kwargs)
+                kwargs['algorithms'] = ['HS256']
+                if audience:
+                    kwargs['audience'] = audience
+                return jwt.decode(raw_token, key=secret, **kwargs)
+            except jwt.InvalidTokenError as exc:
+                errors.append(exc)
+
+    token_meta = _safe_jwt_meta(raw_token)
+    logger.warning(
+        'Agent JWT rejected. %s audiences=%s errors=%s',
+        token_meta,
+        audiences,
+        [type(exc).__name__ for exc in errors] or ['no_signing_key'],
+    )
+    raise exceptions.AuthenticationFailed('Agent token is invalid.')
+
+
+def agent_claims_from_token(raw_token: str, *, request=None) -> dict[str, Any]:
+    audiences: list[str] = []
+    resource_aud = mcp_resource_audience(request=request)
+    if resource_aud:
+        audiences.append(resource_aud)
+    legacy = _legacy_agent_audience()
+    if legacy and legacy not in audiences:
+        audiences.append(legacy)
+
+    claims = _decode_agent_jwt(raw_token, audiences=audiences)
+    agent_id = claims.get('agent_id')
+    if not agent_id:
+        raise exceptions.AuthenticationFailed('Agent token required.')
+    sub = str(claims.get('sub') or '')
+    if not sub.startswith('agent:'):
+        raise exceptions.AuthenticationFailed('Invalid agent subject.')
+    if not _scope_allows_email(claims.get('scope')):
+        raise exceptions.AuthenticationFailed('Agent is not allowed to use email.')
+    token_aud = claims.get('aud')
+    if not any(_audience_matches(token_aud, aud) for aud in audiences):
+        raise exceptions.AuthenticationFailed('Agent audience mismatch.')
+    return dict(claims)
+
+
+def agent_principal_from_claims(claims: dict[str, Any]) -> EmailPrincipal:
+    raw_company = claims.get('company_id')
+    try:
+        company_id = int(raw_company)
+    except (TypeError, ValueError) as exc:
+        raise exceptions.AuthenticationFailed('Agent token missing company_id.') from exc
+    return EmailPrincipal(
+        user_id=0,
+        company_id=company_id,
+        email='',
+        username=f'agent:{claims.get("agent_id")}',
+        is_company_owner=True,
+        claims=claims,
+    )
+
+
+def authenticate_agent_request(request) -> tuple[EmailPrincipal, dict[str, Any]] | None:
+    header = authentication.get_authorization_header(request).decode('utf-8')
+    if not header:
+        return None
+    parts = header.split()
+    if len(parts) != 2 or parts[0] != 'Bearer':
+        return None
+    raw_token = parts[1]
+    if raw_token.startswith('esk_'):
+        return None
+    try:
+        claims = agent_claims_from_token(raw_token, request=request)
+    except exceptions.AuthenticationFailed:
+        return None
+    principal = agent_principal_from_claims(claims)
+    return principal, claims

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from apps.authapi.mcp_openapi import MCP_EXCLUDED_PATH_PREFIXES
+from typing import Any
+
+from apps.authapi.mcp_openapi import MCP_EXCLUDED_PATH_PREFIXES, mcp_extension
+from shellui_mcp.decorators import MCP_TOOL_TAG
+
+MCP_DESTRUCTIVE_TAG = 'mcp-destructive'
 
 
 def preprocessing_exclude_internal_endpoints(endpoints):
@@ -13,3 +18,28 @@ def preprocessing_exclude_internal_endpoints(endpoints):
             continue
         filtered.append((path, path_regex, method, callback))
     return filtered
+
+
+def postprocess_mcp_tool_tags(result: dict[str, Any], **kwargs) -> dict[str, Any]:
+    """Expose only ``mcp_tool``-registered operations as MCP tools (``mcp-tools`` tag)."""
+    return mcp_schema_for_server(result)
+
+
+def mcp_schema_for_server(schema: dict[str, Any]) -> dict[str, Any]:
+    paths = schema.get('paths') or {}
+    for path_item in paths.values():
+        if not isinstance(path_item, dict):
+            continue
+        for operation in path_item.values():
+            if not isinstance(operation, dict):
+                continue
+            ext = mcp_extension(operation)
+            if ext is None:
+                continue
+            tags = list(operation.get('tags') or [])
+            if MCP_TOOL_TAG not in tags:
+                tags.append(MCP_TOOL_TAG)
+            if ext.get('destructive') and MCP_DESTRUCTIVE_TAG not in tags:
+                tags.append(MCP_DESTRUCTIVE_TAG)
+            operation['tags'] = tags
+    return schema

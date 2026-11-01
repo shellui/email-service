@@ -59,6 +59,8 @@ OPTIONAL = (
     Var('JWT_ALGORITHMS', 'RS256'),
     Var('JWT_HS256_FALLBACK_SECRET', ''),
     Var('ALLOW_JWT_HS256_FALLBACK', 'false'),
+    Var('JWT_PRIVATE_KEY', '', 'Optional RS256 key for MCP internal assertions to Identity (same as identity JWT_PRIVATE_KEY in production).'),
+    Var('JWT_KEY_ID', '', 'Optional JWT kid for MCP service assertions when JWT_PRIVATE_KEY is set.'),
     Var('EMAIL_PUBLIC_URL', '', 'Addresses and links (EMAIL_PUBLIC_URL defaults to PUBLIC_BASE_URL)'),
     Var('DEFAULT_FROM_EMAIL', 'no-reply@shellui.com'),
     Var('DEFAULT_FROM_NAME', 'Shellui'),
