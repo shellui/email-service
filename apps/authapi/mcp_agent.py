@@ -19,6 +19,79 @@ logger = logging.getLogger(__name__)
 MCP_SERVICE_ID = 'email'
 
 
+def is_agent_principal(user) -> bool:
+    if user is None:
+        return False
+    username = str(getattr(user, 'username', '') or '')
+    if username.startswith('agent:'):
+        return True
+    claims = getattr(user, 'claims', None)
+    return isinstance(claims, dict) and bool(claims.get('agent_id'))
+
+
+def agent_token_company_id(user) -> int:
+    """Company scope bound to an MCP agent principal (never from query/body)."""
+    if not is_agent_principal(user):
+        raise ValueError('Not an agent principal.')
+    raw = getattr(user, 'company_id', None)
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('Agent token missing company_id.') from exc
+
+
+def _requested_company_id(request) -> int | None:
+    raw = None
+    if hasattr(request, 'query_params'):
+        raw = request.query_params.get('company_id')
+    if raw in (None, '') and isinstance(getattr(request, 'data', None), dict):
+        if 'company_id' in request.data:
+            raw = request.data.get('company_id')
+    if raw in (None, ''):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        from apps.email.service import SendError
+
+        raise SendError(400, 'validation_failed', {'company_id': ['invalid']})
+
+
+def resolve_company_id_for_request(request, *, allow_null: bool = False) -> int | None:
+    """
+    Resolve admin ``company_id`` for humans and service users.
+
+    MCP agents always use JWT ``company_id`` and cannot override it via query or body.
+    """
+    from apps.email.service import SendError
+
+    user = getattr(request, 'user', None)
+    if is_agent_principal(user):
+        token_company = agent_token_company_id(user)
+        requested = _requested_company_id(request)
+        if requested is not None and int(requested) != int(token_company):
+            raise SendError(403, 'company_mismatch')
+        return token_company
+    raw = None
+    if hasattr(request, 'query_params'):
+        raw = request.query_params.get('company_id')
+    if raw in (None, '') and isinstance(getattr(request, 'data', None), dict):
+        if 'company_id' in request.data:
+            raw = request.data.get('company_id')
+    if raw in (None, ''):
+        if getattr(user, 'company_id', None) is not None and not getattr(user, 'is_service', False):
+            return int(user.company_id)
+        if allow_null:
+            return None
+        raise SendError(400, 'validation_failed', {'company_id': ['required']})
+    if raw is None and allow_null:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise SendError(400, 'validation_failed', {'company_id': ['invalid']})
+
+
 def mcp_resource_audience(*, request=None) -> str:
     """RFC 8707 resource indicator for this service (``{origin}/mcp``)."""
     base = (getattr(settings, 'EMAIL_PUBLIC_URL', None) or '').strip().rstrip('/')

@@ -9,10 +9,13 @@ from typing import Any
 import requests
 from django.conf import settings
 from shellui_mcp.internal import (
+    InternalAssertionError,
     REVOCATION_CACHE_SECONDS,
     build_mcp_approval_assertion,
     build_mcp_call_log_assertion,
     build_mcp_revocation_assertion,
+    parse_trusted_revocation_poll_response,
+    verify_mcp_revocation_list_response,
 )
 
 logger = logging.getLogger(__name__)
@@ -22,9 +25,15 @@ class McpIdentityUnavailable(Exception):
     """Identity MCP internal API could not be reached or rejected the call."""
 
 
+class McpAgentCompanyMismatch(Exception):
+    """Agent JWT company_id does not match Identity revocation metadata."""
+
+
 _revocation_snapshot: dict[str, Any] = {
     'fetched_at': 0.0,
     'ids': frozenset(),
+    'agents': [],
+    'cache_seconds': REVOCATION_CACHE_SECONDS,
     'trusted': False,
 }
 
@@ -32,6 +41,8 @@ _revocation_snapshot: dict[str, Any] = {
 def reset_revocation_cache_for_tests() -> None:
     _revocation_snapshot['fetched_at'] = 0.0
     _revocation_snapshot['ids'] = frozenset()
+    _revocation_snapshot['agents'] = []
+    _revocation_snapshot['cache_seconds'] = REVOCATION_CACHE_SECONDS
     _revocation_snapshot['trusted'] = False
 
 
@@ -67,6 +78,25 @@ def _require_service_assertions() -> None:
         raise McpIdentityUnavailable('Identity issuer is not configured.')
 
 
+def verify_agent_company_binding(agent_id: str, company_id: int) -> None:
+    """When Identity publishes ``agents[].company_id``, it must match the access token."""
+    if not _revocation_snapshot['trusted']:
+        raise McpIdentityUnavailable('Revocation list is unavailable.')
+    agent_id = str(agent_id or '')
+    for row in _revocation_snapshot.get('agents') or []:
+        if not isinstance(row, dict):
+            continue
+        row_id = str(row.get('agent_id') or row.get('id') or '')
+        if row_id != agent_id:
+            continue
+        raw_company = row.get('company_id')
+        if raw_company in (None, ''):
+            return
+        if int(raw_company) != int(company_id):
+            raise McpAgentCompanyMismatch('Agent company binding mismatch.')
+        return
+
+
 def _revocation_assertion_headers() -> dict[str, str]:
     _require_service_assertions()
     origin = identity_origin()
@@ -77,9 +107,10 @@ def _revocation_assertion_headers() -> dict[str, str]:
 def ensure_revocation_snapshot() -> None:
     """Refresh revocation list when stale. Raises when Identity cannot be trusted."""
     now = time.monotonic()
+    ttl = float(_revocation_snapshot.get('cache_seconds') or REVOCATION_CACHE_SECONDS)
     if (
         _revocation_snapshot['trusted']
-        and now - float(_revocation_snapshot['fetched_at']) < REVOCATION_CACHE_SECONDS
+        and now - float(_revocation_snapshot['fetched_at']) < ttl
     ):
         return
     _refresh_revocations()
@@ -111,30 +142,29 @@ def _refresh_revocations() -> None:
             raise McpIdentityUnavailable('Revocation list endpoint missing.')
         response.raise_for_status()
         payload = response.json()
+        issuer = identity_origin()
+        trusted = verify_mcp_revocation_list_response(payload, expected_issuer=issuer or None)
+        ids, cache_seconds = parse_trusted_revocation_poll_response(payload, expected_issuer=issuer or None)
     except McpIdentityUnavailable:
         raise
+    except InternalAssertionError as exc:
+        _revocation_snapshot['trusted'] = False
+        logger.warning('MCP revocation list untrusted (%s).', type(exc).__name__)
+        raise McpIdentityUnavailable('Revocation list payload invalid.') from exc
     except (requests.RequestException, OSError) as exc:
         _revocation_snapshot['trusted'] = False
         logger.warning('MCP revocation list fetch failed (%s).', type(exc).__name__)
         raise McpIdentityUnavailable('Revocation list fetch failed.') from exc
-    raw_ids = payload.get('revoked_agent_ids')
-    if not isinstance(raw_ids, list):
-        _revocation_snapshot['trusted'] = False
-        raise McpIdentityUnavailable('Revocation list payload invalid.')
-    ids = raw_ids
-    _revocation_snapshot['ids'] = frozenset(str(item) for item in ids)
+    _revocation_snapshot['ids'] = ids
+    _revocation_snapshot['agents'] = list(trusted.get('agents') or [])
+    _revocation_snapshot['cache_seconds'] = min(int(cache_seconds), REVOCATION_CACHE_SECONDS)
     _revocation_snapshot['fetched_at'] = time.monotonic()
     _revocation_snapshot['trusted'] = True
 
 
-def resolve_approval_state(payload: dict[str, Any]) -> str | None:
-    """Ask Identity for pending, approved, or executed state (internal API)."""
-    _require_service_assertions()
-    base = identity_api_base()
-    if not base:
-        raise McpIdentityUnavailable('Identity service URL is not configured.')
+def _approval_assertion(payload: dict[str, Any]) -> str:
     origin = identity_origin()
-    assertion = build_mcp_approval_assertion(
+    return build_mcp_approval_assertion(
         company_id=int(payload['company_id']),
         agent_id=str(payload['agent_id']),
         service=str(payload.get('service') or 'email'),
@@ -142,25 +172,35 @@ def resolve_approval_state(payload: dict[str, Any]) -> str | None:
         arguments_hash=str(payload.get('arguments_hash') or ''),
         audience_url=origin,
     )
+
+
+def resolve_approval_state(payload: dict[str, Any]) -> str | None:
+    """Ask Identity for pending, approved, expired (consumed), or denied state."""
+    _require_service_assertions()
+    base = identity_api_base()
+    if not base:
+        raise McpIdentityUnavailable('Identity service URL is not configured.')
+    assertion = _approval_assertion(payload)
     url = f'{base}/api/v1/mcp/internal/mcp-approval-state'
     try:
         response = requests.post(
             url,
-            json={
-                'service': payload.get('service'),
-                'action': payload.get('action'),
-                'arguments_hash': payload.get('arguments_hash'),
-            },
+            json={},
             headers={'Authorization': f'Bearer {assertion}'},
             timeout=getattr(settings, 'JWKS_TIMEOUT', 15),
         )
         if response.status_code == 404:
-            raise McpIdentityUnavailable('Approval state endpoint missing.')
+            return None
         response.raise_for_status()
         body = response.json()
         state = str(body.get('status') or '')
+        if state == 'expired':
+            return 'executed'
         if state == 'approved':
-            payload['approval_id'] = str(body.get('id') or '')
+            payload['approval_id'] = str(body.get('id') or body.get('approval_id') or '')
+            return 'approved'
+        if state in {'pending', 'denied'}:
+            return state
         return state or None
     except McpIdentityUnavailable:
         raise
@@ -169,18 +209,18 @@ def resolve_approval_state(payload: dict[str, Any]) -> str | None:
         raise McpIdentityUnavailable('Approval state lookup failed.') from exc
 
 
-def consume_approval(approval_id: str) -> bool:
+def consume_approval(approval_id: str, *, payload: dict[str, Any] | None = None) -> bool:
     _require_service_assertions()
     base = identity_api_base()
     if not base or not approval_id:
         raise McpIdentityUnavailable('Identity service URL is not configured.')
-    origin = identity_origin()
-    assertion = build_mcp_call_log_assertion(audience_url=origin)
+    context = payload or {}
+    assertion = _approval_assertion(context)
     url = f'{base}/api/v1/mcp/internal/mcp-approval-consume'
     try:
         response = requests.post(
             url,
-            json={'id': approval_id},
+            json={'approval_id': approval_id},
             headers={'Authorization': f'Bearer {assertion}'},
             timeout=getattr(settings, 'JWKS_TIMEOUT', 15),
         )

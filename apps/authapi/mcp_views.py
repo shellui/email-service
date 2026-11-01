@@ -9,16 +9,19 @@ from drf_spectacular.generators import SchemaGenerator
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.views import APIView
+from shellui_mcp.server import McpServer
+
 from apps.authapi.mcp_agent import authenticate_agent_request
-from apps.authapi.mcp_identity import McpIdentityUnavailable, ensure_revocation_snapshot, identity_origin
-from apps.authapi.mcp_redaction import install_mcp_redaction_hooks
-from apps.authapi.mcp_server import EmailMcpServer, install_openapi_path_params_on_tools
+from apps.authapi.mcp_identity import (
+    McpAgentCompanyMismatch,
+    McpIdentityUnavailable,
+    ensure_revocation_snapshot,
+    identity_origin,
+    verify_agent_company_binding,
+)
 from apps.authapi.spectacular_hooks import mcp_schema_for_server
 
-install_mcp_redaction_hooks()
-install_openapi_path_params_on_tools()
-
-_server: EmailMcpServer | None = None
+_server: McpServer | None = None
 
 
 def _schema() -> dict:
@@ -45,10 +48,10 @@ def _approval_state(payload: dict) -> str | None:
     return resolve_approval_state(payload)
 
 
-def _approval_consume(approval_id: str) -> bool:
+def _approval_consume(approval_id: str, payload: dict | None = None) -> bool:
     from apps.authapi.mcp_identity import consume_approval
 
-    return consume_approval(approval_id)
+    return consume_approval(approval_id, payload=payload or {})
 
 
 def _forward_call(entry: dict) -> None:
@@ -57,10 +60,10 @@ def _forward_call(entry: dict) -> None:
     forward_call_log(entry)
 
 
-def _get_server() -> EmailMcpServer:
+def _get_server() -> McpServer:
     global _server
     if _server is None:
-        _server = EmailMcpServer(
+        _server = McpServer(
             schema_provider=_schema,
             urlconf=settings.ROOT_URLCONF,
             service_name='email',
@@ -121,8 +124,13 @@ def mcp_endpoint(request: HttpRequest):
     if claims is not None:
         try:
             ensure_revocation_snapshot()
+            verify_agent_company_binding(str(claims.get('agent_id') or ''), int(claims['company_id']))
         except McpIdentityUnavailable:
             return JsonResponse({'error': 'identity_unavailable'}, status=503)
+        except McpAgentCompanyMismatch:
+            return JsonResponse({'error': 'forbidden'}, status=403)
+        except (KeyError, TypeError, ValueError):
+            return JsonResponse({'error': 'forbidden'}, status=403)
     try:
         return _get_server().handle(request, agent_claims=claims)
     except McpIdentityUnavailable:

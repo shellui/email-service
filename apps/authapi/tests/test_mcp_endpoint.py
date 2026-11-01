@@ -5,14 +5,19 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import jwt
 from django.test import Client, TestCase, override_settings
 
 from apps.authapi.mcp_identity import reset_revocation_cache_for_tests
 from apps.authapi.mcp_openapi import MCP_EXPLICIT_REGISTRY, MCP_FORBIDDEN_OPERATION_IDS
-from shellui_mcp.internal import REVOCATION_AUDIENCE, REVOCATION_SCOPE
+from shellui_mcp.internal import (
+    REVOCATION_AUDIENCE,
+    REVOCATION_CACHE_SECONDS,
+    REVOCATION_SCOPE,
+    build_mcp_revocation_list_response_assertion,
+)
 from shellui_mcp.openapi_tools import tools_from_schema
 
 ISSUER = 'https://id.shellui.test'
@@ -75,11 +80,22 @@ def _rpc(client: Client, token: str, method: str, params: dict | None = None, re
     )
 
 
-def _revocation_ok_response():
+def _revocation_ok_response(*, agents=None):
+    assertion = build_mcp_revocation_list_response_assertion(
+        revoked_agent_ids=[],
+        agents=agents or [],
+        cache_seconds=REVOCATION_CACHE_SECONDS,
+    )
+    body = {
+        'revoked_agent_ids': [],
+        'cache_seconds': REVOCATION_CACHE_SECONDS,
+        'revocation_assertion': assertion,
+        'agents': agents or [],
+    }
     response = MagicMock()
     response.status_code = 200
     response.raise_for_status = MagicMock()
-    response.json = MagicMock(return_value={'revoked_agent_ids': [], 'cache_seconds': 30})
+    response.json = MagicMock(return_value=body)
     return response
 
 
@@ -153,6 +169,26 @@ class McpEndpointTests(TestCase):
         self.assertEqual(payload['aud'], REVOCATION_AUDIENCE)
         self.assertEqual(payload['scope'], REVOCATION_SCOPE)
 
+    def test_agent_company_id_query_mismatch_forbidden(self):
+        token, _agent_id = _agent_token(company_id=42)
+        list_response = _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {
+                'name': 'api_v1_rules_list',
+                'arguments': {
+                    'path': '/api/v1/rules',
+                    'method': 'GET',
+                    'query': {'company_id': 99},
+                },
+            },
+        )
+        self.assertEqual(list_response.status_code, 200)
+        result = list_response.json()['result']
+        self.assertTrue(result.get('isError'))
+        self.assertIn('company_mismatch', result['content'][0]['text'])
+
     def test_revocation_fetch_failure_refuses_mcp(self):
         self.mock_revocation_get.side_effect = ConnectionError('refused')
         token, _agent_id = _agent_token()
@@ -168,11 +204,11 @@ class McpEndpointTests(TestCase):
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 503)
 
-    def test_revocation_invalid_payload_refuses_mcp(self):
+    def test_revocation_unsigned_payload_refuses_mcp(self):
         bad = MagicMock()
         bad.status_code = 200
         bad.raise_for_status = MagicMock()
-        bad.json = MagicMock(return_value={'unexpected': True})
+        bad.json = MagicMock(return_value={'revoked_agent_ids': [], 'cache_seconds': 30})
         self.mock_revocation_get.return_value = bad
         token, _agent_id = _agent_token()
         response = _rpc(self.client, token, 'tools/list')
@@ -355,12 +391,10 @@ class McpEndpointTests(TestCase):
         self.assertEqual(result.get('meta', {}).get('approval_id'), 'approval-123')
 
     @patch('apps.authapi.mcp_identity.requests.post')
-    def test_approval_state_failure_refuses_write(self, mock_post):
+    def test_approval_state_transport_failure_refuses_write(self, mock_post):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
-        state404 = MagicMock()
-        state404.status_code = 404
-        mock_post.return_value = state404
+        mock_post.side_effect = ConnectionError('refused')
         reset_mcp_server_cache()
         token, _agent_id = _agent_token(access='ask')
         response = _rpc(
@@ -378,6 +412,50 @@ class McpEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()['error'], 'identity_unavailable')
+
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_approval_consume_uses_unified_contract(self, mock_post):
+        import jwt
+
+        def post_side_effect(url, **kwargs):
+            if url.endswith('mcp-approval-state'):
+                ok = MagicMock()
+                ok.status_code = 200
+                ok.raise_for_status = MagicMock()
+                ok.json = MagicMock(return_value={'status': 'approved', 'approval_id': 'appr-9'})
+                return ok
+            ok = MagicMock()
+            ok.status_code = 200
+            ok.raise_for_status = MagicMock()
+            ok.json = MagicMock(return_value={'consumed': True})
+            return ok
+
+        mock_post.side_effect = post_side_effect
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        reset_mcp_server_cache()
+        token, _agent_id = _agent_token(access='ask')
+        _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {
+                'name': 'api_v1_rules_create',
+                'arguments': {
+                    'path': '/api/v1/rules',
+                    'method': 'POST',
+                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                },
+            },
+        )
+        consume_call = [call for call in mock_post.call_args_list if call.args[0].endswith('mcp-approval-consume')][0]
+        self.assertEqual(consume_call.kwargs['json'], {'approval_id': 'appr-9'})
+        assertion = consume_call.kwargs['headers']['Authorization'][7:]
+        payload = jwt.decode(assertion, options={'verify_signature': False})
+        self.assertEqual(payload['aud'], 'shellui-mcp-approval')
+        self.assertEqual(payload['scope'], 'mcp.approval.create')
+        self.assertIn('arguments_hash', payload)
+        self.assertEqual(payload['service'], 'email')
 
     @patch('apps.authapi.mcp_identity.requests.post')
     def test_approval_consume_failure_refuses_write(self, mock_post):
