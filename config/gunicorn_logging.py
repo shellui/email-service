@@ -7,14 +7,13 @@ never logged, and neither are credential headers.
 
 from __future__ import annotations
 
-from gunicorn.glogging import Logger
-
 from config.log_redaction import redact_path
+from config.safe_access_log import SafeAccessLogger
 
 _DROPPED = ('referer', 'authorization', 'cookie')
 
 
-class RedactingLogger(Logger):
+class RedactingLogger(SafeAccessLogger):
     def atoms(self, resp, req, environ, request_time):
         atoms = super().atoms(resp, req, environ, request_time)
         atoms['r'] = redact_path(atoms.get('r'))
