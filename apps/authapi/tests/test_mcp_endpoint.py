@@ -16,11 +16,12 @@ from shellui_mcp.internal import (
     REVOCATION_AUDIENCE,
     REVOCATION_CACHE_SECONDS,
     REVOCATION_SCOPE,
-    build_mcp_revocation_list_response_assertion,
 )
 from shellui_mcp.openapi_tools import tools_from_schema
+from shellui_mcp.tests.rs256_helpers import generate_test_rsa_jwks, sign_test_revocation_list_assertion
 
 ISSUER = 'https://id.shellui.test'
+_TEST_JWKS, _TEST_PRIVATE_PEM, _TEST_KID = generate_test_rsa_jwks()
 AUDIENCE = 'shellui-test'
 MCP_RESOURCE = 'https://email.test/mcp'
 SIGNING = 'mcp-endpoint-test-signing-key-0123456789'
@@ -33,7 +34,7 @@ MCP_SETTINGS = {
     'IDENTITY_AUDIENCE': AUDIENCE,
     'JWT_ISSUER': ISSUER,
     'JWT_AUDIENCE': AUDIENCE,
-    'IDENTITY_JWKS_DOCUMENT': None,
+    'IDENTITY_JWKS_DOCUMENT': _TEST_JWKS,
     'AUTH_RATE_LIMIT_ENABLED': False,
     'SIMPLE_JWT': {
         'ALGORITHM': 'HS256',
@@ -81,7 +82,10 @@ def _rpc(client: Client, token: str, method: str, params: dict | None = None, re
 
 
 def _revocation_ok_response(*, agents=None):
-    assertion = build_mcp_revocation_list_response_assertion(
+    assertion = sign_test_revocation_list_assertion(
+        private_pem=_TEST_PRIVATE_PEM,
+        kid=_TEST_KID,
+        issuer=ISSUER,
         revoked_agent_ids=[],
         agents=agents or [],
         cache_seconds=REVOCATION_CACHE_SECONDS,
