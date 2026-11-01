@@ -10,6 +10,8 @@ Shellui MCP exposes selected company-owner APIs to AI agents through a shared se
 
 Agents authenticate with the same identity-service JWT as the admin panel. They act as the company owner for the JWT `company_id`. Service keys (`esk_`) and staff-only routes are never MCP tools.
 
+An HTTP operation becomes an MCP tool only when its OpenAPI entry is explicitly decorated with `mcp_tool(operation_id=..., read_only=..., ...)`. There is no automatic opt-in from tags or paths.
+
 ## Where the schema lives
 
 - `GET /api/schema/` on the email-service deployment (also linked from the [service homepage](https://email.shellui.com/)).

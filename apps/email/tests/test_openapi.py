@@ -8,7 +8,13 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import SimpleTestCase
 
-from apps.authapi.mcp_openapi import MCP_EXCLUDED_PATH_PREFIXES, validate_mcp_schema
+from apps.authapi.mcp_openapi import (
+    MCP_EXCLUDED_PATH_PREFIXES,
+    MCP_EXPLICIT_REGISTRY,
+    MCP_REQUIRED_SECRET_SCHEMA_PROPERTIES,
+    validate_mcp_schema,
+    validate_mcp_secret_fields,
+)
 
 
 class OpenApiSchemaTests(SimpleTestCase):
@@ -63,10 +69,35 @@ class OpenApiSchemaTests(SimpleTestCase):
         self.assertEqual(len(operation_ids), len(set(operation_ids)), operation_ids)
         self.assertIn('api_v1_templates_render_preview', operation_ids)
         validate_mcp_schema(schema)
+        validate_mcp_secret_fields(schema)
 
         for prefix in MCP_EXCLUDED_PATH_PREFIXES:
             for path in paths:
                 self.assertFalse(path.startswith(prefix), path)
+
+    def test_mcp_registry_matches_required_allowlist(self):
+        self.assertEqual(set(MCP_EXPLICIT_REGISTRY), set(MCP_EXPLICIT_REGISTRY.keys()))
+        from apps.authapi.mcp_openapi import MCP_REQUIRED_OPERATION_IDS
+
+        self.assertEqual(set(MCP_EXPLICIT_REGISTRY), MCP_REQUIRED_OPERATION_IDS)
+
+    def test_required_secret_fields_list_is_documented(self):
+        """Guardrail: every listed secret field must stay marked in OpenAPI."""
+        expected = sorted(f'{c}.{p}' for c, p in MCP_REQUIRED_SECRET_SCHEMA_PROPERTIES)
+        self.assertEqual(
+            expected,
+            sorted(
+                [
+                    'ActionRule.secret',
+                    'ActionRuleCreate.secret',
+                    'NewsletterWrite.turnstile_secret',
+                    'ProviderCredentials.api_key',
+                    'ProviderCredentials.password',
+                    'ProviderCredentials.secret_access_key',
+                    'ProviderWrite.webhook_secret',
+                ]
+            ),
+        )
 
     def test_validate_mcp_schema_rejects_forbidden_tags(self):
         schema = {
@@ -74,7 +105,21 @@ class OpenApiSchemaTests(SimpleTestCase):
                 '/api/v1/templates': {
                     'get': {
                         'operationId': 'api_v1_service_clients_list',
-                        'extensions': {'x-mcp': {'read_only': True}},
+                        'x-mcp': {'read_only': True},
+                    }
+                }
+            }
+        }
+        with self.assertRaises(AssertionError):
+            validate_mcp_schema(schema)
+
+    def test_validate_mcp_schema_requires_explicit_registry_match(self):
+        schema = {
+            'paths': {
+                '/api/v1/templates': {
+                    'get': {
+                        'operationId': 'api_v1_templates_list',
+                        'x-mcp': {'read_only': True, 'destructive': False, 'sensitive': False},
                     }
                 }
             }

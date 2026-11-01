@@ -112,7 +112,7 @@ def _rule_payload(rule: ActionRule, *, reveal_secret: bool = False) -> dict:
         description='Domain events emitted by email-service for Shellui Actions rules.',
         parameters=[COMPANY_QUERY],
         responses={200: ActionEventListSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=True),
+        **mcp_tool(operation_id='api_v1_actions_events_list', read_only=True),
     ),
 )
 class ActionEventsView(APIView):
@@ -140,7 +140,7 @@ class ActionEventsView(APIView):
         description=ACTIONS_RULES_LIST_DESCRIPTION,
         parameters=[COMPANY_QUERY],
         responses={200: ActionRuleListSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=True, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_rules_list', read_only=True, sensitive=True),
     ),
     post=extend_schema(
         tags=['actions'],
@@ -151,7 +151,7 @@ class ActionEventsView(APIView):
         request=ActionRuleCreateSerializer,
         responses={201: ActionRuleSerializer, **_API_ERRORS},
         examples=[EXAMPLE_ACTION_RULE],
-        **mcp_tool(read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_rules_create', read_only=False, sensitive=True),
     ),
 )
 class ActionRuleListCreateView(APIView):
@@ -206,7 +206,7 @@ class ActionRuleListCreateView(APIView):
         operation_id='api_v1_actions_rules_retrieve',
         summary='Read one webhook rule',
         responses={200: ActionRuleSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=True, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_rules_retrieve', read_only=True, sensitive=True),
     ),
     patch=extend_schema(
         tags=['actions'],
@@ -214,14 +214,14 @@ class ActionRuleListCreateView(APIView):
         summary='Update name, URL, or enabled state',
         request=ActionRuleUpdateSerializer,
         responses={200: ActionRuleSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_rules_partial_update', read_only=False, sensitive=True),
     ),
     delete=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_rules_destroy',
         summary='Delete a webhook rule',
         responses={204: None, **_API_ERRORS},
-        **mcp_tool(read_only=False, destructive=True),
+        **mcp_tool(operation_id='api_v1_actions_rules_destroy', read_only=False, destructive=True),
     ),
 )
 class ActionRuleDetailView(APIView):
@@ -283,7 +283,7 @@ class ActionRuleDetailView(APIView):
         description='Returns the new plaintext secret once.',
         request=None,
         responses={200: ActionRuleSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_rules_rotate_secret', read_only=False, sensitive=True),
     ),
 )
 class ActionRuleRotateSecretView(APIView):
@@ -309,7 +309,7 @@ class ActionRuleRotateSecretView(APIView):
         summary='Queue a sample webhook for this rule',
         request=None,
         responses={200: ActionTestQueuedSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_rules_send_test', read_only=False, sensitive=True),
     ),
 )
 class ActionRuleSendTestView(APIView):
@@ -338,7 +338,7 @@ class ActionRuleSendTestView(APIView):
         summary='List recent webhook delivery attempts',
         parameters=[COMPANY_QUERY],
         responses={200: DeliveryListSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=True, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_deliveries_list', read_only=True, sensitive=True),
     ),
 )
 class ActionDeliveryListView(APIView):
@@ -370,7 +370,7 @@ class ActionDeliveryListView(APIView):
         operation_id='api_v1_actions_deliveries_retrieve',
         summary='Read one delivery with attempts and envelope',
         responses={200: DeliveryDetailSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=True, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_deliveries_retrieve', read_only=True, sensitive=True),
     ),
 )
 class ActionDeliveryDetailView(APIView):
@@ -398,7 +398,7 @@ class ActionDeliveryDetailView(APIView):
         summary='Requeue a failed webhook delivery',
         request=None,
         responses={200: DeliverySerializer, **_API_ERRORS},
-        **mcp_tool(read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_deliveries_requeue', read_only=False, sensitive=True),
     ),
 )
 class ActionDeliveryRequeueView(APIView):
@@ -453,7 +453,7 @@ def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False, incl
         description='Company owners use the default scope. `scope=platform` is staff-only and is not an MCP tool.',
         parameters=[COMPANY_QUERY],
         responses={200: EventLogListSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=True, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_event_log_list', read_only=True, sensitive=True),
     ),
 )
 class EventLogListView(APIView):
@@ -492,7 +492,7 @@ class EventLogListView(APIView):
         operation_id='api_v1_actions_event_log_retrieve',
         summary='Read one event log entry',
         responses={200: EventLogDetailSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=True, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_event_log_retrieve', read_only=True, sensitive=True),
     ),
 )
 class EventLogDetailView(APIView):
@@ -525,7 +525,7 @@ class EventLogDetailView(APIView):
         summary='List event type ids for filters',
         parameters=[COMPANY_QUERY],
         responses={200: EventLogTypesSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=True),
+        **mcp_tool(operation_id='api_v1_actions_event_log_types_list', read_only=True),
     ),
 )
 class EventLogTypesView(APIView):
@@ -545,7 +545,7 @@ class EventLogTypesView(APIView):
         summary='Read event log retention settings',
         parameters=[COMPANY_QUERY],
         responses={200: EventLogRetentionSerializer, **_API_ERRORS},
-        **mcp_tool(read_only=True),
+        **mcp_tool(operation_id='api_v1_actions_event_log_retention_retrieve', read_only=True),
     ),
 )
 class EventLogRetentionView(APIView):
