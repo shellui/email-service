@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### ✨ Feature
+
+- OpenAPI `x-mcp` markers for company-owner APIs (templates, rules, Shellui Actions webhooks, template render-preview), plus handbook and homepage notes for Shellui MCP agents.
+
 ## [0.7.1] - 2026-11-01
 
 ### 🐛 Bug Fixes

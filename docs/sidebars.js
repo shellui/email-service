@@ -38,6 +38,7 @@ const sidebars = {
       doc('rules', 'Email rules'),
       doc('templates', 'Templates and translations'),
       doc('library', 'Design library'),
+      doc('mcp', 'Shellui MCP'),
     ]),
     category('Newsletters and broadcasts', [
       doc('newsletters', 'Newsletters'),

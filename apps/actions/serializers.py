@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from apps.authapi.mcp_fields import McpSecretCharField, McpSensitiveCharField, McpSensitiveJSONField
+
 
 class ActionEventSerializer(serializers.Serializer):
     id = serializers.CharField()
@@ -18,7 +20,7 @@ class ActionEventListSerializer(serializers.Serializer):
 class ActionRuleConfigSerializer(serializers.Serializer):
     url = serializers.CharField(required=False)
     has_secret = serializers.BooleanField(required=False)
-    secret_hint = serializers.CharField(required=False, allow_blank=True)
+    secret_hint = McpSensitiveCharField(required=False, allow_blank=True)
 
 
 class ActionRuleSerializer(serializers.Serializer):
@@ -30,7 +32,7 @@ class ActionRuleSerializer(serializers.Serializer):
     enabled = serializers.BooleanField()
     action_kind = serializers.CharField()
     config = ActionRuleConfigSerializer()
-    secret = serializers.CharField(required=False)
+    secret = McpSecretCharField(required=False)
     created_at = serializers.CharField()
     updated_at = serializers.CharField()
 
@@ -45,7 +47,7 @@ class ActionRuleCreateSerializer(serializers.Serializer):
     url = serializers.CharField()
     description = serializers.CharField(required=False, allow_blank=True)
     enabled = serializers.BooleanField(required=False)
-    secret = serializers.CharField(required=False, allow_blank=True)
+    secret = McpSecretCharField(required=False, allow_blank=True)
     newsletter_id = serializers.IntegerField(required=False, allow_null=True, help_text='email.newsletter.* rules only: only events of this list. Null or 0 clears it.')
 
 
@@ -79,7 +81,7 @@ class DeliverySerializer(serializers.Serializer):
 
 class DeliveryDetailSerializer(DeliverySerializer):
     attempts = DeliveryAttemptSerializer(many=True)
-    envelope = serializers.JSONField()
+    envelope = McpSensitiveJSONField()
 
 
 class DeliveryListSerializer(serializers.Serializer):

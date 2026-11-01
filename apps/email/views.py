@@ -41,6 +41,22 @@ from apps.email.models import (
     parse_message_id,
 )
 from apps.email.renderers import PrometheusTextRenderer
+from apps.authapi.mcp_openapi import mcp_tool
+from apps.email.openapi_admin import (
+    ACTIONS_RULES_LIST_DESCRIPTION,
+    ACTIONS_RULES_LIST_SUMMARY,
+    EXAMPLE_ACTION_RULE,
+    EXAMPLE_EMAIL_RULE,
+    EXAMPLE_RENDER_PREVIEW_REQUEST,
+    EXAMPLE_RENDER_PREVIEW_RESPONSE,
+    EXAMPLE_TEMPLATE_LIST,
+    RULE_LIST_DESCRIPTION,
+    RULE_LIST_SUMMARY,
+    TEMPLATE_LIST_DESCRIPTION,
+    TEMPLATE_LIST_SUMMARY,
+    TEMPLATE_RENDER_PREVIEW_DESCRIPTION,
+    TEMPLATE_RENDER_PREVIEW_SUMMARY,
+)
 from apps.email.schema import (
     COMPANY_QUERY,
     BatchRequestSerializer,
@@ -85,6 +101,8 @@ from apps.email.schema import (
     SuppressionListSerializer,
     TemplateListSerializer,
     TemplatePublishResponseSerializer,
+    TemplateRenderPreviewRequestSerializer,
+    TemplateRenderPreviewResponseSerializer,
     TemplateSummarySerializer,
     TemplateTestSendRequestSerializer,
     TemplateVersionCreateRequestSerializer,
@@ -528,11 +546,21 @@ def _require_editable(template: EmailTemplate) -> None:
     get=extend_schema(
         tags=['templates'],
         operation_id='api_v1_templates_list',
+        summary=TEMPLATE_LIST_SUMMARY,
+        description=TEMPLATE_LIST_DESCRIPTION,
         parameters=[
             COMPANY_QUERY,
-            OpenApiParameter('event_type', OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter(
+                'event_type',
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+                description='Catalog event id (for example `storage.object.created`). Keeps copies that fit that event.',
+            ),
         ],
         responses={200: TemplateListSerializer, **_API_ERRORS},
+        examples=[EXAMPLE_TEMPLATE_LIST],
+        **mcp_tool(read_only=True),
     ),
 )
 class TemplateListView(APIView):
@@ -562,12 +590,21 @@ class TemplateListView(APIView):
     get=extend_schema(
         tags=['templates'],
         operation_id='api_v1_templates_retrieve',
+        summary='Read one event or broadcast copy',
+        description=(
+            'Bearer JWT company owner or staff. Returns metadata for the copy, not the full document. '
+            'Use template version endpoints for editor JSON.'
+        ),
         responses={200: TemplateSummarySerializer, **_API_ERRORS},
+        **mcp_tool(read_only=True),
     ),
     delete=extend_schema(
         tags=['templates'],
         operation_id='api_v1_templates_destroy',
+        summary='Delete an unused template copy',
+        description='Fails with `409 template_in_use` when a rule or broadcast still references the copy.',
         responses={204: None, **_API_ERRORS},
+        **mcp_tool(read_only=False, destructive=True),
     ),
 )
 class TemplateDetailView(APIView):
@@ -611,13 +648,22 @@ def _version_payload(version: TemplateVersion) -> dict:
     get=extend_schema(
         tags=['templates'],
         operation_id='api_v1_template_versions_list',
+        summary='List versions of a template copy',
+        description='Each version includes editor `document`, `translations`, and `theme`.',
         responses={200: TemplateVersionListSerializer, **_API_ERRORS},
+        **mcp_tool(read_only=True),
     ),
     post=extend_schema(
         tags=['templates'],
         operation_id='api_v1_template_versions_create',
+        summary='Create a draft version',
+        description=(
+            'Send `document`, or `library_id` to start over from another library design. '
+            'Publishing is a separate call.'
+        ),
         request=TemplateVersionCreateRequestSerializer,
         responses={201: TemplateVersionCreateResponseSerializer, **_API_ERRORS},
+        **mcp_tool(read_only=False, sensitive=True),
     ),
 )
 class TemplateVersionListView(APIView):
@@ -670,8 +716,11 @@ class TemplateVersionListView(APIView):
     post=extend_schema(
         tags=['templates'],
         operation_id='api_v1_template_versions_publish',
+        summary='Publish a draft version',
+        description='Runs link and placeholder checks on every language, then sets `active_version`.',
         request=None,
         responses={200: TemplatePublishResponseSerializer, **_API_ERRORS},
+        **mcp_tool(read_only=False, sensitive=True),
     ),
 )
 class TemplatePublishView(APIView):
@@ -694,7 +743,9 @@ class TemplatePublishView(APIView):
     get=extend_schema(
         tags=['templates'],
         operation_id='api_v1_template_versions_retrieve',
+        summary='Read one template version',
         responses={200: TemplateVersionSerializer, **_API_ERRORS},
+        **mcp_tool(read_only=True),
     ),
 )
 class TemplateVersionDetailView(APIView):
@@ -721,12 +772,100 @@ def _example_variables(definition: dict | None) -> dict:
     return variables
 
 
+def _render_template_bodies(template: EmailTemplate, data: dict, *, preview_email: str) -> dict:
+    definition = definition_for(template)
+    company_id = template.company_id
+    if 'document' in data:
+        subject = str(data.get('subject') or '')
+        preheader = str(data.get('preheader') or '')
+        if not subject:
+            raise SendError(400, 'validation_failed', {'subject': ['required']})
+        document = validate_document(data.get('document'))
+        document_tokens(document, subject, preheader)
+        colors = theme_colors(clean_theme(data.get('theme')))
+        html, text = compose(document, head=set_head(template.set), preheader=preheader, colors=colors)
+    else:
+        number = data.get('number')
+        version = None
+        if number not in (None, ''):
+            version = TemplateVersion.objects.filter(template=template, number=int(number)).first()
+            if version is None:
+                raise SendError(404, 'template_not_found')
+        if version is None:
+            version = template.versions.filter(state=TemplateVersion.STATE_DRAFT).order_by('-number').first()
+        if version is None and template.active_version:
+            version = template.versions.filter(number=template.active_version).first()
+        if version is None:
+            raise SendError(400, 'validation_failed', {'version': ['draft_required']})
+        subject, html, text = version.subject, version.html, version.text
+        if not html:
+            html, text = compose(
+                version.document,
+                head=set_head(template.set),
+                preheader=version.preheader,
+                colors=theme_colors(version.theme),
+            )
+    raw_variables = data.get('variables') if isinstance(data.get('variables'), dict) else None
+    variables = dict(_example_variables(definition))
+    if raw_variables:
+        variables.update(raw_variables)
+    if not definition or definition.get('lane_class') != 'auth':
+        category = (definition or {}).get('lane_class') or 'transactional'
+        link = unsubscribe_url(int(company_id), preview_email, category)
+        variables['system.unsubscribe_url'] = link
+        variables['system.preferences_url'] = link
+    url_tokens = _url_tokens(definition, company_id) if definition else {}
+    subject, missing_subject = substitute(subject, variables, html=False, subject=True, url_tokens=url_tokens)
+    html, missing_html = substitute(
+        html, variables, html=True, url_tokens=url_tokens, allow_http_localhost=settings.DEBUG
+    )
+    text, missing_text = substitute(
+        text, variables, html=False, url_tokens=url_tokens, allow_http_localhost=settings.DEBUG
+    )
+    missing = sorted(set(missing_subject) | set(missing_html) | set(missing_text))
+    return {'subject': subject, 'html': html, 'text': text, 'missing_variables': missing}
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_templates_render_preview',
+        summary=TEMPLATE_RENDER_PREVIEW_SUMMARY,
+        description=TEMPLATE_RENDER_PREVIEW_DESCRIPTION,
+        request=TemplateRenderPreviewRequestSerializer,
+        responses={200: TemplateRenderPreviewResponseSerializer, **_API_ERRORS},
+        examples=[EXAMPLE_RENDER_PREVIEW_REQUEST, EXAMPLE_RENDER_PREVIEW_RESPONSE],
+        **mcp_tool(read_only=True, sensitive=True),
+    ),
+)
+class TemplateRenderPreviewView(APIView):
+    def post(self, request, template_id):
+        try:
+            template, user = _company_template(request, template_id)
+            data = request.data if isinstance(request.data, dict) else {}
+            preview_email = (getattr(user, 'email', '') or 'preview@example.com').strip()
+            if '@' not in preview_email:
+                preview_email = 'preview@example.com'
+            payload = _render_template_bodies(template, data, preview_email=preview_email)
+        except SubstitutionError:
+            return error_response(SendError(400, 'validation_failed', {'document': ['template_tags_forbidden']}), request)
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(payload)
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=['templates'],
         operation_id='api_v1_templates_send_test',
+        summary='Send a test message for a draft',
+        description=(
+            'Queues one message to the caller email (or `to` for staff). '
+            'Use `render-preview` when you only need HTML without sending.'
+        ),
         request=TemplateTestSendRequestSerializer,
         responses={200: TestSendResponseSerializer, **_API_ERRORS},
+        **mcp_tool(read_only=False, sensitive=True),
     ),
 )
 class TemplateTestSendView(APIView):
@@ -792,18 +931,31 @@ class TemplateTestSendView(APIView):
     get=extend_schema(
         tags=['rules'],
         operation_id='api_v1_rules_list',
+        summary=RULE_LIST_SUMMARY,
+        description=RULE_LIST_DESCRIPTION,
         parameters=[
             COMPANY_QUERY,
-            OpenApiParameter('service', OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter(
+                'service',
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+                description='Emitter service id (for example `storage`, `hosting`, `identity`).',
+            ),
         ],
         responses={200: EmailRuleListSerializer, **_API_ERRORS},
+        **mcp_tool(read_only=True),
     ),
     post=extend_schema(
         tags=['rules'],
         operation_id='api_v1_rules_create',
+        summary='Create an email rule and its template copy',
+        description='Creates the rule, the template copy from `content.library_id`, and publishes the first version.',
         parameters=[COMPANY_QUERY],
         request=EmailRuleWriteSerializer,
         responses={201: EmailRuleSerializer, **_API_ERRORS},
+        examples=[EXAMPLE_EMAIL_RULE],
+        **mcp_tool(read_only=False, sensitive=True),
     ),
 )
 class RuleListView(APIView):
@@ -834,21 +986,29 @@ class RuleListView(APIView):
     get=extend_schema(
         tags=['rules'],
         operation_id='api_v1_rules_retrieve',
+        summary='Read one email rule',
         parameters=[COMPANY_QUERY],
         responses={200: EmailRuleSerializer, **_API_ERRORS},
+        **mcp_tool(read_only=True),
     ),
     patch=extend_schema(
         tags=['rules'],
         operation_id='api_v1_rules_partial_update',
+        summary='Update recipients or enabled state',
+        description='Built-in auth rules reject changes to `enabled` or recipients.',
         parameters=[COMPANY_QUERY],
         request=EmailRulePatchSerializer,
         responses={200: EmailRuleSerializer, **_API_ERRORS},
+        **mcp_tool(read_only=False, sensitive=True),
     ),
     delete=extend_schema(
         tags=['rules'],
         operation_id='api_v1_rules_destroy',
+        summary='Delete a custom email rule',
+        description='Built-in auth rules cannot be deleted.',
         parameters=[COMPANY_QUERY],
         responses={204: None, **_API_ERRORS},
+        **mcp_tool(read_only=False, destructive=True),
     ),
 )
 class RuleDetailView(APIView):

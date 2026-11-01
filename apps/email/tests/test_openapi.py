@@ -8,6 +8,8 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import SimpleTestCase
 
+from apps.authapi.mcp_openapi import MCP_EXCLUDED_PATH_PREFIXES, validate_mcp_schema
+
 
 class OpenApiSchemaTests(SimpleTestCase):
     def test_spectacular_validate_fail_on_warn(self):
@@ -32,6 +34,7 @@ class OpenApiSchemaTests(SimpleTestCase):
             '/api/v1/messages/{message_id}',
             '/api/v1/templates',
             '/api/v1/templates/{template_id}',
+            '/api/v1/templates/{template_id}/render-preview',
             '/api/v1/templates/{template_id}/versions',
             '/api/v1/templates/{template_id}/versions/{number}',
             '/api/v1/rules',
@@ -43,7 +46,11 @@ class OpenApiSchemaTests(SimpleTestCase):
             '/api/v1/actions/rules/{id}',
         ):
             self.assertIn(path, paths)
-            operation = paths[path]['get']
+            operation = next(
+                op
+                for method, op in paths[path].items()
+                if method in {'get', 'post', 'put', 'patch', 'delete'} and isinstance(op, dict)
+            )
             content = operation['responses']['200']['content']['application/json']['schema']
             self.assertTrue(content.get('properties') or content.get('$ref'), content)
 
@@ -54,15 +61,23 @@ class OpenApiSchemaTests(SimpleTestCase):
             if isinstance(operation, dict) and 'operationId' in operation
         ]
         self.assertEqual(len(operation_ids), len(set(operation_ids)), operation_ids)
-        self.assertIn('api_v1_messages_list', operation_ids)
-        self.assertIn('api_v1_messages_retrieve', operation_ids)
-        self.assertIn('api_v1_templates_list', operation_ids)
-        self.assertIn('api_v1_templates_retrieve', operation_ids)
-        self.assertIn('api_v1_template_versions_list', operation_ids)
-        self.assertIn('api_v1_template_versions_retrieve', operation_ids)
-        self.assertIn('api_v1_actions_deliveries_list', operation_ids)
-        self.assertIn('api_v1_actions_deliveries_retrieve', operation_ids)
-        self.assertIn('api_v1_actions_event_log_list', operation_ids)
-        self.assertIn('api_v1_actions_event_log_retrieve', operation_ids)
-        self.assertIn('api_v1_actions_rules_list', operation_ids)
-        self.assertIn('api_v1_actions_rules_retrieve', operation_ids)
+        self.assertIn('api_v1_templates_render_preview', operation_ids)
+        validate_mcp_schema(schema)
+
+        for prefix in MCP_EXCLUDED_PATH_PREFIXES:
+            for path in paths:
+                self.assertFalse(path.startswith(prefix), path)
+
+    def test_validate_mcp_schema_rejects_forbidden_tags(self):
+        schema = {
+            'paths': {
+                '/api/v1/templates': {
+                    'get': {
+                        'operationId': 'api_v1_service_clients_list',
+                        'extensions': {'x-mcp': {'read_only': True}},
+                    }
+                }
+            }
+        }
+        with self.assertRaises(AssertionError):
+            validate_mcp_schema(schema)
