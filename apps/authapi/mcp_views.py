@@ -12,7 +12,7 @@ from rest_framework.views import APIView
 from shellui_mcp.server import McpServer
 
 from apps.authapi.mcp_agent import authenticate_agent_request
-from apps.authapi.mcp_identity import identity_origin
+from apps.authapi.mcp_identity import McpIdentityUnavailable, ensure_revocation_snapshot, identity_origin
 from apps.authapi.spectacular_hooks import mcp_schema_for_server
 
 _server: McpServer | None = None
@@ -115,4 +115,12 @@ def mcp_endpoint(request: HttpRequest):
     if authenticated is not None:
         user, claims = authenticated
         request.user = user
-    return _get_server().handle(request, agent_claims=claims)
+    if claims is not None:
+        try:
+            ensure_revocation_snapshot()
+        except McpIdentityUnavailable:
+            return JsonResponse({'error': 'identity_unavailable'}, status=503)
+    try:
+        return _get_server().handle(request, agent_claims=claims)
+    except McpIdentityUnavailable:
+        return JsonResponse({'error': 'identity_unavailable'}, status=503)

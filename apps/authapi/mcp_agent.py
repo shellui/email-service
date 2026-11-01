@@ -12,11 +12,11 @@ from rest_framework import authentication, exceptions
 from apps.authapi.authentication import _safe_jwt_meta
 from apps.authapi.jwks_client import get_jwks_client
 from apps.authapi.principal import EmailPrincipal
+from shellui_mcp.resources import access_token_audience_matches, mcp_resource_from_origin
 
 logger = logging.getLogger(__name__)
 
 MCP_SERVICE_ID = 'email'
-MCP_ACCESS_AUDIENCE_FALLBACK = 'shellui-mcp'
 
 
 def mcp_resource_audience(*, request=None) -> str:
@@ -26,12 +26,10 @@ def mcp_resource_audience(*, request=None) -> str:
         base = request.build_absolute_uri('/').rstrip('/')
     if not base:
         base = (getattr(settings, 'PUBLIC_BASE_URL', None) or '').strip().rstrip('/')
-    return f'{base}/mcp'
-
-
-def _legacy_agent_audience() -> str | None:
-    audience = getattr(settings, 'IDENTITY_AUDIENCE', None) or MCP_ACCESS_AUDIENCE_FALLBACK
-    return audience or None
+    resource = mcp_resource_from_origin(base)
+    if not resource:
+        raise exceptions.AuthenticationFailed('MCP resource URL is not configured.')
+    return resource
 
 
 def _scope_allows_email(scope: Any) -> bool:
@@ -46,75 +44,59 @@ def _scope_allows_email(scope: Any) -> bool:
     return MCP_SERVICE_ID in parts
 
 
-def _audience_matches(token_aud: Any, expected: str) -> bool:
-    if token_aud is None:
-        return False
-    if isinstance(token_aud, list):
-        return expected in [str(item) for item in token_aud]
-    return str(token_aud) == expected
-
-
-def _decode_agent_jwt(raw_token: str, *, audiences: list[str]) -> dict[str, Any]:
+def _decode_agent_jwt(raw_token: str, *, audience: str) -> dict[str, Any]:
     algorithms = list(getattr(settings, 'JWT_ALGORITHMS', ['RS256']))
     options = {
         'require': ['exp', 'agent_id'],
-        'verify_aud': bool(audiences),
+        'verify_aud': True,
         'verify_iss': bool(settings.IDENTITY_ISSUER),
     }
-    decode_kwargs: dict = {'algorithms': algorithms, 'options': options}
+    decode_kwargs: dict = {
+        'algorithms': algorithms,
+        'options': options,
+        'audience': audience,
+    }
     if settings.IDENTITY_ISSUER:
         decode_kwargs['issuer'] = settings.IDENTITY_ISSUER
 
     errors: list[Exception] = []
-    for audience in audiences:
-        kwargs = dict(decode_kwargs)
-        if audience:
-            kwargs['audience'] = audience
-        try:
-            client = get_jwks_client()
-            signing_key = client.get_signing_key(raw_token)
-            if signing_key is not None:
-                return jwt.decode(raw_token, key=signing_key.key, **kwargs)
-        except jwt.InvalidTokenError as exc:
-            errors.append(exc)
-        except Exception as exc:
-            errors.append(exc)
+    try:
+        client = get_jwks_client()
+        signing_key = client.get_signing_key(raw_token)
+        if signing_key is not None:
+            return jwt.decode(raw_token, key=signing_key.key, **decode_kwargs)
+    except jwt.InvalidTokenError as exc:
+        errors.append(exc)
+    except Exception as exc:
+        errors.append(exc)
 
     secret = getattr(settings, 'JWT_HS256_FALLBACK_SECRET', None)
     allow_hs256 = bool(secret) and (
         settings.DEBUG or getattr(settings, 'ALLOW_JWT_HS256_FALLBACK', False)
     )
     if allow_hs256:
-        for audience in audiences:
-            try:
-                kwargs = dict(decode_kwargs)
-                kwargs['algorithms'] = ['HS256']
-                if audience:
-                    kwargs['audience'] = audience
-                return jwt.decode(raw_token, key=secret, **kwargs)
-            except jwt.InvalidTokenError as exc:
-                errors.append(exc)
+        try:
+            kwargs = dict(decode_kwargs)
+            kwargs['algorithms'] = ['HS256']
+            return jwt.decode(raw_token, key=secret, **kwargs)
+        except jwt.InvalidTokenError as exc:
+            errors.append(exc)
 
     token_meta = _safe_jwt_meta(raw_token)
     logger.warning(
-        'Agent JWT rejected. %s audiences=%s errors=%s',
+        'Agent JWT rejected. %s audience=%s errors=%s',
         token_meta,
-        audiences,
+        audience,
         [type(exc).__name__ for exc in errors] or ['no_signing_key'],
     )
     raise exceptions.AuthenticationFailed('Agent token is invalid.')
 
 
 def agent_claims_from_token(raw_token: str, *, request=None) -> dict[str, Any]:
-    audiences: list[str] = []
     resource_aud = mcp_resource_audience(request=request)
-    if resource_aud:
-        audiences.append(resource_aud)
-    legacy = _legacy_agent_audience()
-    if legacy and legacy not in audiences:
-        audiences.append(legacy)
-
-    claims = _decode_agent_jwt(raw_token, audiences=audiences)
+    claims = _decode_agent_jwt(raw_token, audience=resource_aud)
+    if not access_token_audience_matches(claims, resource_aud):
+        raise exceptions.AuthenticationFailed('Agent audience must match this MCP resource.')
     agent_id = claims.get('agent_id')
     if not agent_id:
         raise exceptions.AuthenticationFailed('Agent token required.')
@@ -123,9 +105,6 @@ def agent_claims_from_token(raw_token: str, *, request=None) -> dict[str, Any]:
         raise exceptions.AuthenticationFailed('Invalid agent subject.')
     if not _scope_allows_email(claims.get('scope')):
         raise exceptions.AuthenticationFailed('Agent is not allowed to use email.')
-    token_aud = claims.get('aud')
-    if not any(_audience_matches(token_aud, aud) for aud in audiences):
-        raise exceptions.AuthenticationFailed('Agent audience mismatch.')
     return dict(claims)
 
 

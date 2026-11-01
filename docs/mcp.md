@@ -14,7 +14,7 @@ Service keys (`esk_`), staff-only routes, and internal callbacks are never MCP t
 
 ## Agent JWT
 
-Agents use the same Identity JWKS settings as the admin panel (`IDENTITY_JWKS`, `IDENTITY_ISSUER`, `IDENTITY_AUDIENCE`). Access tokens must include `email` in the `scope` claim and use audience `{EMAIL_PUBLIC_URL}/mcp` (RFC 8707 resource indicator). Legacy audience `IDENTITY_AUDIENCE` is still accepted during rollout.
+Agents use the same Identity JWKS settings as the admin panel (`IDENTITY_JWKS`, `IDENTITY_ISSUER`). Access tokens must include `email` in the `scope` claim and use audience `{EMAIL_PUBLIC_URL}/mcp` exactly (RFC 8707 resource indicator). Tokens with any other `aud` are rejected.
 
 Required claims:
 
@@ -41,7 +41,7 @@ Read-safe mode (`mcp_read=safe`) masks emails and other sensitive strings in too
 
 email-service reuses existing Identity URL settings (no new required env vars):
 
-- Poll `GET {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-revocations` (30 second cache) with a signed service assertion when Identity requires it
+- Poll `GET {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-revocations` (30 second cache) with a signed service assertion (`aud` `shellui-mcp-revocation`, scope `mcp.revocation.read`). If the revocation list or approval internal APIs fail, MCP calls are refused (fail closed).
 - Forward redacted call rows to `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-call-logs`
 - Create approval rows with `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-approval-requests`
 
