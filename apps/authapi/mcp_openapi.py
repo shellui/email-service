@@ -1,4 +1,4 @@
-"""OpenAPI ``x-mcp`` markers for Shellui MCP (schema only; server lives in identity-service)."""
+"""OpenAPI ``x-mcp`` markers for Shellui MCP tools on ``POST /mcp``."""
 
 from __future__ import annotations
 

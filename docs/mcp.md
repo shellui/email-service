@@ -1,21 +1,58 @@
 ---
 title: Shellui MCP
 sidebar_label: Shellui MCP
-description: Company-owner APIs in email-service that Shellui MCP agents may call, and how they are marked in OpenAPI.
+description: Shellui MCP Streamable HTTP endpoint and company-owner tools in email-service.
 ---
 
 # Shellui MCP
 
-Shellui MCP exposes selected company-owner APIs to AI agents through a shared server built in identity-service. email-service does not run that server. It publishes an OpenAPI schema with `x-mcp` extensions so the MCP layer knows which routes are safe to offer agents.
+Shellui MCP lets AI agents call selected company-owner APIs through a Streamable HTTP endpoint on email-service. Identity-service is the OAuth authorization server. Agents authenticate with a company-scoped agent JWT from Identity.
 
-Agents authenticate with the same identity-service JWT as the admin panel. They act as the company owner for the JWT `company_id`. Service keys (`esk_`) and staff-only routes are never MCP tools.
+email-service publishes `POST /mcp` (JSON-RPC: `initialize`, `tools/list`, `tools/call`) and `GET /.well-known/oauth-protected-resource` (resource `/mcp`, authorization server = Identity `IDENTITY_ISSUER`). Only OpenAPI operations registered with `mcp_tool(operation_id=..., read_only=..., ...)` become tools. The schema adds the `mcp-tools` tag at publish time from that registry.
 
-An HTTP operation becomes an MCP tool only when its OpenAPI entry is explicitly decorated with `mcp_tool(operation_id=..., read_only=..., ...)`. There is no automatic opt-in from tags or paths.
+Service keys (`esk_`), staff-only routes, and internal callbacks are never MCP tools.
+
+## Agent JWT
+
+Agents use the same Identity JWKS settings as the admin panel (`IDENTITY_JWKS`, `IDENTITY_ISSUER`). Access tokens must include `email` in the `scope` claim and use audience `{EMAIL_PUBLIC_URL}/mcp` exactly (RFC 8707 resource indicator). Tokens with any other `aud` are rejected.
+
+Required claims:
+
+| Claim | Purpose |
+| --- | --- |
+| `agent_id` | Agent uuid |
+| `company_id` | Company scope |
+| `scope` | Must include `email` |
+| `mcp_access` | `read_only`, `ask`, or `full` |
+| `mcp_read` | `safe` or `sensitive` |
+| `mcp_destructive` | Skip extra approval for destructive tools when true |
+
+## Access modes
+
+| `mcp_access` | Behavior |
+| --- | --- |
+| `read_only` | HTTP GET-style tools only |
+| `ask` | Writes create an approval request in Identity |
+| `full` | Writes run immediately (destructive tools may still need approval) |
+
+Read-safe mode (`mcp_read=safe`) masks emails and other sensitive strings in tool results. Fields marked `x-mcp-secret` in OpenAPI are never returned (for example webhook signing secrets and provider passwords).
+
+## Identity integration
+
+email-service reuses existing Identity URL settings (no new required env vars):
+
+- Poll `GET {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-revocations` (30 second cache) with a signed service assertion (`aud` `shellui-mcp-revocation`, scope `mcp.revocation.read`). If the revocation list or approval internal APIs fail, MCP calls are refused (fail closed).
+- Forward redacted call rows to `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-call-logs`
+- Create approval rows with `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-approval-requests`
+
+Internal calls use short-lived JWT assertions from the shared `shellui_mcp` helpers (`aud` `shellui-mcp-call-log` or `shellui-mcp-approval`). Signing uses the same optional `JWT_PRIVATE_KEY` or local `JWT_HS256_FALLBACK_SECRET` pattern as other Shellui services.
+
+Per-agent rate limits use Redis when `REDIS_URL` is set (same as API rate limits).
 
 ## Where the schema lives
 
 - `GET /api/schema/` on the email-service deployment (also linked from the [service homepage](https://email.shellui.com/)).
-- Each operation may include:
+- Each exposed operation includes:
 
 ```yaml
 x-mcp:
@@ -25,14 +62,14 @@ x-mcp:
 ```
 
 - `read_only`: HTTP GET-style tools that do not change stored state (preview endpoints count as read-only).
-- `destructive`: deletes or other irreversible changes.
+- `destructive`: deletes or other irreversible changes (also tagged `mcp-destructive` for the MCP server).
 - `sensitive`: mail, credentials, signing secrets, or personal data.
 
 Response fields can carry `x-mcp-secret` (never return to agents) or `x-mcp-sensitive` (mask in read-safe MCP modes).
 
 ## Endpoints available to agents
 
-The tables list the HTTP API. Paths are under `/api/v1/`. Company owners pass `Authorization: Bearer <jwt>`. Staff may add `?company_id=` when the token allows it.
+The tables list the HTTP API. Paths are under `/api/v1/`. Agents act as the company owner for the JWT `company_id`.
 
 ### Templates and preview
 
@@ -114,3 +151,37 @@ Example body:
 ```
 
 The response includes `subject`, `html`, `text`, and `missing_variables` for any `{{ token }}` that stayed empty after substitution.
+
+## Example JSON-RPC
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "api_v1_rules_list",
+    "arguments": {"path": "/api/v1/rules", "method": "GET"}
+  }
+}
+```
+
+Paths with placeholders (for example `/api/v1/templates/{template_id}/render-preview`) must use the OpenAPI template in `path` and pass values in `path_params`:
+
+```json
+{
+  "name": "api_v1_templates_render_preview",
+  "arguments": {
+    "path": "/api/v1/templates/{template_id}/render-preview",
+    "path_params": {"template_id": "12"},
+    "method": "POST",
+    "body": {"variables": {"company_name": "Acme"}}
+  }
+}
+```
+
+Send `Authorization: Bearer <agent_access_token>` on every `POST /mcp` request.
