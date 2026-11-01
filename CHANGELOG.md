@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### ✨ Feature
+
+- Company deletion: identity-service flags a deleted company and a Celery job purges all its email data every 60 seconds.
+
 ## [0.6.0] - 2026-10-27
 
 ### 🐛 Bug Fixes

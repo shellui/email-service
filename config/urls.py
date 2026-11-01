@@ -6,6 +6,7 @@ from django.urls import include, path
 from django.views.decorators.clickjacking import xframe_options_exempt
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
+from apps.actions.company_deletion_views import CompanyDeletionView
 from apps.actions.scheduled_job_views import (
     ScheduledJobRunDetailView,
     ScheduledJobRunsView,
@@ -31,6 +32,7 @@ urlpatterns = [
         name='scheduled-job-runs',
     ),
     path('api/v1/actions/', include('apps.actions.urls')),
+    path('api/v1/internal/company-deletions', CompanyDeletionView.as_view(), name='internal-company-deletions'),
     path('u/<str:token>', unsubscribe_page, name='email-unsubscribe'),
     path('n/confirm/<str:token>', confirm_page, name='newsletter-confirm'),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

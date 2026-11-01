@@ -89,6 +89,11 @@ def scheduled_jobs_beat_schedule() -> dict:
     from celery.schedules import crontab
 
     return {
+        'purge-deleted-companies': {
+            'task': 'actions.purge_deleted_companies',
+            'schedule': timedelta(seconds=60),
+            'options': {'expires': 55},
+        },
         'retry-webhooks': {
             'task': 'actions.retry_webhooks',
             'schedule': timedelta(seconds=60),
@@ -730,3 +735,6 @@ if SENTRY_DSN:
         attach_stacktrace=True,
         **sentry_options(),
     )
+
+# Company deletion (apps/actions/company_deletion.py). email-service stores no files, so no blob hook.
+COMPANY_DELETION_BLOB_HOOK = ''
