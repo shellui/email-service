@@ -170,4 +170,18 @@ The response includes `subject`, `html`, `text`, and `missing_variables` for any
 }
 ```
 
+Paths with placeholders (for example `/api/v1/templates/{template_id}/render-preview`) must use the OpenAPI template in `path` and pass values in `path_params`:
+
+```json
+{
+  "name": "api_v1_templates_render_preview",
+  "arguments": {
+    "path": "/api/v1/templates/{template_id}/render-preview",
+    "path_params": {"template_id": "12"},
+    "method": "POST",
+    "body": {"variables": {"company_name": "Acme"}}
+  }
+}
+```
+
 Send `Authorization: Bearer <agent_access_token>` on every `POST /mcp` request.

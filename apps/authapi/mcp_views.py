@@ -9,13 +9,16 @@ from drf_spectacular.generators import SchemaGenerator
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.views import APIView
-from shellui_mcp.server import McpServer
-
 from apps.authapi.mcp_agent import authenticate_agent_request
 from apps.authapi.mcp_identity import McpIdentityUnavailable, ensure_revocation_snapshot, identity_origin
+from apps.authapi.mcp_redaction import install_mcp_redaction_hooks
+from apps.authapi.mcp_server import EmailMcpServer, install_openapi_path_params_on_tools
 from apps.authapi.spectacular_hooks import mcp_schema_for_server
 
-_server: McpServer | None = None
+install_mcp_redaction_hooks()
+install_openapi_path_params_on_tools()
+
+_server: EmailMcpServer | None = None
 
 
 def _schema() -> dict:
@@ -54,10 +57,10 @@ def _forward_call(entry: dict) -> None:
     forward_call_log(entry)
 
 
-def _get_server() -> McpServer:
+def _get_server() -> EmailMcpServer:
     global _server
     if _server is None:
-        _server = McpServer(
+        _server = EmailMcpServer(
             schema_provider=_schema,
             urlconf=settings.ROOT_URLCONF,
             service_name='email',

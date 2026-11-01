@@ -32,6 +32,16 @@ def mcp_resource_audience(*, request=None) -> str:
     return resource
 
 
+def _staff_agent_refused(claims: dict[str, Any]) -> bool:
+    if claims.get('mcp_staff') or claims.get('is_staff'):
+        return True
+    meta = claims.get('user_metadata')
+    if isinstance(meta, dict):
+        if meta.get('is_staff') or meta.get('is_superuser') or meta.get('is_global_staff'):
+            return True
+    return False
+
+
 def _scope_allows_email(scope: Any) -> bool:
     if scope is None:
         return False
@@ -105,6 +115,8 @@ def agent_claims_from_token(raw_token: str, *, request=None) -> dict[str, Any]:
         raise exceptions.AuthenticationFailed('Invalid agent subject.')
     if not _scope_allows_email(claims.get('scope')):
         raise exceptions.AuthenticationFailed('Agent is not allowed to use email.')
+    if _staff_agent_refused(claims):
+        raise exceptions.AuthenticationFailed('Staff accounts cannot use MCP agents.')
     return dict(claims)
 
 

@@ -117,7 +117,11 @@ def _refresh_revocations() -> None:
         _revocation_snapshot['trusted'] = False
         logger.warning('MCP revocation list fetch failed (%s).', type(exc).__name__)
         raise McpIdentityUnavailable('Revocation list fetch failed.') from exc
-    ids = payload.get('revoked_agent_ids') or []
+    raw_ids = payload.get('revoked_agent_ids')
+    if not isinstance(raw_ids, list):
+        _revocation_snapshot['trusted'] = False
+        raise McpIdentityUnavailable('Revocation list payload invalid.')
+    ids = raw_ids
     _revocation_snapshot['ids'] = frozenset(str(item) for item in ids)
     _revocation_snapshot['fetched_at'] = time.monotonic()
     _revocation_snapshot['trusted'] = True
@@ -153,9 +157,10 @@ def resolve_approval_state(payload: dict[str, Any]) -> str | None:
         if response.status_code == 404:
             raise McpIdentityUnavailable('Approval state endpoint missing.')
         response.raise_for_status()
-        state = str(response.json().get('status') or '')
+        body = response.json()
+        state = str(body.get('status') or '')
         if state == 'approved':
-            payload['approval_id'] = str(response.json().get('id') or '')
+            payload['approval_id'] = str(body.get('id') or '')
         return state or None
     except McpIdentityUnavailable:
         raise
