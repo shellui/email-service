@@ -63,4 +63,6 @@ The container sends due deliveries, first tries and retries, every minute with `
 
 Paths and bodies: [integration.md](integration.md#shellui-actions-outbound).
 
+Shellui MCP agents may manage webhook rules, read deliveries, and inspect the company event log. Routes under `/api/v1/actions/` that carry `x-mcp` in OpenAPI are in [Shellui MCP](mcp.md#shellui-actions-webhooks). Signing secrets are write-only except right after create or rotate.
+
 The event log also holds staff-only platform events without a company (`email.scheduled_job.succeeded` and `email.scheduled_job.failed`), listed with `?scope=platform`. They are not in the catalog, so rules cannot subscribe to them. See [Workers and scheduled jobs](scheduled-jobs.md#events).

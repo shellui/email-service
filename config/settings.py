@@ -193,7 +193,7 @@ INSTALLED_APPS = [
 ]
 
 REST_FRAMEWORK = {
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_SCHEMA_CLASS': 'apps.authapi.mcp_schema.McpAutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'apps.authapi.service_auth.ShelluiAuthentication',
     ],
@@ -247,6 +247,7 @@ SPECTACULAR_SETTINGS = {
         'SubscriberAddModeEnum': ['confirm', 'consented'],
         'ScheduledJobRunStatusEnum': ['running', 'succeeded', 'failed'],
     },
+    'PREPROCESSING_HOOKS': ['apps.authapi.spectacular_hooks.preprocessing_exclude_internal_endpoints'],
 }
 
 MIDDLEWARE = [
