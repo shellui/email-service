@@ -6,7 +6,7 @@ from django.utils import timezone
 from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from apps.authapi.mcp_openapi import mcp_tool
-from apps.email.openapi_admin import ACTIONS_RULES_LIST_DESCRIPTION, ACTIONS_RULES_LIST_SUMMARY, EXAMPLE_ACTION_RULE
+from apps.email.openapi_admin import ADMIN_API_ERRORS, EXAMPLE_ACTION_RULE, mcp_openapi_fields
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -34,12 +34,7 @@ from apps.email.schema import COMPANY_QUERY, ErrorSerializer
 from apps.email.service import SendError
 from apps.email.views import error_response
 
-_API_ERRORS = {
-    400: ErrorSerializer,
-    401: ErrorSerializer,
-    403: ErrorSerializer,
-    404: ErrorSerializer,
-}
+_API_ERRORS = ADMIN_API_ERRORS
 
 
 def _public_webhook_url(url: str) -> str:
@@ -108,10 +103,9 @@ def _rule_payload(rule: ActionRule, *, reveal_secret: bool = False) -> dict:
     get=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_events_list',
-        summary='List webhook event types you can subscribe to',
-        description='Domain events emitted by email-service for Shellui Actions rules.',
         parameters=[COMPANY_QUERY],
         responses={200: ActionEventListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_events_list'),
         **mcp_tool(operation_id='api_v1_actions_events_list', read_only=True),
     ),
 )
@@ -136,21 +130,19 @@ class ActionEventsView(APIView):
     get=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_rules_list',
-        summary=ACTIONS_RULES_LIST_SUMMARY,
-        description=ACTIONS_RULES_LIST_DESCRIPTION,
         parameters=[COMPANY_QUERY],
         responses={200: ActionRuleListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_list'),
         **mcp_tool(operation_id='api_v1_actions_rules_list', read_only=True, sensitive=True),
     ),
     post=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_rules_create',
-        summary='Create a Shellui Actions webhook rule',
-        description='Returns the signing secret once in `secret`. Store it before closing the response.',
         parameters=[COMPANY_QUERY],
         request=ActionRuleCreateSerializer,
         responses={201: ActionRuleSerializer, **_API_ERRORS},
         examples=[EXAMPLE_ACTION_RULE],
+        **mcp_openapi_fields('api_v1_actions_rules_create'),
         **mcp_tool(operation_id='api_v1_actions_rules_create', read_only=False, sensitive=True),
     ),
 )
@@ -204,23 +196,23 @@ class ActionRuleListCreateView(APIView):
     get=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_rules_retrieve',
-        summary='Read one webhook rule',
         responses={200: ActionRuleSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_retrieve'),
         **mcp_tool(operation_id='api_v1_actions_rules_retrieve', read_only=True, sensitive=True),
     ),
     patch=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_rules_partial_update',
-        summary='Update name, URL, or enabled state',
         request=ActionRuleUpdateSerializer,
         responses={200: ActionRuleSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_partial_update'),
         **mcp_tool(operation_id='api_v1_actions_rules_partial_update', read_only=False, sensitive=True),
     ),
     delete=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_rules_destroy',
-        summary='Delete a webhook rule',
         responses={204: None, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_destroy'),
         **mcp_tool(operation_id='api_v1_actions_rules_destroy', read_only=False, destructive=True),
     ),
 )
@@ -279,10 +271,9 @@ class ActionRuleDetailView(APIView):
     post=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_rules_rotate_secret',
-        summary='Rotate the webhook signing secret',
-        description='Returns the new plaintext secret once.',
         request=None,
         responses={200: ActionRuleSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_rotate_secret'),
         **mcp_tool(operation_id='api_v1_actions_rules_rotate_secret', read_only=False, sensitive=True),
     ),
 )
@@ -306,9 +297,9 @@ class ActionRuleRotateSecretView(APIView):
     post=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_rules_send_test',
-        summary='Queue a sample webhook for this rule',
         request=None,
         responses={200: ActionTestQueuedSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_send_test'),
         **mcp_tool(operation_id='api_v1_actions_rules_send_test', read_only=False, sensitive=True),
     ),
 )
@@ -335,9 +326,9 @@ class ActionRuleSendTestView(APIView):
     get=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_deliveries_list',
-        summary='List recent webhook delivery attempts',
         parameters=[COMPANY_QUERY],
         responses={200: DeliveryListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_deliveries_list'),
         **mcp_tool(operation_id='api_v1_actions_deliveries_list', read_only=True, sensitive=True),
     ),
 )
@@ -368,8 +359,8 @@ class ActionDeliveryListView(APIView):
     get=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_deliveries_retrieve',
-        summary='Read one delivery with attempts and envelope',
         responses={200: DeliveryDetailSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_deliveries_retrieve'),
         **mcp_tool(operation_id='api_v1_actions_deliveries_retrieve', read_only=True, sensitive=True),
     ),
 )
@@ -395,9 +386,9 @@ class ActionDeliveryDetailView(APIView):
     post=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_deliveries_requeue',
-        summary='Requeue a failed webhook delivery',
         request=None,
         responses={200: DeliverySerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_deliveries_requeue'),
         **mcp_tool(operation_id='api_v1_actions_deliveries_requeue', read_only=False, sensitive=True),
     ),
 )
@@ -449,10 +440,9 @@ def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False, incl
     get=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_event_log_list',
-        summary='List recent domain events for the company',
-        description='Company owners use the default scope. `scope=platform` is staff-only and is not an MCP tool.',
         parameters=[COMPANY_QUERY],
         responses={200: EventLogListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_event_log_list'),
         **mcp_tool(operation_id='api_v1_actions_event_log_list', read_only=True, sensitive=True),
     ),
 )
@@ -490,8 +480,8 @@ class EventLogListView(APIView):
     get=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_event_log_retrieve',
-        summary='Read one event log entry',
         responses={200: EventLogDetailSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_event_log_retrieve'),
         **mcp_tool(operation_id='api_v1_actions_event_log_retrieve', read_only=True, sensitive=True),
     ),
 )
@@ -522,9 +512,9 @@ class EventLogDetailView(APIView):
     get=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_event_log_types_list',
-        summary='List event type ids for filters',
         parameters=[COMPANY_QUERY],
         responses={200: EventLogTypesSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_event_log_types_list'),
         **mcp_tool(operation_id='api_v1_actions_event_log_types_list', read_only=True),
     ),
 )
@@ -542,9 +532,9 @@ class EventLogTypesView(APIView):
     get=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_event_log_retention_retrieve',
-        summary='Read event log retention settings',
         parameters=[COMPANY_QUERY],
         responses={200: EventLogRetentionSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_event_log_retention_retrieve'),
         **mcp_tool(operation_id='api_v1_actions_event_log_retention_retrieve', read_only=True),
     ),
 )

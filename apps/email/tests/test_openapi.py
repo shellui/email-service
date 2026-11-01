@@ -11,6 +11,7 @@ from django.test import SimpleTestCase
 from apps.authapi.mcp_openapi import (
     MCP_EXCLUDED_PATH_PREFIXES,
     MCP_EXPLICIT_REGISTRY,
+    MCP_REQUIRED_OPERATION_IDS,
     MCP_REQUIRED_SECRET_SCHEMA_PROPERTIES,
     validate_mcp_schema,
     validate_mcp_secret_fields,
@@ -77,9 +78,30 @@ class OpenApiSchemaTests(SimpleTestCase):
 
     def test_mcp_registry_matches_required_allowlist(self):
         self.assertEqual(set(MCP_EXPLICIT_REGISTRY), set(MCP_EXPLICIT_REGISTRY.keys()))
-        from apps.authapi.mcp_openapi import MCP_REQUIRED_OPERATION_IDS
-
         self.assertEqual(set(MCP_EXPLICIT_REGISTRY), MCP_REQUIRED_OPERATION_IDS)
+
+    def test_mcp_operations_are_fully_documented(self):
+        from drf_spectacular.generators import SchemaGenerator
+
+        schema = SchemaGenerator().get_schema(request=None, public=True)
+        paths = schema['paths']
+        required_errors = {400, 401, 403, 404, 409, 429}
+        for op_id in MCP_REQUIRED_OPERATION_IDS:
+            operation = None
+            for path_item in paths.values():
+                for op in path_item.values():
+                    if isinstance(op, dict) and op.get('operationId') == op_id:
+                        operation = op
+                        break
+            self.assertIsNotNone(operation, op_id)
+            assert operation is not None
+            self.assertTrue(operation.get('summary'), op_id)
+            self.assertTrue(operation.get('description'), op_id)
+            response_codes = {int(code) for code in operation.get('responses', {}) if str(code).isdigit()}
+            self.assertTrue(required_errors <= response_codes, (op_id, response_codes))
+            description = operation['description']
+            for needle in ('Side effects:', 'Sends email:', 'Destructive:', 'Permissions:'):
+                self.assertIn(needle, description, op_id)
 
     def test_required_secret_fields_list_is_documented(self):
         """Guardrail: every listed secret field must stay marked in OpenAPI."""

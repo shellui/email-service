@@ -21,13 +21,23 @@ COMPANY_QUERY = OpenApiParameter(
 
 
 class ErrorSerializer(serializers.Serializer):
-    error_code = serializers.CharField()
+    error_code = serializers.CharField(
+        help_text='Stable machine code (for example `validation_failed`, `not_found`, `forbidden`). Never a translated sentence.',
+    )
     field_errors = serializers.DictField(
         child=serializers.ListField(child=serializers.CharField()),
         required=False,
+        help_text='Optional map of field names to lists of stable error tokens (for example `required`, `invalid`).',
     )
-    missing_variables = serializers.ListField(child=serializers.CharField(), required=False)
-    request_id = serializers.CharField(required=False)
+    missing_variables = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        help_text='Template preview only: placeholder tokens that were not supplied.',
+    )
+    request_id = serializers.CharField(
+        required=False,
+        help_text='Echo of the `X-Request-ID` header when present.',
+    )
 
 
 class HealthSerializer(serializers.Serializer):
