@@ -158,7 +158,7 @@ class ScheduledTaskTests(TestCase):
 class BeatScheduleTests(SimpleTestCase):
     def test_schedule_contents(self):
         schedule = settings.CELERY_BEAT_SCHEDULE
-        self.assertEqual(set(schedule), {'retry-webhooks', 'sweep-email-queue', 'purge-expired-data'})
+        self.assertEqual(set(schedule), {'retry-webhooks', 'sweep-email-queue', 'purge-expired-data', 'purge-deleted-companies'})
 
         for key, task in (('retry-webhooks', 'actions.retry_webhooks'), ('sweep-email-queue', 'email.sweep_email_queue')):
             with self.subTest(key=key):
