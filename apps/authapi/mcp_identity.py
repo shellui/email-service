@@ -15,7 +15,6 @@ from shellui_mcp.internal import (
     build_mcp_call_log_assertion,
     build_mcp_revocation_assertion,
     parse_trusted_revocation_poll_response,
-    verify_mcp_revocation_list_response,
 )
 
 logger = logging.getLogger(__name__)
@@ -143,8 +142,15 @@ def _refresh_revocations() -> None:
         response.raise_for_status()
         payload = response.json()
         issuer = identity_origin()
-        trusted = verify_mcp_revocation_list_response(payload, expected_issuer=issuer or None)
-        ids, cache_seconds = parse_trusted_revocation_poll_response(payload, expected_issuer=issuer or None)
+        if not issuer:
+            _revocation_snapshot['trusted'] = False
+            raise McpIdentityUnavailable('Identity issuer is not configured.')
+        jwks = getattr(settings, 'IDENTITY_JWKS_DOCUMENT', None)
+        ids, cache_seconds, agents = parse_trusted_revocation_poll_response(
+            payload,
+            expected_issuer=issuer,
+            jwks=jwks,
+        )
     except McpIdentityUnavailable:
         raise
     except InternalAssertionError as exc:
@@ -156,7 +162,7 @@ def _refresh_revocations() -> None:
         logger.warning('MCP revocation list fetch failed (%s).', type(exc).__name__)
         raise McpIdentityUnavailable('Revocation list fetch failed.') from exc
     _revocation_snapshot['ids'] = ids
-    _revocation_snapshot['agents'] = list(trusted.get('agents') or [])
+    _revocation_snapshot['agents'] = list(agents)
     _revocation_snapshot['cache_seconds'] = min(int(cache_seconds), REVOCATION_CACHE_SECONDS)
     _revocation_snapshot['fetched_at'] = time.monotonic()
     _revocation_snapshot['trusted'] = True

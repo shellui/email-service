@@ -30,7 +30,7 @@ def _schema() -> dict:
     return mcp_schema_for_server(schema)
 
 
-def _revocation_check(agent_id: str) -> bool:
+def _revocation_check(agent_id: str, _company_id: int | None) -> bool:
     from apps.authapi.mcp_identity import agent_is_revoked
 
     return agent_is_revoked(agent_id)
