@@ -32,6 +32,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - Template render-preview exposed to MCP agents.
 - OpenAPI descriptions for admin API operations.
 
+### 🏗 Chore
+
+- Use the shared shellui-django package for MCP instead of a vendored copy.
+
 ## [0.7.1] - 2026-11-01
 
 ### 🐛 Bug Fixes

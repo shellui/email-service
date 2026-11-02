@@ -12,7 +12,7 @@ from rest_framework import authentication, exceptions
 from apps.authapi.authentication import _safe_jwt_meta
 from apps.authapi.jwks_client import get_jwks_client
 from apps.authapi.principal import EmailPrincipal
-from shellui_mcp.resources import access_token_audience_matches, mcp_resource_from_origin
+from shellui_django.mcp.resources import access_token_audience_matches, mcp_resource_from_origin
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ from typing import Any
 
 import requests
 from django.conf import settings
-from shellui_mcp.internal import (
+from shellui_django.mcp.internal import (
     InternalAssertionError,
     REVOCATION_CACHE_SECONDS,
     build_mcp_approval_assertion,

@@ -9,7 +9,7 @@ from drf_spectacular.generators import SchemaGenerator
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.views import APIView
-from shellui_mcp.server import McpServer
+from shellui_django.mcp.server import McpServer
 
 from apps.authapi.mcp_agent import authenticate_agent_request
 from apps.authapi.mcp_identity import (

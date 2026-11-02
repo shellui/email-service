@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from apps.authapi.mcp_openapi import MCP_EXCLUDED_PATH_PREFIXES, mcp_extension
-from shellui_mcp.decorators import MCP_TOOL_TAG
+from shellui_django.mcp.decorators import MCP_TOOL_TAG
 
 MCP_DESTRUCTIVE_TAG = 'mcp-destructive'
 
