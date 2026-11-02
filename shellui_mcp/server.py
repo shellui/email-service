@@ -194,20 +194,13 @@ class McpServer:
                 )
             )
 
-        query_params = arguments.get('query') or {}
-        authorization = request.META.get('HTTP_AUTHORIZATION', '')
-        body = arguments.get('body')
-        factory_kwargs: dict[str, Any] = {
-            'query_params': query_params,
-            'HTTP_AUTHORIZATION': authorization,
-        }
-        # Avoid sending ``{}`` as an octet-stream body on bodyless methods (DRF 415).
-        if method in {'GET', 'HEAD', 'OPTIONS', 'TRACE'} and body is None:
-            drf_request = self._factory.generic(method, resolved_path, **factory_kwargs)
-        elif body is None:
-            drf_request = self._factory.generic(method, resolved_path, data={}, **factory_kwargs)
-        else:
-            drf_request = self._factory.generic(method, resolved_path, data=body, **factory_kwargs)
+        drf_request = self._factory.generic(
+            method,
+            resolved_path,
+            data=arguments.get('body') or {},
+            query_params=arguments.get('query') or {},
+            HTTP_AUTHORIZATION=request.META.get('HTTP_AUTHORIZATION', ''),
+        )
         self._attach_request_principal(drf_request, request, agent_claims)
         from django.urls import resolve
 

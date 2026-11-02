@@ -40,13 +40,18 @@ def agent_token_company_id(user) -> int:
         raise ValueError('Agent token missing company_id.') from exc
 
 
+_BODYLESS_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS', 'TRACE'})
+
+
 def _requested_company_id(request) -> int | None:
     raw = None
     if hasattr(request, 'query_params'):
         raw = request.query_params.get('company_id')
-    if raw in (None, '') and isinstance(getattr(request, 'data', None), dict):
-        if 'company_id' in request.data:
-            raw = request.data.get('company_id')
+    method = getattr(request, 'method', 'GET').upper()
+    if raw in (None, '') and method not in _BODYLESS_METHODS:
+        data = request.data
+        if isinstance(data, dict) and 'company_id' in data:
+            raw = data.get('company_id')
     if raw in (None, ''):
         return None
     try:
@@ -75,9 +80,11 @@ def resolve_company_id_for_request(request, *, allow_null: bool = False) -> int 
     raw = None
     if hasattr(request, 'query_params'):
         raw = request.query_params.get('company_id')
-    if raw in (None, '') and isinstance(getattr(request, 'data', None), dict):
-        if 'company_id' in request.data:
-            raw = request.data.get('company_id')
+    method = getattr(request, 'method', 'GET').upper()
+    if raw in (None, '') and method not in _BODYLESS_METHODS:
+        data = request.data
+        if isinstance(data, dict) and 'company_id' in data:
+            raw = data.get('company_id')
     if raw in (None, ''):
         if getattr(user, 'company_id', None) is not None and not getattr(user, 'is_service', False):
             return int(user.company_id)
