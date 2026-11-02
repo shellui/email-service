@@ -440,8 +440,6 @@ if JWT_HS256_FALLBACK_SECRET and not DEBUG and not ALLOW_JWT_HS256_FALLBACK:
 JWT_ALGORITHMS = _env_csv('JWT_ALGORITHMS', ('RS256',))
 
 _jwt_private_pem = os.getenv('JWT_PRIVATE_KEY', '').strip().replace('\\n', '\n')
-_mcp_jwt_algorithm = 'RS256' if _jwt_private_pem else 'HS256'
-_mcp_jwt_signing_key = _jwt_private_pem or JWT_HS256_FALLBACK_SECRET or (SECRET_KEY if DEBUG else '')
 JWT_KEY_ID = os.getenv('JWT_KEY_ID', '').strip()
 JWT_ACTIVE_KEY_ID = JWT_KEY_ID
 JWT_ISSUER = IDENTITY_ISSUER or ''
@@ -450,11 +448,12 @@ JWT_AUDIENCE = IDENTITY_AUDIENCE or ''
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ALGORITHM': _mcp_jwt_algorithm,
-    'SIGNING_KEY': _mcp_jwt_signing_key,
     'ISSUER': JWT_ISSUER,
     'AUDIENCE': JWT_AUDIENCE,
 }
+if _jwt_private_pem:
+    SIMPLE_JWT['ALGORITHM'] = 'RS256'
+    SIMPLE_JWT['SIGNING_KEY'] = _jwt_private_pem
 
 MCP_RATE_LIMITS = {
     'mcp_agent': {'limit': 120, 'window': 60},
