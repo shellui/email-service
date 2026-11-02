@@ -25,6 +25,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ## [0.8.0] - 2026-11-01
 
+### 🛠 Improvements
+
+- Production may verify admin JWTs from a cached `IDENTITY_JWKS_URL` fetch when keys are not pinned.
+
 ### ✨ Feature
 
 - MCP endpoint for Shellui agents at `POST /mcp`.

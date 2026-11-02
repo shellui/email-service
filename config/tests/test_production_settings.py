@@ -36,7 +36,27 @@ class ProductionSettingsValidationTests(unittest.TestCase):
         self.assertIn('REDIS_URL is required when DEBUG=false', result.stderr)
         self.assertIn('POSTGRES_DATABASE_URL is required when DEBUG=false', result.stderr)
 
-    def test_production_requires_a_pinned_jwks_document(self):
+    def test_production_requires_a_jwks_source(self):
+        key = Fernet.generate_key().decode('ascii')
+        base = {
+            'DEBUG': 'false',
+            'IDENTITY_ISSUER': 'https://id.shellui.com',
+            'IDENTITY_AUDIENCE': 'shellui',
+            'POSTGRES_DATABASE_URL': 'postgres://email:email@127.0.0.1:5432/email',
+            'REDIS_URL': 'redis://127.0.0.1:6379/0',
+            'EMAIL_CREDENTIALS_KEY': key,
+            'EMAIL_VARIABLES_KEY': key,
+            'EMAIL_HASH_PEPPER': 'pepper-for-tests',
+            'SECURE_SSL_REDIRECT': 'false',
+        }
+        result = _settings_check(base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            'IDENTITY_JWKS, IDENTITY_JWKS_FILE, IDENTITY_JWKS_URL, or IDENTITY_SERVICE_URL',
+            result.stderr,
+        )
+
+    def test_production_starts_with_runtime_jwks_url(self):
         key = Fernet.generate_key().decode('ascii')
         result = _settings_check(
             {
@@ -52,8 +72,25 @@ class ProductionSettingsValidationTests(unittest.TestCase):
                 'SECURE_SSL_REDIRECT': 'false',
             }
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('IDENTITY_JWKS or IDENTITY_JWKS_FILE is required when DEBUG=false', result.stderr)
+        self.assertEqual(result.returncode, 0, msg=result.stderr + result.stdout)
+
+    def test_production_starts_with_identity_service_url_for_jwks(self):
+        key = Fernet.generate_key().decode('ascii')
+        result = _settings_check(
+            {
+                'DEBUG': 'false',
+                'IDENTITY_ISSUER': 'https://id.shellui.com',
+                'IDENTITY_AUDIENCE': 'shellui',
+                'IDENTITY_SERVICE_URL': 'https://id.shellui.com',
+                'POSTGRES_DATABASE_URL': 'postgres://email:email@127.0.0.1:5432/email',
+                'REDIS_URL': 'redis://127.0.0.1:6379/0',
+                'EMAIL_CREDENTIALS_KEY': key,
+                'EMAIL_VARIABLES_KEY': key,
+                'EMAIL_HASH_PEPPER': 'pepper-for-tests',
+                'SECURE_SSL_REDIRECT': 'false',
+            }
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr + result.stdout)
 
     def test_production_cors_off_and_local_auth_hosts_removed(self):
         key = Fernet.generate_key().decode('ascii')

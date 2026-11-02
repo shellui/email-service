@@ -33,9 +33,12 @@ REQUIRED = (
     Required('ALLOWED_HOSTS', 'Public host names, comma-separated, no scheme.'),
     Required('CSRF_TRUSTED_ORIGINS', 'Full HTTPS origin of this service.'),
     Required('PUBLIC_BASE_URL', 'Public URL of this service (links in mail).'),
+    Required(
+        'IDENTITY_SERVICE_URL',
+        'identity-service origin. JWKS is read from {url}/.well-known/jwks.json when not pinned.',
+    ),
     Required('IDENTITY_ISSUER', 'JWT iss claim, the identity-service JWT_ISSUER.'),
     Required('IDENTITY_AUDIENCE', 'JWT aud claim, the identity-service JWT_AUDIENCE.'),
-    Required('IDENTITY_JWKS', 'Pinned JWKS JSON from the identity /.well-known/jwks.json.'),
     Required('POSTGRES_DATABASE_URL', 'PostgreSQL DSN.'),
     Required('REDIS_URL', 'Shared cache and job broker.'),
     Required('EMAIL_CREDENTIALS_KEY', 'Fernet key for provider credentials. Generated.'),
@@ -50,8 +53,8 @@ OPTIONAL = (
     Var('EMAIL_SERVICE_PORT', '8003'),
     Var('SQLITE_PATH', 'db.sqlite3', 'Database: SQLite (local only) unless POSTGRES_DATABASE_URL is set'),
     Var('POSTGRES_SSL_REQUIRE', 'true'),
-    Var('IDENTITY_SERVICE_URL', '', 'Identity (admin JWTs)'),
-    Var('IDENTITY_JWKS_FILE', ''),
+    Var('IDENTITY_JWKS_FILE', '', 'Identity (admin JWTs). Pin the JWKS with a file or JSON in production.'),
+    Var('IDENTITY_JWKS', ''),
     Var('IDENTITY_JWKS_URL', ''),
     Var('JWKS_CACHE_TTL', '900'),
     Var('JWKS_TIMEOUT', '15'),
@@ -191,7 +194,7 @@ CSRF_TRUSTED_ORIGINS=
 PUBLIC_BASE_URL=
 IDENTITY_ISSUER=
 IDENTITY_AUDIENCE=
-IDENTITY_JWKS=
+IDENTITY_SERVICE_URL=
 POSTGRES_DATABASE_URL=
 REDIS_URL=
 EMAIL_CREDENTIALS_KEY=

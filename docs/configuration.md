@@ -12,7 +12,7 @@ Production (`DEBUG=false`) refuses to boot without:
 
 - `SECRET_KEY`
 - `IDENTITY_ISSUER` and `IDENTITY_AUDIENCE`
-- `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` (a pinned document, not a runtime JWKS URL)
+- `IDENTITY_JWKS`, `IDENTITY_JWKS_FILE`, `IDENTITY_JWKS_URL`, or `IDENTITY_SERVICE_URL` (pin the JWKS or set a fetch URL; localhost is not assumed when `DEBUG=false`)
 - `POSTGRES_DATABASE_URL`
 - `REDIS_URL` (rate limits and the scheduled jobs)
 - `EMAIL_CREDENTIALS_KEY`, `EMAIL_VARIABLES_KEY`, `EMAIL_HASH_PEPPER`
@@ -66,17 +66,22 @@ The web form stays closed when `DEBUG=false` and `SETUP_TOKEN` is empty. Set `SE
 
 ## Identity (admin JWTs)
 
+Pin a JSON Web Key Set (JWKS) with `IDENTITY_JWKS_FILE` or `IDENTITY_JWKS` in production when the container cannot reach identity-service at runtime. Otherwise set `IDENTITY_SERVICE_URL` or `IDENTITY_JWKS_URL` and keys are fetched on demand (cached, short HTTP timeout). Update a pinned document after identity-service rotates signing keys.
+
 | Variable | Default | Role |
 | --- | --- | --- |
-| `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` | empty | Pinned public keys. Required when `DEBUG=false` |
-| `IDENTITY_SERVICE_URL` | `http://localhost:8000` when `DEBUG=true`, otherwise empty | Dev base URL. JWKS is `{url}/.well-known/jwks.json`. Broadcasts also call `{url}/api/v1/users/audience` |
-| `IDENTITY_JWKS_URL` | derived | Explicit JWKS URL. Not enough on its own when `DEBUG=false` |
+| `IDENTITY_JWKS_FILE` | empty | Path to a JWKS file. Wins over `IDENTITY_JWKS` |
+| `IDENTITY_JWKS` | empty | Pinned JWKS JSON when no file is set. Preferred in production |
+| `IDENTITY_SERVICE_URL` | `http://localhost:8000` when `DEBUG=true`, otherwise empty | identity-service base URL. JWKS is `{url}/.well-known/jwks.json` when no document is pinned. Broadcasts also call `{url}/api/v1/users/audience` |
+| `IDENTITY_JWKS_URL` | derived, or `http://localhost:8000/.well-known/jwks.json` when `DEBUG=true` | Fetch URL when no document is pinned. Ignored for verification when a document is set |
 | `IDENTITY_ISSUER` | empty | Required when `DEBUG=false`. Match identity `JWT_ISSUER` |
 | `IDENTITY_AUDIENCE` | empty | Required when `DEBUG=false`. Match identity `JWT_AUDIENCE`, typically `shellui` |
 | `JWT_HS256_FALLBACK_SECRET` | empty | Local only, when identity is in `DEBUG` with HS256. Refused when `DEBUG=false` unless `ALLOW_JWT_HS256_FALLBACK` is set |
 | `JWT_PRIVATE_KEY` | empty | Optional. RS256 private key for MCP internal assertions to Identity (production fleets use the same key as identity-service) |
 | `JWT_KEY_ID` | empty | Optional `kid` for MCP service assertions when `JWT_PRIVATE_KEY` is set |
-| `JWKS_CACHE_TTL` | `900` | Seconds to cache a fetched JWKS |
+| `JWKS_CACHE_TTL` | `900` | Seconds to cache a fetched JWKS document. Unused for a pinned document |
+| `JWKS_TIMEOUT` | `15` | Seconds for one JWKS HTTP call |
+| `JWKS_RETRIES` | `2` | Extra attempts after a timeout or HTTP 5xx. HTTP 4xx is not retried |
 | `JWT_ALGORITHMS` | `RS256` | Accepted algorithms |
 
 ## Callers
@@ -220,8 +225,6 @@ See [Newsletters](newsletters.md). Addresses are read as IPv4 or IPv6, with or w
 | `SENTRY_RELEASE` | the project version | Sentry release name |
 | `SECURE_HSTS_INCLUDE_SUBDOMAINS` | true when `DEBUG=false` | HSTS `includeSubDomains` |
 | `SECURE_HSTS_PRELOAD` | `false` | HSTS `preload` |
-| `JWKS_TIMEOUT` | `15` | JWKS fetch timeout, seconds (DEBUG only) |
-| `JWKS_RETRIES` | `2` | JWKS fetch retries (DEBUG only) |
 | `ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS` | `120` | Lease on a webhook retry row |
 | `CELERY_BEAT_SCHEDULE_FILE` | `/tmp/celerybeat-schedule` | Beat schedule file. Losing it only resets the schedule |
 | `SHELLUI_WEBSITE_URL`, `SHELLUI_DOCS_URL`, `SHELLUI_PLAYGROUND_URL` | shellui.com URLs | Links on the public pages |
