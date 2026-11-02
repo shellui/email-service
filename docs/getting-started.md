@@ -129,7 +129,7 @@ The image defaults to `DEBUG=false`. It runs `manage.py check` before migrations
 
 - `SECRET_KEY` (at least 50 characters, and not a published placeholder)
 - `IDENTITY_ISSUER` and `IDENTITY_AUDIENCE` (match identity-service)
-- `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` (a pinned document, not only a JWKS URL)
+- `IDENTITY_JWKS`, `IDENTITY_JWKS_FILE`, `IDENTITY_JWKS_URL`, or `IDENTITY_SERVICE_URL` (pin the JWKS or set a fetch URL)
 - `POSTGRES_DATABASE_URL`
 - `REDIS_URL`
 - `EMAIL_CREDENTIALS_KEY`, `EMAIL_VARIABLES_KEY`, and `EMAIL_HASH_PEPPER`

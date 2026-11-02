@@ -31,7 +31,7 @@ For production, `python manage.py generate_env --host email.example.com` prints 
 | --- | --- |
 | `SECRET_KEY` | Django secret, 50+ characters when `DEBUG=false` |
 | `PUBLIC_BASE_URL` | Public origin, used in unsubscribe links |
-| `IDENTITY_JWKS` | Pinned identity public keys, required when `DEBUG=false` |
+| `IDENTITY_SERVICE_URL` | identity-service origin; JWKS fetch URL when keys are not pinned |
 | `EMAIL_CREDENTIALS_KEY` | Encrypts company provider credentials |
 | `EMAIL_FALLBACK_PROVIDER` | Off (`none`) by default. `resend` with `RESEND_API_KEY`, or `ses` with the `SES_*` keys |
 

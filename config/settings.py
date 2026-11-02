@@ -368,6 +368,32 @@ STORAGES = {
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
+# ---------------------------------------------------------------------------
+# Identity / JWKS authentication
+#
+# Prefer a local JWKS document in production (no runtime HTTP to identity):
+#   IDENTITY_JWKS_FILE=/app/data/jwks.json
+#   IDENTITY_JWKS={"keys":[...]}
+# Or fetch at runtime (cached, short HTTP timeout):
+#   IDENTITY_JWKS_URL=https://id.shellui.com/.well-known/jwks.json
+#   IDENTITY_SERVICE_URL=https://id.shellui.com
+# Local/dev can still fall back to:
+#   http://localhost:8000/.well-known/jwks.json
+# ---------------------------------------------------------------------------
+
+
+def _identity_jwks_env_configured() -> bool:
+    for name in (
+        'IDENTITY_JWKS_FILE',
+        'IDENTITY_JWKS',
+        'IDENTITY_JWKS_URL',
+        'IDENTITY_SERVICE_URL',
+    ):
+        if os.getenv(name, '').strip():
+            return True
+    return False
+
+
 def _parse_jwks_document(raw: str, *, source: str) -> dict:
     try:
         document = json.loads(raw)
@@ -396,14 +422,16 @@ def _load_static_jwks() -> tuple[dict | None, str | None, str | None]:
     return None, None, None
 
 
-def _resolve_identity_jwks_url() -> str:
+def _resolve_identity_jwks_url(*, allow_localhost_fallback: bool) -> str | None:
     explicit = os.getenv('IDENTITY_JWKS_URL', '').strip()
     if explicit:
         return explicit.rstrip('/')
     base = os.getenv('IDENTITY_SERVICE_URL', '').strip().rstrip('/')
     if base:
         return f'{base}/.well-known/jwks.json'
-    return 'http://localhost:8000/.well-known/jwks.json'
+    if allow_localhost_fallback:
+        return 'http://localhost:8000/.well-known/jwks.json'
+    return None
 
 
 IDENTITY_JWKS_DOCUMENT, IDENTITY_JWKS_SOURCE, IDENTITY_JWKS_FILE = _load_static_jwks()
@@ -413,10 +441,16 @@ IDENTITY_SERVICE_URL = os.getenv('IDENTITY_SERVICE_URL', '').strip().rstrip('/')
 if IDENTITY_JWKS_DOCUMENT is not None:
     IDENTITY_JWKS_URL = os.getenv('IDENTITY_JWKS_URL', '').strip().rstrip('/') or None
 else:
-    IDENTITY_JWKS_URL = _resolve_identity_jwks_url()
-    if not IDENTITY_JWKS_URL.startswith(('http://', 'https://')):
+    IDENTITY_JWKS_URL = _resolve_identity_jwks_url(allow_localhost_fallback=DEBUG)
+    if IDENTITY_JWKS_URL is not None and not IDENTITY_JWKS_URL.startswith(('http://', 'https://')):
         raise ImproperlyConfigured(
-            f'IDENTITY_JWKS_URL must be an absolute http(s) URL. Got: {IDENTITY_JWKS_URL!r}'
+            f'IDENTITY_JWKS_URL must be an absolute http(s) URL. Got: {IDENTITY_JWKS_URL!r}\n'
+            'Prefer a local document in production:\n'
+            '  IDENTITY_JWKS_FILE=/app/data/jwks.json\n'
+            '  IDENTITY_JWKS={"keys":[...]}\n'
+            'Or a fetch URL:\n'
+            '  IDENTITY_JWKS_URL=https://id.shellui.com/.well-known/jwks.json\n'
+            '  IDENTITY_SERVICE_URL=https://id.shellui.com'
         )
 IDENTITY_ISSUER = os.getenv('IDENTITY_ISSUER', '').strip() or None
 IDENTITY_AUDIENCE = os.getenv('IDENTITY_AUDIENCE', '').strip() or None
@@ -667,10 +701,10 @@ if not DEBUG:
         _production_config_errors.append('EMAIL_VARIABLES_KEY is required when DEBUG=false.')
     if not os.getenv('EMAIL_HASH_PEPPER', '').strip():
         _production_config_errors.append('EMAIL_HASH_PEPPER is required when DEBUG=false.')
-    if IDENTITY_JWKS_DOCUMENT is None:
+    if IDENTITY_JWKS_DOCUMENT is None and not _identity_jwks_env_configured():
         _production_config_errors.append(
-            'IDENTITY_JWKS or IDENTITY_JWKS_FILE is required when DEBUG=false. '
-            'Pin the identity public keys. A runtime fetch of IDENTITY_JWKS_URL is not enough.'
+            'IDENTITY_JWKS, IDENTITY_JWKS_FILE, IDENTITY_JWKS_URL, or IDENTITY_SERVICE_URL '
+            'is required when DEBUG=false. Pin the JWKS or set a fetch URL.'
         )
     if _production_config_errors:
         raise ImproperlyConfigured('\n'.join(_production_config_errors))
