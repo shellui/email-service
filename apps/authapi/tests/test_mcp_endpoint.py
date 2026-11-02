@@ -12,13 +12,13 @@ from django.test import Client, TestCase, override_settings
 
 from apps.authapi.mcp_identity import reset_revocation_cache_for_tests
 from apps.authapi.mcp_openapi import MCP_EXPLICIT_REGISTRY, MCP_FORBIDDEN_OPERATION_IDS
-from shellui_mcp.internal import (
+from apps.authapi.tests.rs256_helpers import generate_test_rsa_jwks, sign_test_revocation_list_assertion
+from shellui_django.mcp.internal import (
     REVOCATION_AUDIENCE,
     REVOCATION_CACHE_SECONDS,
     REVOCATION_SCOPE,
 )
-from shellui_mcp.openapi_tools import tools_from_schema
-from shellui_mcp.tests.rs256_helpers import generate_test_rsa_jwks, sign_test_revocation_list_assertion
+from shellui_django.mcp.openapi_tools import tools_from_schema
 
 ISSUER = 'https://id.shellui.test'
 _TEST_JWKS, _TEST_PRIVATE_PEM, _TEST_KID = generate_test_rsa_jwks()

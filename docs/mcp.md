@@ -45,7 +45,7 @@ email-service reuses existing Identity URL settings (no new required env vars):
 - Forward redacted call rows to `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-call-logs`
 - Create approval rows with `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-approval-requests`
 
-Internal calls use short-lived JWT assertions from the shared `shellui_mcp` helpers (`aud` `shellui-mcp-call-log` or `shellui-mcp-approval`). Outbound signing uses `JWT_PRIVATE_KEY` (RS256, same key as identity-service in production). Revocation poll responses are verified with Identity JWKS via `parse_trusted_revocation_poll_response`.
+Internal calls use short-lived JWT assertions from the shared `shellui_django.mcp` helpers (`aud` `shellui-mcp-call-log` or `shellui-mcp-approval`). Outbound signing uses `JWT_PRIVATE_KEY` (RS256, same key as identity-service in production). Revocation poll responses are verified with Identity JWKS via `parse_trusted_revocation_poll_response`.
 
 Per-agent rate limits use Redis when `REDIS_URL` is set (same as API rate limits).
 
