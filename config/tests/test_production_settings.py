@@ -49,7 +49,15 @@ class ProductionSettingsValidationTests(unittest.TestCase):
             'EMAIL_HASH_PEPPER': 'pepper-for-tests',
             'SECURE_SSL_REDIRECT': 'false',
         }
-        result = _settings_check(base)
+        result = _settings_check(
+            {
+                **base,
+                'IDENTITY_JWKS': '',
+                'IDENTITY_JWKS_FILE': '',
+                'IDENTITY_JWKS_URL': '',
+                'IDENTITY_SERVICE_URL': '',
+            }
+        )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(
             'IDENTITY_JWKS, IDENTITY_JWKS_FILE, IDENTITY_JWKS_URL, or IDENTITY_SERVICE_URL',
