@@ -47,6 +47,17 @@ The handbook lives in [`docs/`](docs/index.md) and is published at [docs.shellui
 - [Broadcasts](docs/broadcasts.md) and [newsletters](docs/newsletters.md), with sign-up `metadata` and email and webhook rules per list
 - [Webhooks](docs/actions.md), [metrics](docs/metrics.md), [security](docs/security.md) and [troubleshooting](docs/troubleshooting.md)
 
+## Run locally
+
+The recommended way is the Shellui dev stack. It runs this service with every other Shellui service and front-end in Docker, with your checkout mounted for hot reload. Clone the Shellui repos side by side, then:
+
+```bash
+cd shellui/dev
+./start.sh
+```
+
+email is on [http://localhost:8004](http://localhost:8004). See the [Shellui dev stack guide](https://github.com/shellui/shellui/blob/develop/docs/dev-stack.md) and [docs/devstack.md](docs/devstack.md) for notes specific to this service.
+
 ## Development
 
 ```bash

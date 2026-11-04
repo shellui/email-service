@@ -12,9 +12,10 @@ Start the full stack from the shellui repo:
 
 ```bash
 cd shellui/dev
-cp .env.local.example .env.local
-docker compose --env-file .env.local up
+./start.sh
 ```
+
+Clone layout, URLs, common commands and troubleshooting are in the [Shellui dev stack guide](https://github.com/shellui/shellui/blob/develop/docs/dev-stack.md). This page only covers what is specific to this service.
 
 This page lists what email-service expects in that stack. For a standalone clone of email-service only, see [Run email-service](getting-started.md).
 
