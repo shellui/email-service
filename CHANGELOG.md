@@ -43,6 +43,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - Use the shared shellui-django package for MCP instead of a vendored copy.
 
+### 🐛 Bug Fixes
+
+- MCP revocation lists are verified with keys from `IDENTITY_JWKS_URL` when no JWKS is pinned, instead of the public issuer URL.
+
 ## [0.7.1] - 2026-11-01
 
 ### 🐛 Bug Fixes
