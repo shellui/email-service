@@ -17,11 +17,15 @@ from shellui_django.mcp.internal import (
     REVOCATION_AUDIENCE,
     REVOCATION_CACHE_SECONDS,
     REVOCATION_SCOPE,
+    verify_mcp_internal_assertion,
 )
 from shellui_django.mcp.openapi_tools import tools_from_schema
 
 ISSUER = 'https://id.shellui.test'
 _TEST_JWKS, _TEST_PRIVATE_PEM, _TEST_KID = generate_test_rsa_jwks()
+# This service's own key for internal MCP assertions to identity (config/service_signing.py).
+_SERVICE_JWKS, _SERVICE_PRIVATE_PEM, _SERVICE_KID = generate_test_rsa_jwks()
+SERVICE_ISSUER = 'https://email.test'
 AUDIENCE = 'shellui-test'
 MCP_RESOURCE = 'https://email.test/mcp'
 SIGNING = 'mcp-endpoint-test-signing-key-0123456789'
@@ -44,6 +48,8 @@ MCP_SETTINGS = {
     },
     'IDENTITY_SERVICE_URL': 'https://identity.test',
     'EMAIL_PUBLIC_URL': 'https://email.test',
+    'MCP_SIGNING_KEY_PEM': _SERVICE_PRIVATE_PEM,
+    'MCP_SIGNING_ISSUER': SERVICE_ISSUER,
 }
 
 
@@ -172,6 +178,24 @@ class McpEndpointTests(TestCase):
         payload = jwt.decode(assertion, options={'verify_signature': False})
         self.assertEqual(payload['aud'], REVOCATION_AUDIENCE)
         self.assertEqual(payload['scope'], REVOCATION_SCOPE)
+        # RS256 with this service's own key and issuer, never the user JWT secret.
+        self.assertEqual(jwt.get_unverified_header(assertion)['alg'], 'RS256')
+        claims = verify_mcp_internal_assertion(
+            assertion,
+            _SERVICE_JWKS,
+            expected_issuer=SERVICE_ISSUER,
+            expected_audience=REVOCATION_AUDIENCE,
+            expected_scope=REVOCATION_SCOPE,
+            expected_target=ISSUER,
+        )
+        self.assertEqual(claims['iss'], SERVICE_ISSUER)
+
+    @override_settings(MCP_SIGNING_KEY_PEM='')
+    def test_without_service_signing_key_agents_are_refused(self):
+        token, _agent_id = _agent_token()
+        _rpc(self.client, token, 'tools/list')
+        # Fails closed before any unsigned call reaches identity.
+        self.assertFalse(self.mock_revocation_get.called)
 
     def test_agent_company_id_query_mismatch_forbidden(self):
         token, _agent_id = _agent_token(company_id=42)

@@ -25,6 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🛠 Improvements
 
+- Bump `shellui-django[mcp]` to 0.4.0 and sign internal MCP assertions to Identity with this service's own RS256 key (`EMAIL_SERVICE_SIGNING_KEY`, `EMAIL_SERVICE_ISSUER`), public key at `/.well-known/jwks.json`.
 - Docker `dev` target for the Shellui local stack (bind-mounted source, `runserver` on port 8000); production publish unchanged.
 - Local host port **8004** and [Shellui dev stack](docs/devstack.md) env documentation (identity issuer public, JWKS and SMTP via compose DNS).
 - `register_dev_service_keys` registers the dev stack's service keys from `EMAIL_DEV_SERVICE_KEYS` on start (DEBUG only).

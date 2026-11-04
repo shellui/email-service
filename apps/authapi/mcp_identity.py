@@ -17,6 +17,8 @@ from shellui_django.mcp.internal import (
     parse_trusted_revocation_poll_response,
 )
 
+from config.service_signing import signing_kwargs
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,13 +63,8 @@ def identity_api_base() -> str:
 
 
 def _signing_key_configured() -> bool:
-    simple = getattr(settings, 'SIMPLE_JWT', None) or {}
-    signing_key = simple.get('SIGNING_KEY')
-    if not signing_key:
-        from rest_framework_simplejwt.settings import api_settings
-
-        signing_key = getattr(api_settings, 'SIGNING_KEY', None)
-    return bool(signing_key)
+    """This service's own RS256 key and issuer for internal MCP assertions (config/service_signing.py)."""
+    return bool(getattr(settings, 'MCP_SIGNING_KEY_PEM', '') and getattr(settings, 'MCP_SIGNING_ISSUER', ''))
 
 
 def _require_service_assertions() -> None:
@@ -99,7 +96,7 @@ def verify_agent_company_binding(agent_id: str, company_id: int) -> None:
 def _revocation_assertion_headers() -> dict[str, str]:
     _require_service_assertions()
     origin = identity_origin()
-    assertion = build_mcp_revocation_assertion(audience_url=origin)
+    assertion = build_mcp_revocation_assertion(audience_url=origin, **signing_kwargs())
     return {'Authorization': f'Bearer {assertion}'}
 
 
@@ -177,6 +174,7 @@ def _approval_assertion(payload: dict[str, Any]) -> str:
         action=str(payload.get('action') or ''),
         arguments_hash=str(payload.get('arguments_hash') or ''),
         audience_url=origin,
+        **signing_kwargs(),
     )
 
 
@@ -255,6 +253,7 @@ def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
         action=str(payload.get('action') or ''),
         arguments_hash=args_hash,
         audience_url=origin,
+        **signing_kwargs(),
     )
     body = {
         'arguments': payload.get('arguments') or {},
@@ -288,7 +287,7 @@ def forward_call_log(entry: dict[str, Any]) -> None:
     base = identity_api_base()
     if not origin or not base:
         return
-    assertion = build_mcp_call_log_assertion(audience_url=origin)
+    assertion = build_mcp_call_log_assertion(audience_url=origin, **signing_kwargs())
     url = f'{base}/api/v1/mcp/internal/mcp-call-logs'
     body = {
         'agent_id': entry.get('agent_id'),
