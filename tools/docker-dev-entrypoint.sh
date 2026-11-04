@@ -31,6 +31,9 @@ case "${MODE}" in
     ensure_node_modules
     cd /app
     python manage.py migrate --noinput
+    if [ -n "${EMAIL_DEV_SERVICE_KEYS:-}" ]; then
+      python manage.py register_dev_service_keys
+    fi
     exec python manage.py runserver 0.0.0.0:8000
     ;;
   *)

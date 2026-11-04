@@ -27,6 +27,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - Docker `dev` target for the Shellui local stack (bind-mounted source, `runserver` on port 8000); production publish unchanged.
 - Local host port **8004** and [Shellui dev stack](docs/devstack.md) env documentation (identity issuer public, JWKS and SMTP via compose DNS).
+- `register_dev_service_keys` registers the dev stack's service keys from `EMAIL_DEV_SERVICE_KEYS` on start (DEBUG only).
 
 - Production may verify admin JWTs from a cached `IDENTITY_JWKS_URL` fetch when keys are not pinned.
 

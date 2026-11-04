@@ -82,11 +82,7 @@ For the production image, lane workers and the scheduler start in the same conta
 
 ## Service keys for callers
 
-Issue an `esk_` key after the stack is up:
-
-```bash
-docker compose --env-file .env.local exec email python manage.py create_service_key --service identity
-```
+In the dev stack, `generate-env.sh` writes one `esk_` key per caller and compose passes them as `EMAIL_DEV_SERVICE_KEYS` (`service=esk_...` pairs). The dev entrypoint runs `python manage.py register_dev_service_keys` after `migrate`, which stores only the key hash and skips keys already registered. The command refuses to run unless `DEBUG=true`, so it never seeds keys in production. Dev keys are not scoped to a company, like production platform keys from `create_service_key`.
 
 Point identity, storage, and hosting at `EMAIL_SERVICE_URL=http://email:8000` inside the network (host port `8004` from your machine).
 
