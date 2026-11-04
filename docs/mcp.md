@@ -185,3 +185,9 @@ Paths with placeholders (for example `/api/v1/templates/{template_id}/render-pre
 ```
 
 Send `Authorization: Bearer <agent_access_token>` on every `POST /mcp` request.
+
+## Internal assertions to Identity
+
+Revocation polling, approvals and call logs send Identity a short-lived RS256 assertion signed with this service's own key (`EMAIL_SERVICE_SIGNING_KEY`, issuer `EMAIL_SERVICE_ISSUER`, `shellui-django` 0.4.0+). The public key is served at `GET /.well-known/jwks.json`. Identity trusts it only when its own `EMAIL_SERVICE_ISSUER` matches, and reads the key from `EMAIL_SERVICE_JWKS_URL` or a pinned `EMAIL_SERVICE_JWKS`. Without a key, MCP fails closed: agents are refused and call logs are skipped.
+
+Generate a key with `openssl genrsa 3072` and keep it in a secret store or a mounted file (`EMAIL_SERVICE_SIGNING_KEY_FILE`).

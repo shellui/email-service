@@ -17,9 +17,11 @@ from apps.email.public_pages import confirm_page, unsubscribe_page
 from apps.authapi.mcp_views import OAuthProtectedResourceMetadataView, mcp_endpoint
 
 from . import views
+from .service_signing import jwks_view
 
 urlpatterns = [
     path('', views.root, name='root'),
+    path('.well-known/jwks.json', jwks_view, name='jwks'),
     path(
         '.well-known/oauth-protected-resource',
         OAuthProtectedResourceMetadataView.as_view(),
