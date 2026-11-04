@@ -146,6 +146,8 @@ def _refresh_revocations() -> None:
         ids, cache_seconds, agents = parse_trusted_revocation_poll_response(
             payload,
             expected_issuer=issuer,
+            # Without a pinned document, fetch keys from IDENTITY_JWKS_URL, not the public issuer.
+            identity_jwks_url=None if jwks is not None else (getattr(settings, 'IDENTITY_JWKS_URL', None) or None),
             jwks=jwks,
         )
     except McpIdentityUnavailable:
