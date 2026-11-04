@@ -34,9 +34,7 @@ COPY pyproject.toml uv.lock /opt/deps/
 WORKDIR /opt/deps
 RUN uv sync --frozen --no-dev --no-install-project
 
-WORKDIR /opt/node
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY --from=frontend /app/node_modules /opt/node/node_modules
 
 WORKDIR /app
 
