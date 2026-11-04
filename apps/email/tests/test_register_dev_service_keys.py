@@ -37,6 +37,17 @@ class RegisterDevServiceKeysTests(TestCase):
         self.assertNotIn(IDENTITY_KEY, output)
         self.assertIn('identity already registered', output)
 
+    def test_only_identity_gets_the_auth_lane(self):
+        run(f'identity={IDENTITY_KEY},storage={STORAGE_KEY}')
+        self.assertEqual(ServiceClient.objects.get(service='identity').allowed_lanes, ['auth', 'transactional'])
+        self.assertEqual(ServiceClient.objects.get(service='storage').allowed_lanes, ['transactional'])
+
+    def test_rerun_fixes_lanes_of_an_existing_dev_key(self):
+        run(f'identity={IDENTITY_KEY}')
+        ServiceClient.objects.filter(service='identity').update(allowed_lanes=['transactional'])
+        self.assertIn('identity lanes updated', run(f'identity={IDENTITY_KEY}'))
+        self.assertEqual(ServiceClient.objects.get(service='identity').allowed_lanes, ['auth', 'transactional'])
+
     def test_key_owned_by_another_service_is_refused(self):
         run(f'identity={IDENTITY_KEY}')
         with self.assertRaises(CommandError):

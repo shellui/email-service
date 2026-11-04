@@ -10,6 +10,12 @@ from apps.email.keys import issue_service_key
 from apps.email.models import ServiceClient
 
 ENV_VAR = 'EMAIL_DEV_SERVICE_KEYS'
+# Only identity sends sign-in mail, so only its key gets the auth lane.
+DEV_LANES = {'identity': ['auth', 'transactional']}
+
+
+def lanes_for(service: str) -> list[str]:
+    return DEV_LANES.get(service, ['transactional'])
 
 
 def parse_keys(value: str) -> list[tuple[str, str]]:
@@ -32,9 +38,13 @@ class Command(BaseCommand):
         for service, raw in parse_keys(os.getenv(ENV_VAR, '')):
             existing = ServiceClient.objects.filter(key_hash=hash_service_key(raw)).first()
             if existing is None:
-                issue_service_key(service=service, name=f'{service} (dev)', raw=raw)
+                issue_service_key(service=service, name=f'{service} (dev)', raw=raw, allowed_lanes=lanes_for(service))
                 self.stdout.write(f'registered {service}')
             elif existing.service != service:
                 raise CommandError(f'{ENV_VAR}: key for "{service}" is already registered to another service')
+            elif sorted(existing.allowed_lanes or []) != sorted(lanes_for(service)):
+                existing.allowed_lanes = lanes_for(service)
+                existing.save(update_fields=['allowed_lanes'])
+                self.stdout.write(f'{service} lanes updated')
             else:
                 self.stdout.write(f'{service} already registered')
