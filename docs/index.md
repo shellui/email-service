@@ -73,6 +73,7 @@ Pick the row that matches what you are doing:
 | You want to | Start with |
 | --- | --- |
 | Run it locally | [Run email-service](getting-started.md) |
+| Run in the Shellui dev stack | [Shellui dev stack](devstack.md) |
 | Set environment variables | [Configuration](configuration.md) |
 | Issue a service key and call the API | [Service keys](authentication.md) and the [integration contract](integration.md) |
 | See which events exist | [Events catalog](events.md) |

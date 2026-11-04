@@ -19,7 +19,7 @@ cp .env.example .env   # then set SECRET_KEY
 docker compose up --build
 ```
 
-The API runs on [http://localhost:8003](http://localhost:8003). `/api/docs/` is the OpenAPI reference and `/admin/` is Django admin. Compose starts Redis. Postgres is required when `DEBUG=false`. The full setup, with workers, is in [Run email-service](docs/getting-started.md).
+The API runs on [http://localhost:8004](http://localhost:8004). `/api/docs/` is the OpenAPI reference and `/admin/` is Django admin. Compose starts Redis. Postgres is required when `DEBUG=false`. The full setup, with workers, is in [Run email-service](docs/getting-started.md). For the shared Shellui dev stack (`shellui/shellui` `dev/docker-compose.yml`), see [Shellui dev stack](docs/devstack.md).
 
 Other services call it with an `esk_` service key. The contract they follow is in [docs/integration.md](docs/integration.md).
 
@@ -52,7 +52,7 @@ The handbook lives in [`docs/`](docs/index.md) and is published at [docs.shellui
 ```bash
 uv sync
 uv run python manage.py migrate
-uv run python manage.py runserver 8003
+uv run python manage.py runserver 8004
 uv run python manage.py test
 ```
 

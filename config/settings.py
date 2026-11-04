@@ -147,8 +147,8 @@ ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
 CSRF_TRUSTED_ORIGINS = _env_csv(
     'CSRF_TRUSTED_ORIGINS',
     (
-        'http://localhost:8003',
-        'http://127.0.0.1:8003',
+        'http://localhost:8004',
+        'http://127.0.0.1:8004',
         'http://localhost:4000',
         'http://127.0.0.1:4000',
         'http://localhost:5174',
@@ -378,7 +378,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 #   IDENTITY_JWKS_URL=https://id.shellui.com/.well-known/jwks.json
 #   IDENTITY_SERVICE_URL=https://id.shellui.com
 # Local/dev can still fall back to:
-#   http://localhost:8000/.well-known/jwks.json
+#   http://localhost:8001/.well-known/jwks.json
 # ---------------------------------------------------------------------------
 
 
@@ -430,13 +430,13 @@ def _resolve_identity_jwks_url(*, allow_localhost_fallback: bool) -> str | None:
     if base:
         return f'{base}/.well-known/jwks.json'
     if allow_localhost_fallback:
-        return 'http://localhost:8000/.well-known/jwks.json'
+        return 'http://localhost:8001/.well-known/jwks.json'
     return None
 
 
 IDENTITY_JWKS_DOCUMENT, IDENTITY_JWKS_SOURCE, IDENTITY_JWKS_FILE = _load_static_jwks()
 IDENTITY_SERVICE_URL = os.getenv('IDENTITY_SERVICE_URL', '').strip().rstrip('/') or (
-    'http://localhost:8000' if DEBUG else None
+    'http://localhost:8001' if DEBUG else None
 )
 if IDENTITY_JWKS_DOCUMENT is not None:
     IDENTITY_JWKS_URL = os.getenv('IDENTITY_JWKS_URL', '').strip().rstrip('/') or None

@@ -50,7 +50,7 @@ OPTIONAL = (
     Var('LOG_LEVEL', 'INFO', 'Runtime'),
     Var('SETUP_TOKEN', ''),
     Var('DJANGO_ADMIN_ENABLED', 'true'),
-    Var('EMAIL_SERVICE_PORT', '8003'),
+    Var('EMAIL_SERVICE_PORT', '8004'),
     Var('SQLITE_PATH', 'db.sqlite3', 'Database: SQLite (local only) unless POSTGRES_DATABASE_URL is set'),
     Var('POSTGRES_SSL_REQUIRE', 'true'),
     Var('IDENTITY_JWKS_FILE', '', 'Identity (admin JWTs). Pin the JWKS with a file or JSON in production.'),
@@ -183,8 +183,10 @@ _EXAMPLE_HEADER = """\
 SECRET_KEY=
 # Local development only. Unset means false (production).
 DEBUG=true
-# Local identity-service. JWKS is fetched from {url}/.well-known/jwks.json in DEBUG.
-IDENTITY_SERVICE_URL=http://localhost:8000
+# Local identity-service (host port 8001 in the Shellui dev stack). JWKS defaults from {url}/.well-known/jwks.json in DEBUG.
+IDENTITY_SERVICE_URL=http://localhost:8001
+# Inside Shellui dev Compose, set IDENTITY_JWKS_URL=http://identity:8000/.well-known/jwks.json and IDENTITY_SERVICE_URL=http://identity:8000.
+# IDENTITY_JWKS_URL=
 # Local dev: allow-all CORS. Unset in production (defaults to false).
 CORS_ALLOW_ALL_ORIGINS=true
 

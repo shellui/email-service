@@ -11,7 +11,44 @@ COPY templates ./templates
 COPY renderer ./renderer
 RUN npm run build:css
 
-FROM python:3.14-slim
+FROM python:3.14-slim AS dev
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH="/opt/venv/bin:/usr/local/bin:$PATH" \
+    DEBUG=true
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /uvx /bin/
+COPY --from=frontend /usr/local/bin/node /usr/local/bin/node
+
+COPY pyproject.toml uv.lock /opt/deps/
+WORKDIR /opt/deps
+RUN uv sync --frozen --no-dev --no-install-project
+
+WORKDIR /opt/node
+COPY package.json package-lock.json ./
+RUN npm ci
+
+WORKDIR /app
+
+EXPOSE 8000
+
+COPY tools/docker-dev-entrypoint.sh /usr/local/bin/docker-dev-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-dev-entrypoint.sh
+
+ENTRYPOINT ["docker-dev-entrypoint.sh"]
+CMD ["web"]
+
+FROM python:3.14-slim AS production
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

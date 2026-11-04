@@ -10,7 +10,7 @@ Publishing to Docker Hub is manual. There is no CI workflow that pushes the imag
 | --- | --- |
 | Registry | Docker Hub |
 | Repository | `shellui/email-service` |
-| Listen port | `8000` (Compose maps host `${EMAIL_SERVICE_PORT:-8003}`) |
+| Listen port | `8000` (Compose maps host `${EMAIL_SERVICE_PORT:-8004}`) |
 | Data volume | `/app/data` |
 
 The image contains application code, Node with the React Email compose script (`renderer/compose.mjs`), and collected static files, including the library images and fonts under `/static/library/`. Secrets come from the environment at start (see `.env.example`).
@@ -146,7 +146,7 @@ docker pull shellui/email-service:0.7.1
 ```bash
 docker volume create email-service-data
 
-docker run -d --name email-service -p 8003:8000 \
+docker run -d --name email-service -p 8004:8000 \
   -v email-service-data:/app/data \
   --env-file .env \
   shellui/email-service:0.7.1
