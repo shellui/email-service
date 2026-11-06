@@ -160,9 +160,6 @@ def _delegated_live_row_from_snapshot_row(
     match: dict,
     *,
     agent_id: str,
-    access_mode: str | None = None,
-    read_level: str | None = None,
-    mcp_destructive: bool = False,
 ) -> dict:
     gcid = match.get('global_company_id')
     if not gcid:
@@ -171,8 +168,6 @@ def _delegated_live_row_from_snapshot_row(
     gaid = str(match.get('global_agent_id') or '').strip()
     if not gaid:
         gaid = str(uuid.uuid5(uuid.NAMESPACE_URL, f'mcp-delegated-global-agent:{aid}'))
-    access = access_mode if access_mode is not None else str(match.get('mcp_access') or 'read_only')
-    read = read_level if read_level is not None else str(match.get('mcp_read') or 'safe')
     return {
         'authorized': True,
         'revoked': False,
@@ -183,11 +178,6 @@ def _delegated_live_row_from_snapshot_row(
         'global_company_id': str(gcid),
         'company_binding_version': int(match['company_binding_version']),
         'grant_version': int(match['grant_version']),
-        'services_allowed': ['email'],
-        'global_allowed_services': ['email'],
-        'access_mode': access,
-        'read_level': read,
-        'allow_destructive_without_asking': False,
     }
 
 
@@ -1613,9 +1603,8 @@ class McpEndpointTests(TestCase):
         self.assertNotIn('activity', entry)
 
     @patch('apps.authapi.mcp_identity.requests.post')
-    def test_forward_call_log_adds_company_name_from_profile(self, mock_post):
-        CompanyProfile.objects.create(company_id=42, name='Audit Co MCP')
-        mock_post.return_value = MagicMock(status_code=200, raise_for_status=MagicMock())
+    def test_forward_call_log_identity_payload_shape(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
         from apps.authapi.mcp_identity import forward_call_log
 
         forward_call_log(
@@ -1629,14 +1618,18 @@ class McpEndpointTests(TestCase):
                 'access_kind': 'read',
                 'outcome': 'allowed',
                 'duration_ms': 1,
+                'http_status': 200,
             }
         )
         body = mock_post.call_args.kwargs['json']
-        self.assertEqual(body.get('company_name'), 'Audit Co MCP')
         self.assertNotIn('arguments', body)
-        self.assertEqual(body.get('resource_path'), '/api/v1/rules')
-        self.assertEqual(body.get('method'), 'GET')
-        self.assertNotIn('http_method', body)
+        self.assertNotIn('company_name', body)
+        self.assertEqual(body.get('path'), '/mcp')
+        self.assertEqual(body.get('method'), 'POST')
+        self.assertEqual(body.get('status'), 200)
+        self.assertNotIn('resource_path', body)
+        self.assertNotIn('http_status', body)
+        self.assertEqual(body.get('result'), '')
 
     @patch('apps.authapi.mcp_identity.verify_live_delegated_authority_against_token')
     @patch('apps.authapi.mcp_identity.requests.post')
@@ -1654,8 +1647,6 @@ class McpEndpointTests(TestCase):
                 'global_company_id': str(uuid.uuid4()),
                 'company_binding_version': 0,
                 'grant_version': 1,
-                'mcp_access': 'read_only',
-                'mcp_read': 'safe',
                 'service': 'email',
                 'tool': 'api_v1_rules_list',
                 'method': 'GET',

@@ -77,18 +77,25 @@ def _flat_audit_entry(
     approval_request_id: str | None = None,
     arguments_hash: str | None = None,
     request_id: str | None = None,
+    tool_destructive: bool = False,
 ) -> dict[str, Any]:
     if outcome not in _OUTCOMES:
         raise ValueError('outcome')
     if error_code is not None and error_code not in _ERROR_CODES:
         error_code = 'request_failed'
-    access_kind = 'read' if method.upper() in _BODYLESS_METHODS else 'write'
+    m = method.upper()
+    if tool_destructive:
+        access_kind = 'destructive'
+    elif m in _BODYLESS_METHODS:
+        access_kind = 'read'
+    else:
+        access_kind = 'write'
     entry: dict[str, Any] = {
         'agent_id': agent_claims.get('agent_id'),
         'company_id': agent_claims.get('company_id'),
         'service': service_name,
         'tool': tool_name,
-        'method': method.upper(),
+        'method': m,
         'resource_path': path_template,
         'access_kind': access_kind,
         'outcome': outcome,
@@ -112,10 +119,6 @@ def _flat_audit_entry(
     cbv = agent_claims.get('company_binding_version')
     if cbv is not None:
         entry['company_binding_version'] = strict_json_nonneg_int(cbv, field='company_binding_version')
-    if 'mcp_access' in agent_claims and agent_claims.get('mcp_access') is not None:
-        entry['mcp_access'] = str(agent_claims.get('mcp_access') or '').strip()
-    if 'mcp_read' in agent_claims and agent_claims.get('mcp_read') is not None:
-        entry['mcp_read'] = str(agent_claims.get('mcp_read') or '').strip()
     return entry
 
 
@@ -182,6 +185,7 @@ class EmailMcpServer(McpServer):
                         error_code='validation_failed',
                         arguments_hash=fp,
                         request_id=req_trace,
+                        tool_destructive=destructive,
                     )
                 )
             return JsonResponse(self._error(req_id, -32602, str(exc)))
@@ -220,6 +224,7 @@ class EmailMcpServer(McpServer):
                         http_status=400,
                         error_code='validation_failed',
                         request_id=req_trace,
+                        tool_destructive=destructive,
                     )
                 )
             return JsonResponse(self._error(req_id, -32602, 'Arguments are not JSON-serializable'))
@@ -272,6 +277,7 @@ class EmailMcpServer(McpServer):
                                 error_code='approval_expired',
                                 arguments_hash=args_hash,
                                 request_id=req_trace,
+                                tool_destructive=destructive,
                             )
                         )
                     return JsonResponse(
@@ -300,6 +306,7 @@ class EmailMcpServer(McpServer):
                                         error_code='identity_unavailable',
                                         arguments_hash=args_hash,
                                         request_id=req_trace,
+                                        tool_destructive=destructive,
                                     )
                                 )
                             return JsonResponse({'error': 'identity_unavailable'}, status=503)
@@ -320,6 +327,7 @@ class EmailMcpServer(McpServer):
                                         error_code='identity_unavailable',
                                         arguments_hash=args_hash,
                                         request_id=req_trace,
+                                        tool_destructive=destructive,
                                     )
                                 )
                             return JsonResponse({'error': 'identity_unavailable'}, status=503)
@@ -338,6 +346,7 @@ class EmailMcpServer(McpServer):
                                     error_code='identity_unavailable',
                                     arguments_hash=args_hash,
                                     request_id=req_trace,
+                                    tool_destructive=destructive,
                                 )
                             )
                         return JsonResponse(
@@ -365,6 +374,7 @@ class EmailMcpServer(McpServer):
                                 approval_request_id=approval_req_id,
                                 arguments_hash=args_hash,
                                 request_id=req_trace,
+                                tool_destructive=destructive,
                             )
                         )
                     meta: dict[str, Any] = {'status': 'pending'}
@@ -395,6 +405,7 @@ class EmailMcpServer(McpServer):
                                 error_code='approval_denied',
                                 arguments_hash=args_hash,
                                 request_id=req_trace,
+                                tool_destructive=destructive,
                             )
                         )
                     return JsonResponse(
@@ -418,6 +429,7 @@ class EmailMcpServer(McpServer):
                                 error_code='approval_denied',
                                 arguments_hash=args_hash,
                                 request_id=req_trace,
+                                tool_destructive=destructive,
                             )
                         )
                     return JsonResponse(
@@ -443,6 +455,7 @@ class EmailMcpServer(McpServer):
                             error_code='identity_unavailable',
                             arguments_hash=args_hash,
                             request_id=req_trace,
+                            tool_destructive=destructive,
                         )
                     )
                 return JsonResponse({'error': 'identity_unavailable'}, status=503)
@@ -464,6 +477,7 @@ class EmailMcpServer(McpServer):
                                 error_code='identity_unavailable',
                                 arguments_hash=args_hash,
                                 request_id=req_trace,
+                                tool_destructive=destructive,
                             )
                         )
                     return JsonResponse({'error': 'identity_unavailable'}, status=503)
@@ -485,6 +499,7 @@ class EmailMcpServer(McpServer):
                                 approval_request_id=approval_req_id,
                                 arguments_hash=args_hash,
                                 request_id=req_trace,
+                                tool_destructive=destructive,
                             )
                         )
                     meta_c: dict[str, Any] = {'status': 'pending'}
@@ -518,6 +533,7 @@ class EmailMcpServer(McpServer):
                             error_code=oc,
                             arguments_hash=args_hash,
                             request_id=req_trace,
+                            tool_destructive=destructive,
                         )
                     )
                 return JsonResponse(
@@ -541,6 +557,7 @@ class EmailMcpServer(McpServer):
                         error_code='read_only_blocked',
                         arguments_hash=args_hash,
                         request_id=req_trace,
+                        tool_destructive=destructive,
                     )
                 )
             return JsonResponse(
@@ -616,6 +633,7 @@ class EmailMcpServer(McpServer):
                     error_code=ec,
                     arguments_hash=args_hash,
                     request_id=req_trace,
+                    tool_destructive=destructive,
                 )
             )
         return JsonResponse(

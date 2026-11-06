@@ -116,11 +116,6 @@ _DELEGATED_AUTHORITY_SUCCESS_KEYS = frozenset(
         'global_company_id',
         'grant_version',
         'company_binding_version',
-        'services_allowed',
-        'global_allowed_services',
-        'access_mode',
-        'read_level',
-        'allow_destructive_without_asking',
     }
 )
 
@@ -138,7 +133,8 @@ def _parse_live_delegated_authority_body(
     """
     Strict JSON body from Identity ``POST …/mcp-agent-delegated-authority`` (HTTP ``200``).
 
-    Identity #135 success shape only: exact key set, JSON types only, no alternate id field names.
+    Identity ``McpInternalDelegatedAgentAuthorityView`` success shape: exact key set, JSON types only.
+    See ``shellui/identity-service`` ``apps/agents/internal_views.py`` (delegated authority response).
     """
     if not isinstance(body, dict):
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
@@ -212,32 +208,6 @@ def _parse_live_delegated_authority_body(
         raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
     if int(gv_raw) != int(grant_version):
         raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
-
-    svc = body.get('services_allowed')
-    gsvc = body.get('global_allowed_services')
-    if not isinstance(svc, list) or not isinstance(gsvc, list):
-        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
-    svc_names = {str(x) for x in svc}
-    if 'email' not in svc_names:
-        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
-    gsvc_names = {str(x) for x in gsvc}
-    if 'email' not in gsvc_names:
-        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
-
-    # Email MCP never treats ``allow_destructive_without_asking`` as a blanket destructive grant;
-    # destructive tools still need a fresh human approval per call.
-    if _strict_bool(body.get('allow_destructive_without_asking')) is not False:
-        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
-
-    # Full JWT at the MCP boundary; call-log forward may supply only the delegation triple.
-    if 'mcp_access' in claims and claims.get('mcp_access') is not None:
-        exp_access = str(claims.get('mcp_access') or '').strip()
-        if str(body.get('access_mode') or '').strip() != exp_access:
-            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
-    if 'mcp_read' in claims and claims.get('mcp_read') is not None:
-        exp_read = str(claims.get('mcp_read') or '').strip()
-        if str(body.get('read_level') or '').strip() != exp_read:
-            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
 
     return {
         'agent_id': aid,
@@ -780,10 +750,6 @@ def forward_call_log(entry: dict[str, Any]) -> None:
             'company_binding_version': cbv_i,
             'grant_version': gv_i,
         }
-        if entry.get('mcp_access') is not None:
-            live_claims['mcp_access'] = entry.get('mcp_access')
-        if entry.get('mcp_read') is not None:
-            live_claims['mcp_read'] = entry.get('mcp_read')
         try:
             verify_live_delegated_authority_against_token(str(entry['agent_id']), cc_val, live_claims)
         except McpIdentityUnavailable:
@@ -802,61 +768,40 @@ def forward_call_log(entry: dict[str, Any]) -> None:
                 entry['error_code'] = 'authority_mismatch'
     assertion = build_mcp_call_log_assertion(audience_url=origin, **signing_kwargs())
     url = f'{base}/api/v1/mcp/internal/mcp-call-logs'
-    meth = entry.get('method')
     stat = entry.get('http_status')
     dur_raw = entry.get('duration_ms')
     try:
         dur_val = strict_json_nonneg_int(dur_raw, field='duration_ms')
     except AgentClaimsValidationError:
         return
+    ak = str(entry.get('access_kind') or '').strip().lower()
+    if ak not in ('read', 'write', 'destructive'):
+        ak = 'unknown'
+    try:
+        hs = strict_json_nonneg_int(stat, field='http_status') if stat is not None else 0
+    except AgentClaimsValidationError:
+        return
     body: dict[str, Any] = {
-        'agent_id': entry.get('agent_id'),
+        'agent_id': str(entry.get('agent_id') or ''),
         'company_id': cc_val,
-        'service': entry.get('service'),
-        'tool': entry.get('tool'),
-        'method': meth,
-        'resource_path': entry.get('resource_path'),
-        'access_kind': entry.get('access_kind'),
-        'outcome': entry.get('outcome'),
+        'service': str(entry.get('service') or '')[:32],
+        'tool': str(entry.get('tool') or '')[:255],
+        'method': 'POST',
+        'path': '/mcp',
+        'status': hs,
         'duration_ms': dur_val,
+        'result': '',
+        'outcome': str(entry.get('outcome') or '').strip().lower(),
+        'access_kind': ak,
     }
-    if stat is not None:
-        try:
-            hs = strict_json_nonneg_int(stat, field='http_status')
-        except AgentClaimsValidationError:
-            return
-        body['http_status'] = hs
     if entry.get('error_code'):
         body['error_code'] = str(entry['error_code'])
-    if entry.get('approval_request_id'):
-        body['approval_request_id'] = str(entry['approval_request_id'])
-    if entry.get('arguments_hash'):
-        body['arguments_hash'] = str(entry['arguments_hash'])
-    if entry.get('request_id'):
-        body['request_id'] = str(entry['request_id'])
-    gv = entry.get('grant_version')
-    if gv is not None:
+    appr = entry.get('approval_request_id')
+    if appr:
         try:
-            body['grant_version'] = strict_json_nonneg_int(gv, field='grant_version')
-        except AgentClaimsValidationError:
-            return
-    if entry.get('global_company_id') is not None:
-        body['global_company_id'] = str(entry['global_company_id'])
-    if entry.get('company_binding_version') is not None:
-        try:
-            body['company_binding_version'] = strict_json_nonneg_int(
-                entry['company_binding_version'], field='company_binding_version'
-            )
-        except AgentClaimsValidationError:
-            return
-    try:
-        from apps.email.models import CompanyProfile
-
-        profile = CompanyProfile.objects.filter(company_id=cc_val).only('name').first()
-        if profile and (profile.name or '').strip():
-            body['company_name'] = str(profile.name).strip()
-    except (TypeError, ValueError, OSError):
-        pass
+            body['approval_id'] = str(uuid.UUID(str(appr)))
+        except (ValueError, TypeError):
+            pass
     try:
         response = requests.post(
             url,
