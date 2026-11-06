@@ -40,6 +40,10 @@ class McpAgentCompanyMismatch(Exception):
     """Token does not match signed revocation authority; ``args[0]`` is a stable machine code."""
 
 
+class McpDelegatedApprovalRoutingError(McpAgentCompanyMismatch):
+    """Delegated agents must use the regional AI gateway for Identity approvals (HTTP ``409`` ``out_of_sync``)."""
+
+
 _revocation_snapshot: dict[str, Any] = {
     'fetched_at': 0.0,
     'ids': frozenset(),
@@ -105,17 +109,24 @@ def _strict_snapshot_int(raw: Any, *, field: str) -> int:
     return raw
 
 
-_DELEGATED_AUTHORITY_SUCCESS_KEYS = frozenset(
+# Identity ``_delegated_authority_fixed_payload`` (``d7fe351`` ``internal_views.py``): every HTTP **200** body uses these 15 keys only.
+_DELEGATED_AUTHORITY_FIXED_200_KEYS = frozenset(
     {
         'authorized',
+        'active',
         'revoked',
         'paused',
         'agent_id',
-        'global_agent_id',
         'company_id',
+        'global_agent_id',
         'global_company_id',
         'grant_version',
         'company_binding_version',
+        'access_mode',
+        'read_level',
+        'allow_destructive',
+        'services_allowed',
+        'revoked_at',
     }
 )
 
@@ -131,16 +142,17 @@ def _parse_live_delegated_authority_body(
     claims: dict[str, Any],
 ) -> dict[str, Any]:
     """
-    Strict JSON body from Identity ``POST …/mcp-agent-delegated-authority`` (HTTP ``200``).
+    JSON body from Identity ``POST …/mcp-agent-delegated-authority`` (HTTP ``200``).
 
-    Identity ``McpInternalDelegatedAgentAuthorityView`` success shape: exact key set, JSON types only.
-    See ``shellui/identity-service`` ``apps/agents/internal_views.py`` (delegated authority response).
+    Identity ``McpInternalDelegatedAgentAuthorityView`` (PR #135, head ``d7fe351``) returns the same **15** JSON keys on every HTTP **200**
+    (``_delegated_authority_fixed_payload``): both live match and binding mismatch. ``authorized`` false means the caller must treat the row as denied (mismatch, or inactive or revoked agent).
     """
     if not isinstance(body, dict):
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
     if 'agent' in body:
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
-    if frozenset(body.keys()) != _DELEGATED_AUTHORITY_SUCCESS_KEYS:
+    keys = frozenset(body.keys())
+    if keys != _DELEGATED_AUTHORITY_FIXED_200_KEYS:
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
 
     aid = str(agent_id or '').strip()
@@ -154,7 +166,28 @@ def _parse_live_delegated_authority_body(
             return raw
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
 
-    if not _strict_bool(body.get('authorized')):
+    rva = body.get('revoked_at')
+    if rva is not None:
+        if type(rva) is not int or isinstance(rva, bool) or rva < 0:
+            raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+
+    svc = body.get('services_allowed')
+    if not isinstance(svc, list) or not all(type(x) is str for x in svc):
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+
+    am = body.get('access_mode')
+    rl = body.get('read_level')
+    if type(am) is not str or not str(am).strip() or type(rl) is not str or not str(rl).strip():
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    _strict_bool(body.get('allow_destructive'))
+
+    authz = body.get('authorized')
+    if authz is False:
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    if authz is not True:
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+
+    if _strict_bool(body.get('active')) is not True:
         raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
     if _strict_bool(body.get('revoked')):
         raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
@@ -216,6 +249,10 @@ def _parse_live_delegated_authority_body(
         'company_binding_version': int(cbv_raw),
         'grant_version': int(gv_raw),
     }
+
+
+# Tests and contract checks compare this to Identity ``_delegated_authority_fixed_payload`` keys (15 total).
+_DELEGATED_AUTHORITY_SUCCESS_KEYS = _DELEGATED_AUTHORITY_FIXED_200_KEYS
 
 
 def _delegated_authority_assertion_headers() -> dict[str, str]:
@@ -594,6 +631,16 @@ def _maybe_verify_live_delegated_for_approval(payload: dict[str, Any]) -> None:
     )
 
 
+def _approval_post_out_of_sync(response: Any) -> bool:
+    if getattr(response, 'status_code', None) != 409:
+        return False
+    try:
+        data = response.json()
+    except ValueError:
+        return False
+    return str(data.get('error_code') or '').strip() == 'out_of_sync'
+
+
 def resolve_approval_state(payload: dict[str, Any]) -> str | None:
     """Ask Identity for pending, approved, expired (consumed), or denied state."""
     global _last_approval_state_extras
@@ -614,6 +661,8 @@ def resolve_approval_state(payload: dict[str, Any]) -> str | None:
         )
         if response.status_code == 404:
             return 'not_found'
+        if _approval_post_out_of_sync(response):
+            raise McpDelegatedApprovalRoutingError('approval_routed_via_ai_only')
         response.raise_for_status()
         try:
             body = response.json()
@@ -639,6 +688,8 @@ def resolve_approval_state(payload: dict[str, Any]) -> str | None:
         if state in {'pending', 'denied'}:
             return state
         return 'unknown'
+    except McpDelegatedApprovalRoutingError:
+        raise
     except McpIdentityUnavailable:
         raise
     except (requests.RequestException, OSError) as exc:
@@ -664,6 +715,8 @@ def consume_approval(approval_id: str, *, payload: dict[str, Any] | None = None)
         )
         if response.status_code == 404:
             raise McpIdentityUnavailable('approval_consume_endpoint_missing')
+        if _approval_post_out_of_sync(response):
+            raise McpDelegatedApprovalRoutingError('approval_routed_via_ai_only')
         response.raise_for_status()
         try:
             body = response.json()
@@ -672,6 +725,8 @@ def consume_approval(approval_id: str, *, payload: dict[str, Any] | None = None)
         if body.get('consumed') is not True:
             raise McpIdentityUnavailable('approval_consume_not_true')
         return True
+    except McpDelegatedApprovalRoutingError:
+        raise
     except McpIdentityUnavailable:
         raise
     except (requests.RequestException, OSError) as exc:
@@ -698,6 +753,8 @@ def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
         )
         if response.status_code == 404:
             raise McpIdentityUnavailable('approval_create_endpoint_missing')
+        if _approval_post_out_of_sync(response):
+            raise McpDelegatedApprovalRoutingError('approval_routed_via_ai_only')
         response.raise_for_status()
         data = response.json()
         rid = data.get('approval_request_id') or data.get('id')
@@ -708,6 +765,8 @@ def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
             except (ValueError, TypeError):
                 out['id'] = str(rid)
         return out if out.get('id') else None
+    except McpDelegatedApprovalRoutingError:
+        raise
     except McpIdentityUnavailable:
         raise
     except (requests.RequestException, OSError) as exc:
@@ -794,6 +853,22 @@ def forward_call_log(entry: dict[str, Any]) -> None:
         'outcome': str(entry.get('outcome') or '').strip().lower(),
         'access_kind': ak,
     }
+    try:
+        gv_entry = entry.get('grant_version')
+        if gv_entry is None:
+            body['grant_version'] = 0
+        else:
+            body['grant_version'] = strict_json_nonneg_int(gv_entry, field='grant_version')
+    except AgentClaimsValidationError:
+        return
+    gci_entry = entry.get('global_company_id')
+    cbv_entry = entry.get('company_binding_version')
+    if gci_entry is not None and cbv_entry is not None:
+        try:
+            body['global_company_id'] = str(gci_entry)
+            body['company_binding_version'] = strict_json_nonneg_int(cbv_entry, field='company_binding_version')
+        except AgentClaimsValidationError:
+            return
     if entry.get('error_code'):
         body['error_code'] = str(entry['error_code'])
     appr = entry.get('approval_request_id')

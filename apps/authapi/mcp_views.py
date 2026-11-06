@@ -13,8 +13,10 @@ from rest_framework.views import APIView
 from apps.authapi.email_mcp_server import EmailMcpServer
 from apps.authapi.mcp_agent import authenticate_agent_request
 from apps.authapi.mcp_identity import (
+    McpDelegatedApprovalRoutingError,
     McpAgentCompanyMismatch,
     McpIdentityUnavailable,
+    agent_is_revoked,
     ensure_revocation_snapshot,
     identity_origin,
     verify_agent_company_binding,
@@ -124,7 +126,10 @@ def mcp_endpoint(request: HttpRequest):
     if claims is not None:
         try:
             ensure_revocation_snapshot()
-            verify_agent_company_binding(str(claims.get('agent_id') or ''), int(claims['company_id']), claims=claims)
+            aid_bind = str(claims.get('agent_id') or '')
+            if aid_bind and agent_is_revoked(aid_bind):
+                return JsonResponse({'error': 'agent_revoked'}, status=403)
+            verify_agent_company_binding(aid_bind, int(claims['company_id']), claims=claims)
         except McpIdentityUnavailable:
             return JsonResponse({'error': 'identity_unavailable'}, status=503)
         except McpAgentCompanyMismatch as exc:
@@ -138,5 +143,7 @@ def mcp_endpoint(request: HttpRequest):
             return JsonResponse({'error': 'forbidden'}, status=403)
     try:
         return _get_server().handle(request, agent_claims=claims)
+    except McpDelegatedApprovalRoutingError:
+        return JsonResponse({'error_code': 'out_of_sync'}, status=409)
     except McpIdentityUnavailable:
         return JsonResponse({'error': 'identity_unavailable'}, status=503)

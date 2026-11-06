@@ -170,14 +170,20 @@ def _delegated_live_row_from_snapshot_row(
         gaid = str(uuid.uuid5(uuid.NAMESPACE_URL, f'mcp-delegated-global-agent:{aid}'))
     return {
         'authorized': True,
+        'active': True,
         'revoked': False,
         'paused': False,
         'agent_id': aid,
-        'global_agent_id': gaid,
         'company_id': int(match['company_id']),
+        'global_agent_id': gaid,
         'global_company_id': str(gcid),
-        'company_binding_version': int(match['company_binding_version']),
         'grant_version': int(match['grant_version']),
+        'company_binding_version': int(match['company_binding_version']),
+        'access_mode': 'read_only',
+        'read_level': 'safe',
+        'allow_destructive': False,
+        'services_allowed': ['email'],
+        'revoked_at': None,
     }
 
 
@@ -253,9 +259,16 @@ def make_identity_post_side_effect(agents_fn):
                 or int(cbv) != int(match['company_binding_version'])
                 or int(gv) != int(match['grant_version'])
             ):
-                nf = MagicMock()
-                nf.status_code = 404
-                return nf
+                base = _delegated_live_row_from_snapshot_row(match, agent_id=aid)
+                denial = {
+                    **base,
+                    'authorized': False,
+                    'active': False,
+                    'global_company_id': str(ggc),
+                    'grant_version': int(gv),
+                    'company_binding_version': int(cbv),
+                }
+                return _live_delegated_authority_response(row=denial)
             return _live_delegated_authority_response(row=row)
         if any(
             part in s
@@ -663,6 +676,62 @@ class McpEndpointTests(TestCase):
         self.assertEqual(result.get('meta', {}).get('approval_request_id'), 'approval-123')
 
     @patch('apps.authapi.mcp_identity.requests.post')
+    def test_delegated_approval_out_of_sync_returns_409(self, mock_post):
+        """Identity ``409`` ``out_of_sync``: delegated approvals must go through the AI gateway."""
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        delegated = self._default_identity_post_chain()
+
+        def post_side_effect(url, **kwargs):
+            s = str(url)
+            if 'mcp-approval-state' in s:
+                r = MagicMock()
+                r.status_code = 409
+                r.json = MagicMock(return_value={'error_code': 'out_of_sync'})
+                return r
+            return delegated(url, **kwargs)
+
+        mock_post.side_effect = post_side_effect
+        reset_mcp_server_cache()
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        self._set_revocation_agents(
+            [
+                {
+                    'agent_id': agent_id,
+                    'company_id': 42,
+                    'global_company_id': gcid,
+                    'company_binding_version': 0,
+                    'grant_version': 0,
+                }
+            ]
+        )
+        token, _ = _agent_token(
+            agent_id=agent_id,
+            access='ask',
+            global_company_id=gcid,
+            company_binding_version=0,
+            grant_version=0,
+        )
+        response = _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {
+                'name': 'api_v1_rules_create',
+                'arguments': {
+                    'path': '/api/v1/rules',
+                    'method': 'POST',
+                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json().get('error_code'), 'out_of_sync')
+        mock_post.side_effect = self._default_identity_post_chain()
+        self._set_revocation_agents(None)
+
+    @patch('apps.authapi.mcp_identity.requests.post')
     def test_approval_state_transport_failure_refuses_write(self, mock_post):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
@@ -825,7 +894,7 @@ class McpEndpointTests(TestCase):
         self.assertEqual(response.json()['error'], 'identity_unavailable')
         mock_post.side_effect = self._default_identity_post_chain()
 
-    def test_delegated_live_authority_grant_mismatch_forbidden(self):
+    def test_delegated_live_authority_grant_mismatch_denial_row_forbidden(self):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
@@ -846,8 +915,25 @@ class McpEndpointTests(TestCase):
         def post_split(url, **kwargs):
             s = str(url)
             if 'mcp-agent-delegated-authority' in s:
-                row = _delegated_live_row_from_snapshot_row(agents[0], agent_id=agent_id)
-                row['grant_version'] = 99
+                body = kwargs.get('json') or {}
+                gaid = str(uuid.uuid4())
+                row = {
+                    'authorized': False,
+                    'active': False,
+                    'revoked': False,
+                    'paused': False,
+                    'agent_id': str(body.get('agent_id') or ''),
+                    'company_id': int(body['company_id']),
+                    'global_agent_id': gaid,
+                    'global_company_id': str(body['global_company_id']),
+                    'grant_version': int(body['grant_version']),
+                    'company_binding_version': int(body['company_binding_version']),
+                    'access_mode': 'read_only',
+                    'read_level': 'safe',
+                    'allow_destructive': False,
+                    'services_allowed': ['email'],
+                    'revoked_at': None,
+                }
                 r = MagicMock()
                 r.status_code = 200
                 r.raise_for_status = MagicMock()
@@ -1630,6 +1716,36 @@ class McpEndpointTests(TestCase):
         self.assertNotIn('resource_path', body)
         self.assertNotIn('http_status', body)
         self.assertEqual(body.get('result'), '')
+        self.assertEqual(body.get('grant_version'), 0)
+
+    @patch('apps.authapi.mcp_identity.verify_live_delegated_authority_against_token')
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_forward_call_log_delegated_includes_grant_and_binding(self, mock_post, _mock_verify_live):
+        mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
+        from apps.authapi.mcp_identity import forward_call_log
+
+        gcid = str(uuid.uuid4())
+        forward_call_log(
+            {
+                'company_id': 42,
+                'agent_id': str(uuid.uuid4()),
+                'global_company_id': gcid,
+                'company_binding_version': 0,
+                'grant_version': 1,
+                'service': 'email',
+                'tool': 'api_v1_rules_list',
+                'method': 'GET',
+                'resource_path': '/api/v1/rules',
+                'access_kind': 'read',
+                'outcome': 'allowed',
+                'duration_ms': 1,
+                'http_status': 200,
+            }
+        )
+        body = mock_post.call_args.kwargs['json']
+        self.assertEqual(body.get('grant_version'), 1)
+        self.assertEqual(body.get('global_company_id'), gcid)
+        self.assertEqual(body.get('company_binding_version'), 0)
 
     @patch('apps.authapi.mcp_identity.verify_live_delegated_authority_against_token')
     @patch('apps.authapi.mcp_identity.requests.post')

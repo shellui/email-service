@@ -18,7 +18,11 @@ from shellui_django.mcp.server import McpServer
 from shellui_django.mcp.write_gate import decide_write, is_destructive_operation
 
 from apps.authapi.mcp_claims import AgentClaimsValidationError, normalize_mcp_agent_claims, strict_json_nonneg_int
-from apps.authapi.mcp_identity import McpIdentityUnavailable, last_approval_state_extras
+from apps.authapi.mcp_identity import (
+    McpDelegatedApprovalRoutingError,
+    McpIdentityUnavailable,
+    last_approval_state_extras,
+)
 
 _BODYLESS_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS', 'TRACE'})
 
@@ -111,9 +115,10 @@ def _flat_audit_entry(
         entry['arguments_hash'] = arguments_hash
     if request_id:
         entry['request_id'] = request_id
-    gv = agent_claims.get('grant_version')
-    if gv is not None:
-        entry['grant_version'] = strict_json_nonneg_int(gv, field='grant_version')
+    if 'grant_version' in agent_claims:
+        entry['grant_version'] = strict_json_nonneg_int(agent_claims['grant_version'], field='grant_version')
+    else:
+        entry['grant_version'] = 0
     if agent_claims.get('global_company_id') is not None:
         entry['global_company_id'] = str(agent_claims['global_company_id'])
     cbv = agent_claims.get('company_binding_version')
@@ -259,6 +264,8 @@ class EmailMcpServer(McpServer):
             if self.approval_state:
                 try:
                     state = self.approval_state(approval_payload)
+                except McpDelegatedApprovalRoutingError:
+                    raise
                 except McpIdentityUnavailable:
                     identity_state_failed = True
                     state = None
@@ -462,6 +469,8 @@ class EmailMcpServer(McpServer):
             if not granted and self.approval_handler:
                 try:
                     pending = self.approval_handler(approval_payload)
+                except McpDelegatedApprovalRoutingError:
+                    raise
                 except McpIdentityUnavailable:
                     if self.on_call:
                         self.on_call(

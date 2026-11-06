@@ -1,11 +1,11 @@
 """Parity checks against public Identity ``identity-service`` internal MCP contracts (raw source).
 
-Delegated authority success body:
-https://raw.githubusercontent.com/shellui/identity-service/d79d433278ac18695a6165448bf0b8cfe56c88a5/apps/agents/internal_views.py
-(``McpInternalDelegatedAgentAuthorityView`` HTTP 200 keys only.)
+Delegated authority response body (every HTTP 200 uses the same 15 keys):
+https://raw.githubusercontent.com/shellui/identity-service/d7fe351/apps/agents/internal_views.py
+(``_delegated_authority_fixed_payload`` / ``McpInternalDelegatedAgentAuthorityView``.)
 
 Call log ingest body shape exercised via ``forward_call_log``:
-https://raw.githubusercontent.com/shellui/identity-service/d79d433278ac18695a6165448bf0b8cfe56c88a5/apps/agents/internal_views.py
+https://raw.githubusercontent.com/shellui/identity-service/d7fe351/apps/agents/internal_views.py
 (``McpInternalCallLogView``); path must canonicalize to ``POST /mcp`` for email (``call_log_internal.fixed_resource_label_for_service``).
 """
 
@@ -19,10 +19,11 @@ from django.test import SimpleTestCase, override_settings
 from apps.authapi.mcp_identity import _DELEGATED_AUTHORITY_SUCCESS_KEYS, forward_call_log
 from apps.authapi.tests.test_mcp_endpoint import MCP_SETTINGS
 
-# Copied key set from Identity ``McpInternalDelegatedAgentAuthorityView`` success ``Response`` dict.
+# Copied key set from Identity ``_delegated_authority_fixed_payload`` (15 keys, every 200).
 _IDENTITY_DELEGATED_AGENT_AUTHORITY_200_KEYS = frozenset(
     {
         'authorized',
+        'active',
         'revoked',
         'paused',
         'agent_id',
@@ -31,6 +32,11 @@ _IDENTITY_DELEGATED_AGENT_AUTHORITY_200_KEYS = frozenset(
         'global_company_id',
         'grant_version',
         'company_binding_version',
+        'access_mode',
+        'read_level',
+        'allow_destructive',
+        'services_allowed',
+        'revoked_at',
     }
 )
 
@@ -73,3 +79,4 @@ class IdentityCallLogContractTests(SimpleTestCase):
         self.assertNotIn('http_status', body)
         self.assertNotIn('company_name', body)
         self.assertNotIn('arguments_hash', body)
+        self.assertEqual(body.get('grant_version'), 0)
