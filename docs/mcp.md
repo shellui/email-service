@@ -69,9 +69,9 @@ Activity and call logs use the categorical **`outcome`** values above. Older act
 
 Internal calls use short-lived RS256 assertions from this service's key. Configure them with env vars `EMAIL_SERVICE_SIGNING_KEY` or `EMAIL_SERVICE_SIGNING_KEY_FILE` and `EMAIL_SERVICE_ISSUER` (loaded in Django as `MCP_SIGNING_KEY_PEM` and `MCP_SIGNING_ISSUER`; public keys at `GET /.well-known/jwks.json`). Revocation and approval reuse `shellui_django.mcp.internal` builders (`shellui-mcp-revocation`, `shellui-mcp-call-log`, `shellui-mcp-approval`). The live delegated row uses `build_mcp_delegated_authority_assertion` in `config/service_signing.py` (`shellui-mcp-agent-delegated-authority`). Revocation poll responses are verified with Identity JWKS via `parse_trusted_revocation_poll_response`.
 
-email-service pins **`shellui-django`** to django-commons **`develop`** at git commit **`1f0754b421688ed26b7eb2e76b25b6fa3eea2a37`** (`pyproject.toml` / `uv.lock`). Install from that git ref, not PyPI, when you need a matching build.
+email-service depends on **`shellui-django[mcp]==0.5.0`** from PyPI (`pyproject.toml` and `uv.lock`).
 
-Approval assertions always use `shellui_django.mcp.internal.build_mcp_approval_assertion` from that pin:
+Approval assertions always use `shellui_django.mcp.internal.build_mcp_approval_assertion` from `shellui-django` 0.5.0:
 
 - **Personal regional:** `grant_version` and `mcp_destructive` are required on the JWT; omit `global_company_id` and `company_binding_version`.
 - **Globally delegated:** `global_company_id` (UUID string), `company_binding_version`, `grant_version`, and **`global_agent_id`** are **all required** on every create, state, and consume path (never truthiness: `0` is valid). Incomplete sets are refused.
@@ -269,6 +269,6 @@ Regional agent tokens are minted for this host and `{origin}/mcp` only. Shellui 
 
 ## Internal assertions to Identity
 
-Revocation polling, approvals and call logs send Identity a short-lived RS256 assertion signed with this service's own key (`EMAIL_SERVICE_SIGNING_KEY` or `EMAIL_SERVICE_SIGNING_KEY_FILE`, issuer `EMAIL_SERVICE_ISSUER`, `shellui-django` from the git pin in `uv.lock`). The public key is served at `GET /.well-known/jwks.json`. Identity trusts it only when its own configured issuer matches this service, and reads the key from `EMAIL_SERVICE_JWKS_URL` or a pinned `EMAIL_SERVICE_JWKS`. Without a key, MCP fails closed: agents are refused and call logs are skipped.
+Revocation polling, approvals and call logs send Identity a short-lived RS256 assertion signed with this service's own key (`EMAIL_SERVICE_SIGNING_KEY` or `EMAIL_SERVICE_SIGNING_KEY_FILE`, issuer `EMAIL_SERVICE_ISSUER`). The helpers come from PyPI as `shellui-django[mcp]==0.5.0` (`uv.lock`). The public key is served at `GET /.well-known/jwks.json`. Identity trusts it only when its own configured issuer matches this service, and reads the key from `EMAIL_SERVICE_JWKS_URL` or a pinned `EMAIL_SERVICE_JWKS`. Without a key, MCP fails closed: agents are refused and call logs are skipped.
 
 Generate a key with `openssl genrsa 3072` and keep it in a secret store or a mounted file (`EMAIL_SERVICE_SIGNING_KEY_FILE`).
