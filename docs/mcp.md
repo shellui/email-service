@@ -21,13 +21,14 @@ Required claims:
 | Claim | Purpose |
 | --- | --- |
 | `agent_id` | Agent uuid |
-| `company_id` | Regional company scope as a JSON number (integer, non-negative). String forms and booleans are rejected. |
+| `company_id` | Regional company scope as a JSON number (integer, non-negative). Reject strings, floats, and booleans (`true` and `false` are not integers). |
 | `scope` | Must include `email` |
 | `mcp_access` | `read_only`, `ask`, or `full` |
 | `mcp_read` | `safe` or `sensitive` |
 | `mcp_destructive` | Must be JSON boolean (`true` or `false`). Marks the agent as eligible for destructive tools. **Every** destructive call still needs a fresh human approval in Identity. |
+| `mcp_authority` | `personal` or `delegated`. When the global triple below is present, this claim must be `delegated`. Values such as `global_delegated` are rejected. Omit or set `personal` when there is no global triple. |
 
-Optional claims for globally delegated agents (Identity admin documentation). Either omit all three or include all three together:
+Optional claims for globally delegated agents (Identity documentation). Either omit all three or include all three together:
 
 | Claim | Purpose |
 | --- | --- |
@@ -36,6 +37,8 @@ Optional claims for globally delegated agents (Identity admin documentation). Ei
 | `grant_version` | Non-negative JSON integer; optional for personal agents, required with the other two for delegation |
 
 Personal regional agents omit all three. Tokens that set only one or two of the three are rejected. Optional `grant_version` alone (including `0`) is allowed for personal agents.
+
+Regional resource tokens use audience `{EMAIL_PUBLIC_URL}/mcp` for this host. Do not exchange a global-only token for email MCP without Identity re-minting the regional profile above.
 
 ## Access modes
 
@@ -51,16 +54,16 @@ Read-safe mode (`mcp_read=safe`) masks emails and other sensitive strings in too
 
 email-service reuses existing Identity URL settings (no new required env vars):
 
-- Poll `GET {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-revocations` (30 second cache) with a signed service assertion (`aud` `shellui-mcp-revocation`, scope `mcp.revocation.read`). The response includes revoked agent ids plus a signed `agents[]` snapshot. If the list or snapshot is missing or untrusted on a poll, MCP fails closed. Before each MCP request, the token must match **exactly one** row for `agent_id`: regional `company_id` must match the JWT (JSON integers only in the snapshot; no string coercion). A delegated row must include `global_company_id`, `company_binding_version`, and `grant_version`, and those must match the JWT triple (including `0` values). Duplicate rows for one agent id or no row for a live token are refused.
-- **Delegated agents (global triple in the JWT):** After the snapshot check, email-service calls `GET {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-agent-delegated-authority?agent_id=…` with the same service-signed assertion as the revocation poll. Identity returns a minimal live row (no agent signing secret, no JWT for the agent). MCP matches that row to the regional token: same `agent_id`, same regional `company_id`, same canonical `global_company_id`, and same non-negative JSON integers for `company_binding_version` and `grant_version` (`0` is valid). Snapshot agreement alone is not enough. If Identity omits the row (`404`), returns a non-authoritative row (for example `revoked` or `paused` true), or email-service cannot reach Identity, MCP fails closed (`403` or `503`). Personal regional agents (no global triple) do not use this call; they keep the snapshot plus `max_active_grant_version` behavior.
-- Forward **flat** audit rows to `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-call-logs` (no tool `arguments`, no response bodies).
+- Poll `GET {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-revocations` (30 second cache) with a signed service assertion (`aud` `shellui-mcp-revocation`, scope `mcp.revocation.read`). The response includes **revoked** agent ids (`revoked_agent_ids`) plus a signed `agents[]` snapshot. Presence in `revoked_agent_ids` means the agent is blocked; absence does **not** prove an active grant. If the list or snapshot is missing or untrusted on a poll, MCP fails closed. Before each MCP request, the token must match **exactly one** row for `agent_id`: regional `company_id` must match the JWT (JSON integers only in the snapshot; no string coercion). Delegated rows with `mcp_authority_snapshot_rejected` true are refused. A delegated row must include `global_company_id`, `company_binding_version`, and `grant_version`, and those must match the JWT triple (including `0` values). Duplicate rows for one agent id or no row for a live token are refused.
+- **Delegated agents (global triple in the JWT):** After the snapshot check, email-service calls `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-delegated-agent-authority` with JSON body `{"agent_id":"<uuid>"}` and a **separate** service JWT (`aud` `shellui-mcp-delegated-authority`, scope `mcp.delegated_authority.read`, `target` = Identity issuer URL). Identity returns a minimal live row (no agent signing secret, no JWT for the agent). MCP matches that row to the regional token: same `agent_id`, same regional `company_id`, same canonical `global_company_id`, and same non-negative JSON integers for `company_binding_version` and `grant_version` (`0` is valid). Snapshot agreement alone is not enough. email-service repeats this live check before each approval state, approval create, approval consume, and delegated call log forward. If Identity omits the row (`404`), returns a non-authoritative row (for example `revoked` or `paused` true), or email-service cannot reach Identity, MCP fails closed (`403` or `503`). Personal regional agents (no global triple) do not use this call; they keep the snapshot plus `max_active_grant_version` behavior.
+- Forward **flat** audit rows to `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-call-logs` (no tool `arguments`, no response bodies). Rows send `method` and duplicate `http_method`, plus `http_status` and duplicate `status`, so Identity ingestion can accept either name. Identity #135 is the source of truth for the final allowlist.
 - Create approval rows with `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-approval-requests` using an `Authorization: Bearer` service assertion only (JSON body is `{}`; the action fingerprint is in the assertion claims, not in the POST body). Do not send `arguments`, `arguments_redacted`, titles, or paths in the request body. For delegated agents, the assertion must carry the **full** triple from the verified regional JWT (`global_company_id`, `company_binding_version`, `grant_version`); do not default `grant_version` to `0` or omit fields when the token carries a global triple.
 
-Approval state lookup (`mcp-approval-state`) returns `not_found` when Identity has no row yet for that assertion fingerprint, `pending`, `approved`, `denied`, or `expired` (treated as already consumed). Any other status, a missing `status`, invalid JSON, an `approved` row without an approval id, or transport failure makes the write path stop without creating a duplicate pending row (treated as denied when the contract is broken; transport errors return `503 identity_unavailable`). Identity approval APIs validate the assertion and live authority; email-service maps unknown HTTP success shapes to failure, not success.
+Approval state lookup (`mcp-approval-state`) returns JSON with `status` among `not_found` (no row yet), `pending`, `approved`, `denied`, or `expired` (treated as already consumed). email-service maps those to call-log **`outcome`** `pending_approval` where appropriate (not the literal string `pending`). Any other status, a missing `status`, invalid JSON, an `approved` row without an approval id, or transport failure makes the write path stop without creating a duplicate pending row (treated as denied when the contract is broken; transport errors return `503 identity_unavailable`). Identity approval APIs validate the assertion and live authority; email-service maps unknown HTTP success shapes to failure, not success.
 
 Activity and call logs use the categorical **`outcome`** values above. Older activity labels (`pending`, `success`, `session`, and similar) may still appear read-only in UIs; this service writes only the five outcomes listed here. **`error_code`** on forwarded rows is taken from this service's own enums (for example validation, approval, rate limit), not from arbitrary provider response bodies or external URLs.
 
-Internal calls use short-lived JWT assertions from the shared `shellui_django.mcp` helpers (`aud` `shellui-mcp-call-log` or `shellui-mcp-approval`). Outbound signing uses `JWT_PRIVATE_KEY` (RS256, same key as identity-service in production). Revocation poll responses are verified with Identity JWKS via `parse_trusted_revocation_poll_response`.
+Internal calls use short-lived RS256 assertions from this service's key. Configure them with env vars `EMAIL_SERVICE_SIGNING_KEY` or `EMAIL_SERVICE_SIGNING_KEY_FILE` and `EMAIL_SERVICE_ISSUER` (loaded in Django as `MCP_SIGNING_KEY_PEM` and `MCP_SIGNING_ISSUER`; public keys at `GET /.well-known/jwks.json`). Revocation and approval reuse `shellui_django.mcp.internal` builders (`shellui-mcp-revocation`, `shellui-mcp-call-log`, `shellui-mcp-approval`). The live delegated row uses `build_mcp_delegated_authority_assertion` in `config/service_signing.py` (`shellui-mcp-delegated-authority`). Revocation poll responses are verified with Identity JWKS via `parse_trusted_revocation_poll_response`.
 
 email-service pins **`shellui-django`** to django-commons **`develop`** at git commit **`1f0754b421688ed26b7eb2e76b25b6fa3eea2a37`** (`pyproject.toml` / `uv.lock`). Install from that git ref, not PyPI, when you need a matching build.
 
@@ -90,10 +93,10 @@ Rows also include `operation_title` from the OpenAPI summary when present, `argu
 
 **`outcome`** (Identity call-log vocabulary): `failed`, `denied`, `pending_approval`, `allowed`, `session_used`.
 
-- **`allowed`**: HTTP tool completed without error and the call did not consume a one-shot Identity approval (read-only or non-destructive write under `full`, or `ask` write after live approval without a consume step in this path).
-- **`session_used`**: Same as `allowed` but this execution consumed a one-shot Identity approval for this fingerprint (`ask` mode after successful `mcp-approval-consume`).
+- **`allowed`**: HTTP tool completed without error, including after a successful one-shot `mcp-approval-consume` in `ask` mode.
+- **`session_used`**: Reserved for a future **session grant** path when Identity issues a reusable session (not used for one-shot approval consume today).
 - **`pending_approval`**: Waiting on a human decision in Identity (new request or existing pending row).
-- **`denied`**: Identity denied the approval, write gate denied the call, or approval already used (`session_used` is not used there).
+- **`denied`**: Identity denied the approval, write gate denied the call, or approval already used.
 - **`failed`**: Validation error, transport or Identity internal error, API error response, rate limit, or any outcome that is not a known success path (do not treat an unspecified `2xx` as allowed when the contract does not define a result).
 
 Optional **`error_code`**: `forbidden`, `not_found`, `validation_failed`, `conflict`, `server_error`, `request_failed`, `identity_unavailable`, `tool_error`, `read_only_blocked`, `approval_pending`, `approval_denied`, `approval_expired`, `rate_limited`, `authority_ambiguous`, `authority_mismatch`, `authority_row_missing`.
@@ -258,6 +261,6 @@ Regional agent tokens are minted for this host and `{origin}/mcp`. Other product
 
 ## Internal assertions to Identity
 
-Revocation polling, approvals and call logs send Identity a short-lived RS256 assertion signed with this service's own key (`EMAIL_SERVICE_SIGNING_KEY`, issuer `EMAIL_SERVICE_ISSUER`, `shellui-django` from the git pin in `uv.lock`). The public key is served at `GET /.well-known/jwks.json`. Identity trusts it only when its own `EMAIL_SERVICE_ISSUER` matches, and reads the key from `EMAIL_SERVICE_JWKS_URL` or a pinned `EMAIL_SERVICE_JWKS`. Without a key, MCP fails closed: agents are refused and call logs are skipped.
+Revocation polling, approvals and call logs send Identity a short-lived RS256 assertion signed with this service's own key (`EMAIL_SERVICE_SIGNING_KEY` or `EMAIL_SERVICE_SIGNING_KEY_FILE`, issuer `EMAIL_SERVICE_ISSUER`, `shellui-django` from the git pin in `uv.lock`). The public key is served at `GET /.well-known/jwks.json`. Identity trusts it only when its own configured issuer matches this service, and reads the key from `EMAIL_SERVICE_JWKS_URL` or a pinned `EMAIL_SERVICE_JWKS`. Without a key, MCP fails closed: agents are refused and call logs are skipped.
 
 Generate a key with `openssl genrsa 3072` and keep it in a secret store or a mounted file (`EMAIL_SERVICE_SIGNING_KEY_FILE`).

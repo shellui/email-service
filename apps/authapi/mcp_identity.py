@@ -18,7 +18,9 @@ from shellui_django.mcp.internal import (
     parse_trusted_revocation_poll_response,
 )
 
-from config.service_signing import signing_kwargs
+from config.service_signing import build_mcp_delegated_authority_assertion, signing_kwargs
+
+from apps.authapi.mcp_claims import AgentClaimsValidationError, strict_json_nonneg_int
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +107,7 @@ def _strict_snapshot_int(raw: Any, *, field: str) -> int:
 
 def _parse_live_delegated_authority_body(body: Any, *, agent_id: str) -> dict[str, Any]:
     """
-    Strict JSON body from Identity ``mcp-agent-delegated-authority`` (service-authenticated GET).
+    Strict JSON body from Identity live delegated-authority endpoint (POST).
 
     Returns canonical ``agent_id``, ``company_id``, ``global_company_id``, ``company_binding_version``,
     ``grant_version`` with JSON int types only for numeric fields (``0`` is valid).
@@ -156,23 +158,30 @@ def _parse_live_delegated_authority_body(body: Any, *, agent_id: str) -> dict[st
     }
 
 
+def _delegated_authority_assertion_headers() -> dict[str, str]:
+    _require_service_assertions()
+    origin = identity_origin()
+    assertion = build_mcp_delegated_authority_assertion(audience_url=origin)
+    return {'Authorization': f'Bearer {assertion}', 'Content-Type': 'application/json'}
+
+
 def _fetch_live_delegated_authority(agent_id: str) -> dict[str, Any]:
     """
     Current delegated-agent row from Identity (not only the signed revocation snapshot).
 
-    Uses the same service-signed assertion as revocation poll (trusted caller). Fails closed on
-    transport or malformed JSON.
+    Uses a dedicated service JWT (``aud`` ``shellui-mcp-delegated-authority``). Fails closed on transport
+    or malformed JSON.
     """
     _require_service_assertions()
     base = identity_api_base()
     if not base:
         raise McpIdentityUnavailable('identity_service_url_not_configured')
-    url = f'{base}/api/v1/mcp/internal/mcp-agent-delegated-authority'
+    url = f'{base}/api/v1/mcp/internal/mcp-delegated-agent-authority'
     try:
-        response = requests.get(
+        response = requests.post(
             url,
-            params={'agent_id': str(agent_id)},
-            headers=_revocation_assertion_headers(),
+            json={'agent_id': str(agent_id)},
+            headers=_delegated_authority_assertion_headers(),
             timeout=getattr(settings, 'JWKS_TIMEOUT', 15),
         )
     except (requests.RequestException, OSError) as exc:
@@ -189,6 +198,33 @@ def _fetch_live_delegated_authority(agent_id: str) -> dict[str, Any]:
     except ValueError as exc:
         raise McpIdentityUnavailable('delegated_authority_response_invalid') from exc
     return _parse_live_delegated_authority_body(payload, agent_id=str(agent_id))
+
+
+def _claims_require_live_delegated(claims: dict[str, Any]) -> bool:
+    return (
+        claims.get('global_company_id') is not None
+        and claims.get('company_binding_version') is not None
+        and claims.get('grant_version') is not None
+    )
+
+
+def verify_live_delegated_authority_against_token(agent_id: str, company_id: int, claims: dict[str, Any]) -> None:
+    """
+    Re-check Identity live delegated row (used before each approval-related Identity call).
+
+    Fails closed when the JWT triple does not match Identity or the agent is not delegated.
+    """
+    if not _claims_require_live_delegated(claims):
+        return
+    live = _fetch_live_delegated_authority(str(agent_id))
+    if int(live['company_id']) != int(company_id):
+        raise McpAgentCompanyMismatch('regional_company_mismatch')
+    if str(live['global_company_id']) != str(claims.get('global_company_id')):
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    if int(live['company_binding_version']) != int(claims['company_binding_version']):
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    if int(live['grant_version']) != int(claims['grant_version']):
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
 
 
 def verify_agent_company_binding(
@@ -223,6 +259,8 @@ def verify_agent_company_binding(
         raise McpAgentCompanyMismatch('authority_row_missing')
 
     row = matching[0]
+    if row.get('mcp_authority_snapshot_rejected') is True:
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
     g_raw = row.get('global_company_id', None)
     b_raw = row.get('company_binding_version', None)
     row_gci = _strict_snapshot_uuid(g_raw, field='global_company_id')
@@ -254,19 +292,19 @@ def verify_agent_company_binding(
         if row_company is not None and row_company != int(company_id):
             raise McpAgentCompanyMismatch('regional_company_mismatch')
         try:
-            live = _fetch_live_delegated_authority(agent_id)
+            verify_live_delegated_authority_against_token(
+                agent_id,
+                int(company_id),
+                {
+                    'global_company_id': token_global,
+                    'company_binding_version': token_binding,
+                    'grant_version': token_grant,
+                },
+            )
         except McpIdentityUnavailable:
             raise
         except McpAgentCompanyMismatch:
             raise
-        if int(live['company_id']) != int(company_id):
-            raise McpAgentCompanyMismatch('regional_company_mismatch')
-        if str(live['global_company_id']) != str(token_global):
-            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
-        if int(live['company_binding_version']) != int(token_binding):
-            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
-        if int(live['grant_version']) != int(token_grant):
-            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
     else:
         if token_has_global:
             raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
@@ -435,6 +473,20 @@ def _approval_assertion(payload: dict[str, Any]) -> str:
     return build_mcp_approval_assertion(**_approval_assertion_kwargs(payload))
 
 
+def _maybe_verify_live_delegated_for_approval(payload: dict[str, Any]) -> None:
+    if payload.get('global_company_id') is None:
+        return
+    verify_live_delegated_authority_against_token(
+        str(payload.get('agent_id') or ''),
+        int(payload['company_id']),
+        {
+            'global_company_id': payload.get('global_company_id'),
+            'company_binding_version': payload.get('company_binding_version'),
+            'grant_version': payload.get('grant_version'),
+        },
+    )
+
+
 def resolve_approval_state(payload: dict[str, Any]) -> str | None:
     """Ask Identity for pending, approved, expired (consumed), or denied state."""
     global _last_approval_state_extras
@@ -443,6 +495,7 @@ def resolve_approval_state(payload: dict[str, Any]) -> str | None:
     base = identity_api_base()
     if not base:
         raise McpIdentityUnavailable('identity_service_url_not_configured')
+    _maybe_verify_live_delegated_for_approval(payload)
     assertion = _approval_assertion(payload)
     url = f'{base}/api/v1/mcp/internal/mcp-approval-state'
     try:
@@ -492,6 +545,7 @@ def consume_approval(approval_id: str, *, payload: dict[str, Any] | None = None)
     if not base or not approval_id:
         raise McpIdentityUnavailable('identity_service_url_not_configured')
     context = payload or {}
+    _maybe_verify_live_delegated_for_approval(context)
     assertion = _approval_assertion(context)
     url = f'{base}/api/v1/mcp/internal/mcp-approval-consume'
     try:
@@ -524,6 +578,7 @@ def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
     base = identity_api_base()
     if not origin or not base:
         raise McpIdentityUnavailable('identity_service_url_not_configured')
+    _maybe_verify_live_delegated_for_approval(payload)
     assertion = build_mcp_approval_assertion(**_approval_assertion_kwargs(payload))
     body: dict[str, Any] = {}
     url = f'{base}/api/v1/mcp/internal/mcp-approval-requests'
@@ -562,23 +617,68 @@ def forward_call_log(entry: dict[str, Any]) -> None:
     base = identity_api_base()
     if not origin or not base:
         return
+    cc_raw = entry.get('company_id')
+    if cc_raw is None:
+        return
+    try:
+        cc_val = strict_json_nonneg_int(cc_raw, field='company_id')
+    except AgentClaimsValidationError:
+        return
+    gv_for_live = entry.get('grant_version')
+    cbv_for_live = entry.get('company_binding_version')
+    if (
+        entry.get('global_company_id') is not None
+        and cbv_for_live is not None
+        and gv_for_live is not None
+        and entry.get('agent_id') is not None
+    ):
+        try:
+            gv_i = strict_json_nonneg_int(gv_for_live, field='grant_version')
+            cbv_i = strict_json_nonneg_int(cbv_for_live, field='company_binding_version')
+        except AgentClaimsValidationError:
+            return
+        try:
+            verify_live_delegated_authority_against_token(
+                str(entry['agent_id']),
+                cc_val,
+                {
+                    'global_company_id': entry.get('global_company_id'),
+                    'company_binding_version': cbv_i,
+                    'grant_version': gv_i,
+                },
+            )
+        except (McpIdentityUnavailable, McpAgentCompanyMismatch):
+            return
     assertion = build_mcp_call_log_assertion(audience_url=origin, **signing_kwargs())
     url = f'{base}/api/v1/mcp/internal/mcp-call-logs'
+    meth = entry.get('method')
+    stat = entry.get('http_status')
+    dur_raw = entry.get('duration_ms')
+    try:
+        dur_val = strict_json_nonneg_int(dur_raw, field='duration_ms')
+    except AgentClaimsValidationError:
+        return
     body: dict[str, Any] = {
         'agent_id': entry.get('agent_id'),
-        'company_id': entry.get('company_id'),
+        'company_id': cc_val,
         'service': entry.get('service'),
         'tool': entry.get('tool'),
-        'method': entry.get('method'),
+        'method': meth,
+        'http_method': meth,
         'resource_path': entry.get('resource_path'),
         'access_kind': entry.get('access_kind'),
         'outcome': entry.get('outcome'),
-        'duration_ms': entry.get('duration_ms'),
+        'duration_ms': dur_val,
     }
     if entry.get('operation_title'):
         body['operation_title'] = entry.get('operation_title')
-    if entry.get('http_status') is not None:
-        body['http_status'] = int(entry['http_status'])
+    if stat is not None:
+        try:
+            hs = strict_json_nonneg_int(stat, field='http_status')
+        except AgentClaimsValidationError:
+            return
+        body['http_status'] = hs
+        body['status'] = hs
     if entry.get('error_code'):
         body['error_code'] = str(entry['error_code'])
     if entry.get('approval_request_id'):
@@ -589,21 +689,27 @@ def forward_call_log(entry: dict[str, Any]) -> None:
         body['request_id'] = str(entry['request_id'])
     gv = entry.get('grant_version')
     if gv is not None:
-        body['grant_version'] = int(gv)
+        try:
+            body['grant_version'] = strict_json_nonneg_int(gv, field='grant_version')
+        except AgentClaimsValidationError:
+            return
     if entry.get('global_company_id') is not None:
         body['global_company_id'] = str(entry['global_company_id'])
     if entry.get('company_binding_version') is not None:
-        body['company_binding_version'] = int(entry['company_binding_version'])
-    cid = entry.get('company_id')
-    if cid is not None:
         try:
-            from apps.email.models import CompanyProfile
+            body['company_binding_version'] = strict_json_nonneg_int(
+                entry['company_binding_version'], field='company_binding_version'
+            )
+        except AgentClaimsValidationError:
+            return
+    try:
+        from apps.email.models import CompanyProfile
 
-            profile = CompanyProfile.objects.filter(company_id=int(cid)).only('name').first()
-            if profile and (profile.name or '').strip():
-                body['company_name'] = str(profile.name).strip()
-        except (TypeError, ValueError, OSError):
-            pass
+        profile = CompanyProfile.objects.filter(company_id=cc_val).only('name').first()
+        if profile and (profile.name or '').strip():
+            body['company_name'] = str(profile.name).strip()
+    except (TypeError, ValueError, OSError):
+        pass
     try:
         response = requests.post(
             url,

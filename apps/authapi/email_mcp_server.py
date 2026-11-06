@@ -17,7 +17,7 @@ from shellui_django.mcp.routing import McpToolArgumentError, materialize_openapi
 from shellui_django.mcp.server import McpServer
 from shellui_django.mcp.write_gate import decide_write, is_destructive_operation
 
-from apps.authapi.mcp_claims import AgentClaimsValidationError, normalize_mcp_agent_claims
+from apps.authapi.mcp_claims import AgentClaimsValidationError, normalize_mcp_agent_claims, strict_json_nonneg_int
 from apps.authapi.mcp_identity import McpIdentityUnavailable, last_approval_state_extras
 
 _BODYLESS_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS', 'TRACE'})
@@ -110,12 +110,12 @@ def _flat_audit_entry(
         entry['request_id'] = request_id
     gv = agent_claims.get('grant_version')
     if gv is not None:
-        entry['grant_version'] = int(gv)
+        entry['grant_version'] = strict_json_nonneg_int(gv, field='grant_version')
     if agent_claims.get('global_company_id') is not None:
         entry['global_company_id'] = str(agent_claims['global_company_id'])
     cbv = agent_claims.get('company_binding_version')
     if cbv is not None:
-        entry['company_binding_version'] = int(cbv)
+        entry['company_binding_version'] = strict_json_nonneg_int(cbv, field='company_binding_version')
     return entry
 
 
@@ -235,13 +235,14 @@ class EmailMcpServer(McpServer):
         }
         gv = agent_claims.get('grant_version')
         if gv is not None:
-            approval_payload['grant_version'] = int(gv)
+            approval_payload['grant_version'] = strict_json_nonneg_int(gv, field='grant_version')
         if agent_claims.get('global_company_id') is not None:
             approval_payload['global_company_id'] = str(agent_claims['global_company_id'])
         if agent_claims.get('company_binding_version') is not None:
-            approval_payload['company_binding_version'] = int(agent_claims['company_binding_version'])
+            approval_payload['company_binding_version'] = strict_json_nonneg_int(
+                agent_claims['company_binding_version'], field='company_binding_version'
+            )
 
-        approval_consumed = False
         if decision.needs_approval:
             granted = False
             approval_req_id: str | None = None
@@ -301,7 +302,6 @@ class EmailMcpServer(McpServer):
                             return JsonResponse({'error': 'identity_unavailable'}, status=503)
                         if consumed:
                             granted = True
-                            approval_consumed = True
                         else:
                             if self.on_call:
                                 self.on_call(
@@ -596,10 +596,7 @@ class EmailMcpServer(McpServer):
             else:
                 ec = 'request_failed'
         else:
-            if approval_consumed:
-                outcome = 'session_used'
-            else:
-                outcome = 'allowed'
+            outcome = 'allowed'
             ec = None
         if self.on_call:
             self.on_call(

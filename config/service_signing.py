@@ -9,15 +9,22 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import time
+import uuid
 from functools import lru_cache
 from pathlib import Path
 
+import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.http import JsonResponse
 from jwt.algorithms import RSAAlgorithm
+
+# Identity internal MCP: live delegated-agent row (POST body carries agent_id only; aud differs from revocation).
+MCP_DELEGATED_AUTHORITY_AUDIENCE = 'shellui-mcp-delegated-authority'
+MCP_DELEGATED_AUTHORITY_SCOPE = 'mcp.delegated_authority.read'
 
 MIN_RSA_KEY_SIZE = 2048
 
@@ -62,6 +69,28 @@ def signing_kwargs() -> dict[str, str]:
     if not pem or not issuer:
         raise InternalAssertionError('Service assertion signing is not configured.', status=503)
     return {'private_key_pem': pem, 'kid': public_jwk(pem)['kid'], 'issuer': issuer}
+
+
+def build_mcp_delegated_authority_assertion(*, audience_url: str, lifetime_seconds: int = 60) -> str:
+    """RS256 service JWT for Identity ``POST …/mcp-delegated-agent-authority`` (live delegated row lookup)."""
+    sk = signing_kwargs()
+    pem = sk['private_key_pem']
+    kid = sk['kid']
+    issuer = sk['issuer']
+    now = int(time.time())
+    claims = {
+        'iss': issuer,
+        'aud': MCP_DELEGATED_AUTHORITY_AUDIENCE,
+        'sub': 'service',
+        'scope': MCP_DELEGATED_AUTHORITY_SCOPE,
+        'target': audience_url,
+        'iat': now,
+        'exp': now + lifetime_seconds,
+        'jti': uuid.uuid4().hex,
+    }
+    headers = {'kid': kid} if kid else None
+    token = jwt.encode(claims, pem, algorithm='RS256', headers=headers)
+    return token.decode('utf-8') if isinstance(token, bytes) else token
 
 
 def jwks_view(_request):
