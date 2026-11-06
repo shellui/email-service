@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Any
 
 import jwt
@@ -12,6 +11,7 @@ from rest_framework import authentication, exceptions
 
 from apps.authapi.authentication import _safe_jwt_meta
 from apps.authapi.jwks_client import get_jwks_client
+from apps.authapi.mcp_claims import AgentClaimsValidationError, normalize_mcp_agent_claims
 from apps.authapi.principal import EmailPrincipal
 from shellui_django.mcp.resources import access_token_audience_matches, mcp_resource_from_origin
 
@@ -19,24 +19,9 @@ logger = logging.getLogger(__name__)
 
 MCP_SERVICE_ID = 'email'
 
-_VALID_MCP_ACCESS = frozenset({'read_only', 'ask', 'full'})
-_VALID_MCP_READ = frozenset({'safe', 'sensitive'})
-
-
-def _strict_bool_claim(raw: Any, *, field: str) -> bool:
-    if raw is True or raw is False:
-        return raw
-    if raw in {0, 1}:
-        return bool(raw)
-    raise exceptions.AuthenticationFailed(f'Agent token has invalid {field}.')
-
 
 def _normalize_company_claim(raw: Any) -> int:
-    if isinstance(raw, str):
-        s = raw.strip()
-        if not s.isdecimal():
-            raise exceptions.AuthenticationFailed('Agent token has invalid company_id.')
-        return int(s)
+    """Regional company id for principals (already normalized in ``normalize_mcp_agent_claims``)."""
     try:
         return int(raw)
     except (TypeError, ValueError) as exc:
@@ -221,69 +206,10 @@ def agent_claims_from_token(raw_token: str, *, request=None) -> dict[str, Any]:
         raise exceptions.AuthenticationFailed('Agent is not allowed to use email.')
     if _staff_agent_refused(claims):
         raise exceptions.AuthenticationFailed('Staff accounts cannot use MCP agents.')
-    raw_access = claims.get('mcp_access')
-    if raw_access is None:
-        claims['mcp_access'] = 'read_only'
-    else:
-        access = str(raw_access).strip()
-        if access not in _VALID_MCP_ACCESS:
-            raise exceptions.AuthenticationFailed('Agent token has invalid mcp_access.')
-        claims['mcp_access'] = access
-    raw_read = claims.get('mcp_read')
-    if raw_read is None:
-        claims['mcp_read'] = 'safe'
-    else:
-        read_level = str(raw_read).strip()
-        if read_level not in _VALID_MCP_READ:
-            raise exceptions.AuthenticationFailed('Agent token has invalid mcp_read.')
-        claims['mcp_read'] = read_level
-    dest_raw = claims.get('mcp_destructive')
-    claims['mcp_destructive'] = _strict_bool_claim(False if dest_raw is None else dest_raw, field='mcp_destructive')
-    claims['company_id'] = _normalize_company_claim(claims.get('company_id'))
-    # Regional numeric company_id plus optional global delegation claims (identity #135).
-    if 'grant_version' in claims:
-        gv_raw = claims.get('grant_version')
-        if gv_raw is None:
-            claims.pop('grant_version', None)
-        else:
-            if isinstance(gv_raw, bool):
-                raise exceptions.AuthenticationFailed('Agent token has invalid grant_version.')
-            try:
-                gv = int(gv_raw)
-            except (TypeError, ValueError) as exc:
-                raise exceptions.AuthenticationFailed('Agent token has invalid grant_version.') from exc
-            if gv < 0:
-                raise exceptions.AuthenticationFailed('Agent token has invalid grant_version.')
-            claims['grant_version'] = gv
-    if 'global_company_id' in claims:
-        g_raw = claims.get('global_company_id')
-        if g_raw is None:
-            claims.pop('global_company_id', None)
-        else:
-            try:
-                claims['global_company_id'] = str(uuid.UUID(str(g_raw)))
-            except (ValueError, TypeError) as exc:
-                raise exceptions.AuthenticationFailed('Agent token has invalid global_company_id.') from exc
-    if 'company_binding_version' in claims:
-        cbv_raw = claims.get('company_binding_version')
-        if cbv_raw is None:
-            claims.pop('company_binding_version', None)
-        else:
-            if isinstance(cbv_raw, bool):
-                raise exceptions.AuthenticationFailed('Agent token has invalid company_binding_version.')
-            try:
-                cbv = int(cbv_raw)
-            except (TypeError, ValueError) as exc:
-                raise exceptions.AuthenticationFailed('Agent token has invalid company_binding_version.') from exc
-            if cbv < 0:
-                raise exceptions.AuthenticationFailed('Agent token has invalid company_binding_version.')
-            claims['company_binding_version'] = cbv
-    has_global = claims.get('global_company_id') is not None
-    has_binding = claims.get('company_binding_version') is not None
-    if has_global != has_binding:
-        raise exceptions.AuthenticationFailed('agent_token_authority_incomplete')
-    if has_global and 'grant_version' not in claims:
-        raise exceptions.AuthenticationFailed('agent_token_authority_incomplete')
+    try:
+        claims = normalize_mcp_agent_claims(claims)
+    except AgentClaimsValidationError:
+        raise exceptions.AuthenticationFailed('agent_token_claims_invalid') from None
     return dict(claims)
 
 

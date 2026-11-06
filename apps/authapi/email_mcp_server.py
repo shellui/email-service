@@ -5,20 +5,25 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import uuid
+from decimal import Decimal
 from typing import Any
 
 from django.http import HttpRequest, JsonResponse
 from shellui_django.mcp.masking import redact_mapping
-from shellui_django.mcp.openapi_mcp import marker_tree_for_operation_request, marker_tree_for_operation_response
+from shellui_django.mcp.openapi_mcp import marker_tree_for_operation_response
 from shellui_django.mcp.openapi_tools import tools_from_schema
 from shellui_django.mcp.routing import McpToolArgumentError, materialize_openapi_path, validate_mcp_tool_arguments
 from shellui_django.mcp.server import McpServer
 from shellui_django.mcp.write_gate import decide_write, is_destructive_operation
 
+from apps.authapi.mcp_claims import AgentClaimsValidationError, normalize_mcp_agent_claims
+from apps.authapi.mcp_identity import McpIdentityUnavailable, last_approval_state_extras
+
 _BODYLESS_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS', 'TRACE'})
 
-# Call-log / audit: categorical only (aligned with Shellui Identity MCP call log schema).
-_OUTCOMES = frozenset({'succeeded', 'failed', 'denied', 'pending'})
+# Identity-aligned categorical outcomes (call log contract).
+_OUTCOMES = frozenset({'failed', 'denied', 'pending_approval', 'allowed', 'session_used'})
 _ERROR_CODES = frozenset(
     {
         'forbidden',
@@ -33,54 +38,27 @@ _ERROR_CODES = frozenset(
         'approval_pending',
         'approval_denied',
         'approval_expired',
+        'rate_limited',
+        'authority_ambiguous',
+        'authority_mismatch',
+        'authority_row_missing',
     }
 )
-_VALID_MCP_ACCESS = frozenset({'read_only', 'ask', 'full'})
-_VALID_MCP_READ = frozenset({'safe', 'sensitive'})
+
+def _json_default(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    raise TypeError(f'Non-JSON-serializable type in MCP tool arguments: {type(value).__name__}')
 
 
-def _strict_bool_claim(raw: Any, *, field: str) -> bool:
-    if raw is True or raw is False:
-        return raw
-    if raw in {0, 1}:
-        return bool(raw)
-    raise ValueError(field)
+def _canonical_json_bytes(obj: Any) -> bytes:
+    return json.dumps(obj, sort_keys=True, separators=(',', ':'), default=_json_default).encode('utf-8')
 
 
-def _normalize_agent_claims(agent_claims: dict[str, Any]) -> dict[str, Any]:
-    """Validate token surface Identity mints; no silent coercion except legacy decimal company_id string."""
-    access_raw = agent_claims.get('mcp_access')
-    if access_raw is None:
-        access = 'read_only'
-    else:
-        access = str(access_raw).strip()
-        if access not in _VALID_MCP_ACCESS:
-            raise ValueError('mcp_access')
-    read_raw = agent_claims.get('mcp_read')
-    if read_raw is None:
-        read_level = 'safe'
-    else:
-        read_level = str(read_raw).strip()
-        if read_level not in _VALID_MCP_READ:
-            raise ValueError('mcp_read')
-    dest_raw = agent_claims.get('mcp_destructive')
-    destructive_flag = _strict_bool_claim(False if dest_raw is None else dest_raw, field='mcp_destructive')
-
-    cid_raw = agent_claims.get('company_id')
-    if isinstance(cid_raw, str):
-        s = cid_raw.strip()
-        if not s.isdecimal():
-            raise ValueError('company_id')
-        company_id = int(s)
-    else:
-        company_id = int(cid_raw)
-
-    out = dict(agent_claims)
-    out['mcp_access'] = access
-    out['mcp_read'] = read_level
-    out['mcp_destructive'] = destructive_flag
-    out['company_id'] = company_id
-    return out
+def _arguments_fingerprint(arguments: dict[str, Any]) -> str:
+    return hashlib.sha256(_canonical_json_bytes(arguments)).hexdigest()
 
 
 def _flat_audit_entry(
@@ -95,6 +73,9 @@ def _flat_audit_entry(
     duration_ms: int,
     http_status: int | None = None,
     error_code: str | None = None,
+    approval_request_id: str | None = None,
+    arguments_hash: str | None = None,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     if outcome not in _OUTCOMES:
         raise ValueError('outcome')
@@ -121,6 +102,12 @@ def _flat_audit_entry(
         entry['http_status'] = int(http_status)
     if error_code:
         entry['error_code'] = error_code
+    if approval_request_id:
+        entry['approval_request_id'] = approval_request_id
+    if arguments_hash:
+        entry['arguments_hash'] = arguments_hash
+    if request_id:
+        entry['request_id'] = request_id
     gv = agent_claims.get('grant_version')
     if gv is not None:
         entry['grant_version'] = int(gv)
@@ -138,8 +125,8 @@ class EmailMcpServer(McpServer):
     def handle(self, request: HttpRequest, *, agent_claims: dict[str, Any] | None) -> JsonResponse:
         if agent_claims is not None:
             try:
-                agent_claims = _normalize_agent_claims(agent_claims)
-            except (TypeError, ValueError):
+                agent_claims = normalize_mcp_agent_claims(agent_claims)
+            except AgentClaimsValidationError:
                 return JsonResponse({'error': 'forbidden'}, status=403)
         return super().handle(request, agent_claims=agent_claims)
 
@@ -152,6 +139,9 @@ class EmailMcpServer(McpServer):
     ) -> JsonResponse:
         tool_name = str(params.get('name') or '')
         arguments = params.get('arguments') or {}
+        if not isinstance(arguments, dict):
+            arguments = {}
+        req_trace = (getattr(request, 'request_id', None) or '').strip() or None
         schema = self.schema_provider()
         tools = tools_from_schema(schema)
         tool = next((t for t in tools if t['name'] == tool_name), None)
@@ -169,11 +159,15 @@ class EmailMcpServer(McpServer):
         op_destructive = is_destructive_operation(operation)
         destructive = meta_destructive if meta_destructive is not None else op_destructive
         try:
-            validate_mcp_tool_arguments(arguments if isinstance(arguments, dict) else {}, meta)
+            validate_mcp_tool_arguments(arguments, meta)
             path_params = arguments.get('path_params') if isinstance(arguments.get('path_params'), dict) else {}
             resolved_path = materialize_openapi_path(path_template, path_params)
         except McpToolArgumentError as exc:
             if self.on_call:
+                try:
+                    fp = _arguments_fingerprint(arguments)
+                except TypeError:
+                    fp = hashlib.sha256(b'').hexdigest()
                 self.on_call(
                     _flat_audit_entry(
                         agent_claims=agent_claims,
@@ -186,6 +180,8 @@ class EmailMcpServer(McpServer):
                         duration_ms=0,
                         http_status=400,
                         error_code='validation_failed',
+                        arguments_hash=fp,
+                        request_id=req_trace,
                     )
                 )
             return JsonResponse(self._error(req_id, -32602, str(exc)))
@@ -207,7 +203,27 @@ class EmailMcpServer(McpServer):
         def _after_gate_ms() -> int:
             return int(max(0.0, (time.monotonic() - gate_started) * 1000.0))
 
-        args_hash = hashlib.sha256(json.dumps(arguments, sort_keys=True, default=str).encode()).hexdigest()
+        try:
+            args_hash = _arguments_fingerprint(arguments)
+        except TypeError:
+            if self.on_call:
+                self.on_call(
+                    _flat_audit_entry(
+                        agent_claims=agent_claims,
+                        service_name=self.service_name,
+                        tool_name=tool_name,
+                        path_template=path_template,
+                        method=method,
+                        operation=operation,
+                        outcome='failed',
+                        duration_ms=0,
+                        http_status=400,
+                        error_code='validation_failed',
+                        request_id=req_trace,
+                    )
+                )
+            return JsonResponse(self._error(req_id, -32602, 'Arguments are not JSON-serializable'))
+
         approval_payload: dict[str, Any] = {
             'agent_id': agent_claims.get('agent_id'),
             'company_id': agent_claims.get('company_id'),
@@ -226,12 +242,17 @@ class EmailMcpServer(McpServer):
         if agent_claims.get('company_binding_version') is not None:
             approval_payload['company_binding_version'] = int(agent_claims['company_binding_version'])
 
+        approval_consumed = False
         if decision.needs_approval:
             granted = False
+            approval_req_id: str | None = None
+            identity_state_failed = False
+            state: str | None = None
             if self.approval_state:
                 try:
                     state = self.approval_state(approval_payload)
-                except Exception:
+                except McpIdentityUnavailable:
+                    identity_state_failed = True
                     state = None
                 if state == 'executed':
                     if self.on_call:
@@ -246,6 +267,8 @@ class EmailMcpServer(McpServer):
                                 outcome='denied',
                                 duration_ms=_after_gate_ms(),
                                 error_code='approval_expired',
+                                arguments_hash=args_hash,
+                                request_id=req_trace,
                             )
                         )
                     return JsonResponse(
@@ -259,10 +282,27 @@ class EmailMcpServer(McpServer):
                     if approval_id and self.approval_consume:
                         try:
                             consumed = self.approval_consume(str(approval_id), approval_payload)
-                        except Exception:
-                            consumed = False
+                        except McpIdentityUnavailable:
+                            if self.on_call:
+                                self.on_call(
+                                    _flat_audit_entry(
+                                        agent_claims=agent_claims,
+                                        service_name=self.service_name,
+                                        tool_name=tool_name,
+                                        path_template=path_template,
+                                        method=method,
+                                        operation=operation,
+                                        outcome='failed',
+                                        duration_ms=_after_gate_ms(),
+                                        error_code='identity_unavailable',
+                                        arguments_hash=args_hash,
+                                        request_id=req_trace,
+                                    )
+                                )
+                            return JsonResponse({'error': 'identity_unavailable'}, status=503)
                         if consumed:
                             granted = True
+                            approval_consumed = True
                         else:
                             if self.on_call:
                                 self.on_call(
@@ -276,6 +316,8 @@ class EmailMcpServer(McpServer):
                                         outcome='failed',
                                         duration_ms=_after_gate_ms(),
                                         error_code='identity_unavailable',
+                                        arguments_hash=args_hash,
+                                        request_id=req_trace,
                                     )
                                 )
                             return JsonResponse({'error': 'identity_unavailable'}, status=503)
@@ -292,6 +334,8 @@ class EmailMcpServer(McpServer):
                                     outcome='failed',
                                     duration_ms=_after_gate_ms(),
                                     error_code='identity_unavailable',
+                                    arguments_hash=args_hash,
+                                    request_id=req_trace,
                                 )
                             )
                         return JsonResponse(
@@ -301,6 +345,9 @@ class EmailMcpServer(McpServer):
                             )
                         )
                 elif state == 'pending':
+                    extras = last_approval_state_extras()
+                    appr_id = extras.get('approval_request_id')
+                    approval_req_id = str(appr_id) if appr_id else None
                     if self.on_call:
                         self.on_call(
                             _flat_audit_entry(
@@ -310,18 +357,24 @@ class EmailMcpServer(McpServer):
                                 path_template=path_template,
                                 method=method,
                                 operation=operation,
-                                outcome='pending',
+                                outcome='pending_approval',
                                 duration_ms=_after_gate_ms(),
                                 error_code='approval_pending',
+                                approval_request_id=approval_req_id,
+                                arguments_hash=args_hash,
+                                request_id=req_trace,
                             )
                         )
+                    meta: dict[str, Any] = {'status': 'pending'}
+                    if approval_req_id:
+                        meta['approval_request_id'] = approval_req_id
                     return JsonResponse(
                         self._result(
                             req_id,
                             {
                                 'content': [{'type': 'text', 'text': 'Approval pending.'}],
                                 'isError': True,
-                                'meta': {'status': 'pending'},
+                                'meta': meta,
                             },
                         )
                     )
@@ -338,6 +391,8 @@ class EmailMcpServer(McpServer):
                                 outcome='denied',
                                 duration_ms=_after_gate_ms(),
                                 error_code='approval_denied',
+                                arguments_hash=args_hash,
+                                request_id=req_trace,
                             )
                         )
                     return JsonResponse(
@@ -346,9 +401,7 @@ class EmailMcpServer(McpServer):
                             {'content': [{'type': 'text', 'text': 'Approval denied.'}], 'isError': True},
                         )
                     )
-            if not granted and self.approval_handler:
-                pending = self.approval_handler(approval_payload)
-                if pending:
+                elif state in {'invalid', 'unknown'} or (state is None and not identity_state_failed):
                     if self.on_call:
                         self.on_call(
                             _flat_audit_entry(
@@ -358,18 +411,90 @@ class EmailMcpServer(McpServer):
                                 path_template=path_template,
                                 method=method,
                                 operation=operation,
-                                outcome='pending',
+                                outcome='denied',
                                 duration_ms=_after_gate_ms(),
-                                error_code='approval_pending',
+                                error_code='approval_denied',
+                                arguments_hash=args_hash,
+                                request_id=req_trace,
                             )
                         )
+                    return JsonResponse(
+                        self._result(
+                            req_id,
+                            {'content': [{'type': 'text', 'text': 'Approval denied.'}], 'isError': True},
+                        )
+                    )
+                elif state == 'not_found':
+                    pass
+            if not granted and identity_state_failed:
+                if self.on_call:
+                    self.on_call(
+                        _flat_audit_entry(
+                            agent_claims=agent_claims,
+                            service_name=self.service_name,
+                            tool_name=tool_name,
+                            path_template=path_template,
+                            method=method,
+                            operation=operation,
+                            outcome='failed',
+                            duration_ms=_after_gate_ms(),
+                            error_code='identity_unavailable',
+                            arguments_hash=args_hash,
+                            request_id=req_trace,
+                        )
+                    )
+                return JsonResponse({'error': 'identity_unavailable'}, status=503)
+            if not granted and self.approval_handler:
+                try:
+                    pending = self.approval_handler(approval_payload)
+                except McpIdentityUnavailable:
+                    if self.on_call:
+                        self.on_call(
+                            _flat_audit_entry(
+                                agent_claims=agent_claims,
+                                service_name=self.service_name,
+                                tool_name=tool_name,
+                                path_template=path_template,
+                                method=method,
+                                operation=operation,
+                                outcome='failed',
+                                duration_ms=_after_gate_ms(),
+                                error_code='identity_unavailable',
+                                arguments_hash=args_hash,
+                                request_id=req_trace,
+                            )
+                        )
+                    return JsonResponse({'error': 'identity_unavailable'}, status=503)
+                if pending:
+                    appr = pending.get('id') or pending.get('approval_request_id')
+                    approval_req_id = str(appr) if appr else None
+                    if self.on_call:
+                        self.on_call(
+                            _flat_audit_entry(
+                                agent_claims=agent_claims,
+                                service_name=self.service_name,
+                                tool_name=tool_name,
+                                path_template=path_template,
+                                method=method,
+                                operation=operation,
+                                outcome='pending_approval',
+                                duration_ms=_after_gate_ms(),
+                                error_code='approval_pending',
+                                approval_request_id=approval_req_id,
+                                arguments_hash=args_hash,
+                                request_id=req_trace,
+                            )
+                        )
+                    meta_c: dict[str, Any] = {'status': 'pending'}
+                    if approval_req_id:
+                        meta_c['approval_request_id'] = approval_req_id
                     return JsonResponse(
                         self._result(
                             req_id,
                             {
                                 'content': [{'type': 'text', 'text': 'Approval required.'}],
                                 'isError': True,
-                                'meta': {'approval_id': pending.get('id'), 'status': 'pending'},
+                                'meta': meta_c,
                             },
                         )
                     )
@@ -389,6 +514,8 @@ class EmailMcpServer(McpServer):
                             outcome=ou,
                             duration_ms=deny_ms,
                             error_code=oc,
+                            arguments_hash=args_hash,
+                            request_id=req_trace,
                         )
                     )
                 return JsonResponse(
@@ -410,6 +537,8 @@ class EmailMcpServer(McpServer):
                         outcome='denied',
                         duration_ms=0,
                         error_code='read_only_blocked',
+                        arguments_hash=args_hash,
+                        request_id=req_trace,
                     )
                 )
             return JsonResponse(
@@ -461,12 +590,17 @@ class EmailMcpServer(McpServer):
                 ec = 'validation_failed'
             elif status_code == 409:
                 ec = 'conflict'
+            elif status_code == 429:
+                ec = 'rate_limited'
             elif status_code >= 500:
                 ec = 'server_error'
             else:
                 ec = 'request_failed'
         else:
-            outcome = 'succeeded'
+            if approval_consumed:
+                outcome = 'session_used'
+            else:
+                outcome = 'allowed'
             ec = None
         if self.on_call:
             self.on_call(
@@ -481,6 +615,8 @@ class EmailMcpServer(McpServer):
                     duration_ms=duration_ms,
                     http_status=status_code,
                     error_code=ec,
+                    arguments_hash=args_hash,
+                    request_id=req_trace,
                 )
             )
         return JsonResponse(

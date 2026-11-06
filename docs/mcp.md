@@ -21,21 +21,21 @@ Required claims:
 | Claim | Purpose |
 | --- | --- |
 | `agent_id` | Agent uuid |
-| `company_id` | Company scope |
+| `company_id` | Regional company scope as a JSON number (integer, non-negative). String forms and booleans are rejected. |
 | `scope` | Must include `email` |
 | `mcp_access` | `read_only`, `ask`, or `full` |
 | `mcp_read` | `safe` or `sensitive` |
-| `mcp_destructive` | Must be JSON boolean (`true` or `false`). Grants eligibility for destructive tools but **every** destructive call still needs a fresh human approval in Identity. It never skips approvals. |
+| `mcp_destructive` | Must be JSON boolean (`true` or `false`). Marks the agent as eligible for destructive tools. **Every** destructive call still needs a fresh human approval in Identity. |
 
-Optional claims for globally delegated agents (Identity admin docs). All must be present together when `global_company_id` is set:
+Optional claims for globally delegated agents (Identity admin documentation). Either omit all three or include all three together:
 
 | Claim | Purpose |
 | --- | --- |
-| `global_company_id` | Shell-wide company id as a UUID string (not the regional numeric `company_id`) |
-| `company_binding_version` | Non-negative int binding revision for that global id (including `0`) |
-| `grant_version` | Non-negative int grant revision required when `global_company_id` is set |
+| `global_company_id` | Canonical UUID string for the Shell-wide company (not the regional numeric `company_id`); nil UUID is rejected |
+| `company_binding_version` | Non-negative JSON integer (including `0`) |
+| `grant_version` | Non-negative JSON integer; optional for personal agents, required with the other two for delegation |
 
-Personal regional agents omit these three claims. Tokens with only one of `global_company_id` or `company_binding_version` are rejected. Numeric tenant scope stays on `company_id` only.
+Personal regional agents omit all three. Tokens that set only one or two of the three are rejected. Optional `grant_version` alone (including `0`) is allowed for personal agents.
 
 ## Access modes
 
@@ -51,9 +51,11 @@ Read-safe mode (`mcp_read=safe`) masks emails and other sensitive strings in too
 
 email-service reuses existing Identity URL settings (no new required env vars):
 
-- Poll `GET {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-revocations` (30 second cache) with a signed service assertion (`aud` `shellui-mcp-revocation`, scope `mcp.revocation.read`). If the revocation list or approval internal APIs fail, MCP calls are refused (fail closed).
+- Poll `GET {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-revocations` (30 second cache) with a signed service assertion (`aud` `shellui-mcp-revocation`, scope `mcp.revocation.read`). The response includes revoked agent ids plus a signed `agents[]` snapshot. If the list or snapshot is missing or untrusted on a poll, MCP fails closed. Before each MCP request, the token must match **exactly one** row for `agent_id`: regional `company_id` must match the JWT (JSON integers only in the snapshot; no string coercion). A delegated row must include `global_company_id`, `company_binding_version`, and `grant_version`, and those must match the JWT triple (including `0` values). Duplicate rows for one agent id or no row for a live token are refused.
 - Forward **flat** audit rows to `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-call-logs` (no tool `arguments`, no response bodies).
-- Create approval rows with `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-approval-requests`
+- Create approval rows with `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-approval-requests` using an `Authorization: Bearer` service assertion only (JSON body is `{}`; the action fingerprint is in the assertion claims, not in tool arguments).
+
+Approval state lookup (`mcp-approval-state`) returns `not_found` when Identity has no row yet for that assertion fingerprint, `pending`, `approved`, `denied`, or `expired` (treated as already consumed). Any other status, a missing `status`, invalid JSON, an `approved` row without an approval id, or transport failure makes the write path stop without creating a duplicate pending row (treated as denied when the contract is broken; transport errors return `503 identity_unavailable`).
 
 Internal calls use short-lived JWT assertions from the shared `shellui_django.mcp` helpers (`aud` `shellui-mcp-call-log` or `shellui-mcp-approval`). Outbound signing uses `JWT_PRIVATE_KEY` (RS256, same key as identity-service in production). Revocation poll responses are verified with Identity JWKS via `parse_trusted_revocation_poll_response`.
 
@@ -81,7 +83,19 @@ These map MCP tools to flat fields on each forwarded call log row (OpenAPI path 
 | Create an email rule (and template copy) | `api_v1_rules_create` | POST | `/api/v1/rules` | write |
 | Send a design test | `api_v1_templates_send_test` | POST | `/api/v1/templates/{template_id}/send-test` | write |
 
-Rows also include `operation_title` from the OpenAPI summary when present, categorical `outcome` (`succeeded`, `failed`, `denied`, `pending`), optional `error_code` from a fixed set (`forbidden`, `not_found`, `validation_failed`, `conflict`, `server_error`, `request_failed`, `identity_unavailable`, `tool_error`, `read_only_blocked`, `approval_pending`, `approval_denied`, `approval_expired`), optional `http_status` after the DRF view runs, and `duration_ms` for that execution. Outcomes before execution (validation failure, write gate, approval branch) log `duration_ms` as `0`; timing for approvals and access denials is measured after those gates. Rows never include raw tool arguments, response bodies, provider text, or URLs passed through from an agent.
+Rows also include `operation_title` from the OpenAPI summary when present, `arguments_hash` (SHA-256 of canonical JSON for tool arguments, same input as Identity approval assertions), optional `approval_request_id` when a pending approval exists, optional bounded `request_id` when the HTTP request carried one, categorical `outcome`, optional `error_code`, optional `http_status` after the DRF view runs, and `duration_ms`.
+
+**`outcome`** (Identity call-log vocabulary): `failed`, `denied`, `pending_approval`, `allowed`, `session_used`.
+
+- **`allowed`**: HTTP tool completed without error and the call did not consume a one-shot Identity approval (read-only or non-destructive write under `full`, or `ask` write after live approval without a consume step in this path).
+- **`session_used`**: Same as `allowed` but this execution consumed a one-shot Identity approval for this fingerprint (`ask` mode after successful `mcp-approval-consume`).
+- **`pending_approval`**: Waiting on a human decision in Identity (new request or existing pending row).
+- **`denied`**: Identity denied the approval, write gate denied the call, or approval already used (`session_used` is not used there).
+- **`failed`**: Validation error, transport or Identity internal error, API error response, or rate limit.
+
+Optional **`error_code`**: `forbidden`, `not_found`, `validation_failed`, `conflict`, `server_error`, `request_failed`, `identity_unavailable`, `tool_error`, `read_only_blocked`, `approval_pending`, `approval_denied`, `approval_expired`, `rate_limited`, `authority_ambiguous`, `authority_mismatch`, `authority_row_missing`.
+
+Outcomes before execution (validation failure, write gate, approval-only branch) log `duration_ms` as `0` where applicable; Identity approval polling uses time after the write gate. Rows never include raw tool arguments, response bodies, provider error text, or URLs passed through from an agent.
 
 Trusted `company_name` on forwarded call logs comes from this service's `CompanyProfile` row for the regional `company_id` when one exists.
 

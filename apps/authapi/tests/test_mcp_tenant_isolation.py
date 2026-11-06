@@ -128,10 +128,12 @@ class McpTenantIsolationTests(TestCase):
         reset_mcp_server_cache()
         reset_revocation_cache_for_tests()
         self.client = Client()
-        self.token, _ = _agent_token(company_id=COMPANY_A)
+        self.token, self.tenant_agent_id = _agent_token(company_id=COMPANY_A)
         self.revocation_patcher = patch('apps.authapi.mcp_identity.requests.get')
         self.mock_revocation_get = self.revocation_patcher.start()
-        self.mock_revocation_get.return_value = _revocation_ok_response()
+        self.mock_revocation_get.return_value = _revocation_ok_response(
+            agents=[{'agent_id': self.tenant_agent_id, 'company_id': COMPANY_A}],
+        )
 
     def tearDown(self):
         self.revocation_patcher.stop()

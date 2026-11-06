@@ -27,7 +27,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - MCP: Identity approval consume accepts only JSON boolean `true` for `consumed`.
 - MCP: optional global delegation claims on agent JWTs are checked when Identity includes a snapshot row for that agent; strict `build_mcp_approval_assertion` kwargs for personal vs delegated agents.
-- MCP: call logs to Identity are flat audit fields (OpenAPI path template, categorical outcomes, no tool `arguments`); trusted `company_name` from `CompanyProfile` when present.
+- MCP: call logs to Identity are flat audit fields (OpenAPI path template, categorical outcomes, `arguments_hash`, optional `approval_request_id` and `request_id`, no tool `arguments`); trusted `company_name` from `CompanyProfile` when present.
+- MCP: stricter agent JWT numeric claims (no string `company_id`, no bool coercion) and revocation binding (delegated agents without a snapshot row or ambiguous duplicate rows are forbidden).
 - MCP: destructive tools always require a fresh human approval per call, even when `mcp_destructive` is true.
 - MCP: stable machine codes on internal exceptions to Identity.
 - MCP: `shellui-django` pinned to django-commons `develop` git commit `1f0754b421688ed26b7eb2e76b25b6fa3eea2a37` (`pyproject.toml` / `uv.lock`).

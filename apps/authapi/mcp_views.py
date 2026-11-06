@@ -127,7 +127,10 @@ def mcp_endpoint(request: HttpRequest):
             verify_agent_company_binding(str(claims.get('agent_id') or ''), int(claims['company_id']), claims=claims)
         except McpIdentityUnavailable:
             return JsonResponse({'error': 'identity_unavailable'}, status=503)
-        except McpAgentCompanyMismatch:
+        except McpAgentCompanyMismatch as exc:
+            code = str(exc.args[0]) if exc.args else 'forbidden'
+            if code == 'authority_row_missing':
+                return JsonResponse({'error_code': 'authority_row_missing'}, status=403)
             return JsonResponse({'error': 'forbidden'}, status=403)
         except (KeyError, TypeError, ValueError):
             return JsonResponse({'error': 'forbidden'}, status=403)
