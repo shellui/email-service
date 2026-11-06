@@ -25,7 +25,9 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🛠 Improvements
 
-- MCP: Identity approval consume accepts only JSON boolean `true` for `consumed`.
+- MCP: Identity approval consume accepts only JSON boolean `true` for `consumed`; HTTP `409` already consumed maps to the same path as approval state ``expired`` (until Identity PR #136 finalizes consume semantics).
+- MCP: approval state extras for ``approval_request_id`` use a request-scoped context (``EmailMcpServer._tools_call``) instead of a module global.
+- MCP: call log ingest ``access_kind`` uses audit ``tool_destructive`` so destructive OpenAPI tools never forward as ``write`` (covers outcomes such as ``session_used``).
 - MCP: optional global delegation claims on agent JWTs are checked when Identity includes a snapshot row for that agent; strict `build_mcp_approval_assertion` kwargs for personal vs delegated agents.
 - MCP: call logs to Identity use the ingest shape from ``McpInternalCallLogView`` in identity-service (`POST /mcp` canonical path, `status` for HTTP status, `result` empty; no `company_name`, `arguments`, or `arguments_hash` in the POST body). Local audit rows still carry OpenAPI template paths; forwarding maps those to Identity’s canonical MCP route per `call_log_internal.canonical_call_path`.
 - MCP: stricter agent JWT numeric claims (no string `company_id`, no bool coercion) and revocation binding (delegated agents without a snapshot row or ambiguous duplicate rows are forbidden).

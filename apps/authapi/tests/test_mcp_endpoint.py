@@ -923,6 +923,50 @@ class McpEndpointTests(TestCase):
         mock_post.side_effect = self._default_identity_post_chain()
 
     @patch('apps.authapi.mcp_identity.requests.post')
+    def test_approval_consume_409_already_used_matches_executed(self, mock_post):
+        """Identity ``mcp-approval-consume`` may return ``409`` when the row is already consumed."""
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        delegated = self._default_identity_post_chain()
+
+        def post_side_effect(url, **kwargs):
+            s = str(url)
+            if 'mcp-approval-state' in s:
+                ok = MagicMock()
+                ok.status_code = 200
+                ok.raise_for_status = MagicMock()
+                ok.json = MagicMock(return_value={'status': 'approved', 'id': 'appr-dup'})
+                return ok
+            if 'mcp-approval-consume' in s:
+                dup = MagicMock()
+                dup.status_code = 409
+                dup.json = MagicMock(return_value={'error': 'Approval already consumed', 'consumed': False})
+                return dup
+            return delegated(url, **kwargs)
+
+        mock_post.side_effect = post_side_effect
+        reset_mcp_server_cache()
+        token, _agent_id = _agent_token(access='ask')
+        response = _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {
+                'name': 'api_v1_rules_create',
+                'arguments': {
+                    'path': '/api/v1/rules',
+                    'method': 'POST',
+                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        res = response.json().get('result') or {}
+        self.assertTrue(res.get('isError'))
+        self.assertIn('already used', str(res.get('content', [{}])[0].get('text', '')).lower())
+        mock_post.side_effect = self._default_identity_post_chain()
+
+    @patch('apps.authapi.mcp_identity.requests.post')
     def test_approval_consume_200_without_literal_true_refuses_write(self, mock_post):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 

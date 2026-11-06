@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 import requests
@@ -24,12 +26,24 @@ from apps.authapi.mcp_claims import AgentClaimsValidationError, strict_json_nonn
 
 logger = logging.getLogger(__name__)
 
-# Filled by ``resolve_approval_state`` on success so the MCP server can log ``approval_request_id``.
-_last_approval_state_extras: dict[str, Any] = {}
+# Filled by ``resolve_approval_state`` so the MCP server can log ``approval_request_id``.
+# Request-scoped via ``approval_state_extras_scope`` (``EmailMcpServer._tools_call``); not a process-wide global.
+_approval_state_extras_ctx: ContextVar[dict[str, Any] | None] = ContextVar('mcp_approval_state_extras', default=None)
+
+
+@contextmanager
+def approval_state_extras_scope():
+    """Bind approval-state extras to this MCP tools/call execution (avoids cross-request leakage)."""
+    token = _approval_state_extras_ctx.set({})
+    try:
+        yield
+    finally:
+        _approval_state_extras_ctx.reset(token)
 
 
 def last_approval_state_extras() -> dict[str, Any]:
-    return dict(_last_approval_state_extras)
+    cur = _approval_state_extras_ctx.get()
+    return dict(cur) if cur else {}
 
 
 class McpIdentityUnavailable(Exception):
@@ -683,10 +697,26 @@ def _approval_post_out_of_sync(response: Any) -> bool:
     return str(data.get('error_code') or '').strip() == 'out_of_sync'
 
 
+def _approval_consume_already_consumed(response: Any) -> bool:
+    """HTTP ``409`` from ``mcp-approval-consume`` when the approval row is no longer consumable."""
+    try:
+        data = response.json()
+    except ValueError:
+        text = getattr(response, 'text', '') or ''
+        return 'already consumed' in text.lower()
+    err = str(data.get('error') or '')
+    detail = str(data.get('detail') or '')
+    code = str(data.get('error_code') or '')
+    msg = f'{err} {detail} {code}'.lower()
+    return 'already consumed' in msg or ('approval' in msg and 'consumed' in msg)
+
+
 def resolve_approval_state(payload: dict[str, Any]) -> str | None:
     """Ask Identity for pending, approved, expired (consumed), or denied state."""
-    global _last_approval_state_extras
-    _last_approval_state_extras = {}
+    cur = _approval_state_extras_ctx.get()
+    extras: dict[str, Any] = cur if isinstance(cur, dict) else {}
+    extras.clear()
+    _approval_state_extras_ctx.set(extras)
     _require_service_assertions()
     base = identity_api_base()
     if not base:
@@ -714,9 +744,9 @@ def resolve_approval_state(payload: dict[str, Any]) -> str | None:
         rid = body.get('approval_request_id') or body.get('id') or body.get('approval_id')
         if rid:
             try:
-                _last_approval_state_extras['approval_request_id'] = str(uuid.UUID(str(rid)))
+                extras['approval_request_id'] = str(uuid.UUID(str(rid)))
             except (ValueError, TypeError):
-                _last_approval_state_extras['approval_request_id'] = str(rid)
+                extras['approval_request_id'] = str(rid)
         if not state:
             return 'invalid'
         if state == 'expired':
@@ -759,6 +789,9 @@ def consume_approval(approval_id: str, *, payload: dict[str, Any] | None = None)
             raise McpIdentityUnavailable('approval_consume_endpoint_missing')
         if _approval_post_out_of_sync(response):
             raise McpDelegatedApprovalRoutingError('approval_routed_via_ai_only')
+        if response.status_code == 409 and _approval_consume_already_consumed(response):
+            # Identity already ran ``mcp-approval-consume`` for this approval id; treat like "executed" state.
+            return False
         response.raise_for_status()
         try:
             body = response.json()
@@ -774,6 +807,17 @@ def consume_approval(approval_id: str, *, payload: dict[str, Any] | None = None)
     except (requests.RequestException, OSError) as exc:
         logger.warning('MCP approval consume failed (%s).', type(exc).__name__)
         raise McpIdentityUnavailable('approval_consume_failed') from exc
+
+
+def _call_log_access_kind_for_ingest(entry: dict[str, Any]) -> str:
+    """Identity ingest ``access_kind``; destructive OpenAPI tools never downgrade to ``write``."""
+    raw = str(entry.get('access_kind') or '').strip().lower()
+    td = entry.get('tool_destructive')
+    if td is True:
+        return 'destructive'
+    if raw in ('read', 'write', 'destructive'):
+        return raw
+    return 'unknown'
 
 
 def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -880,9 +924,7 @@ def forward_call_log(entry: dict[str, Any]) -> None:
         dur_val = strict_json_nonneg_int(dur_raw, field='duration_ms')
     except AgentClaimsValidationError:
         return
-    ak = str(entry.get('access_kind') or '').strip().lower()
-    if ak not in ('read', 'write', 'destructive'):
-        ak = 'unknown'
+    ak = _call_log_access_kind_for_ingest(entry)
     try:
         hs = strict_json_nonneg_int(stat, field='http_status') if stat is not None else 0
     except AgentClaimsValidationError:

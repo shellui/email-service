@@ -21,6 +21,7 @@ from apps.authapi.mcp_claims import AgentClaimsValidationError, normalize_mcp_ag
 from apps.authapi.mcp_identity import (
     McpDelegatedApprovalRoutingError,
     McpIdentityUnavailable,
+    approval_state_extras_scope,
     last_approval_state_extras,
 )
 
@@ -103,6 +104,7 @@ def _flat_audit_entry(
         'method': m,
         'resource_path': path_template,
         'access_kind': access_kind,
+        'tool_destructive': bool(tool_destructive),
         'outcome': outcome,
         'duration_ms': max(0, int(duration_ms)),
     }
@@ -159,6 +161,23 @@ class EmailMcpServer(McpServer):
         tool = next((t for t in tools if t['name'] == tool_name), None)
         if tool is None:
             return JsonResponse(self._error(req_id, -32602, 'Unknown tool'))
+        with approval_state_extras_scope():
+            return self._tools_call_inner(
+                request, req_id, params, agent_claims, tool_name, arguments, req_trace, schema, tool
+            )
+
+    def _tools_call_inner(
+        self,
+        request: HttpRequest,
+        req_id: Any,
+        params: dict[str, Any],
+        agent_claims: dict[str, Any],
+        tool_name: str,
+        arguments: dict[str, Any],
+        req_trace: str | None,
+        schema: dict[str, Any],
+        tool: dict[str, Any],
+    ) -> JsonResponse:
         meta = tool.get('_meta') or {}
         path_template = str(meta.get('path') or '')
         path = str(arguments.get('path') or path_template)
@@ -320,6 +339,7 @@ class EmailMcpServer(McpServer):
                         if consumed:
                             granted = True
                         else:
+                            # See ``consume_approval``: HTTP ``409`` already consumed matches ``state`` ``executed``.
                             if self.on_call:
                                 self.on_call(
                                     _flat_audit_entry(
@@ -329,15 +349,20 @@ class EmailMcpServer(McpServer):
                                         path_template=path_template,
                                         method=method,
                                         operation=operation,
-                                        outcome='failed',
+                                        outcome='denied',
                                         duration_ms=_after_gate_ms(),
-                                        error_code='identity_unavailable',
+                                        error_code='approval_expired',
                                         arguments_hash=args_hash,
                                         request_id=req_trace,
                                         tool_destructive=destructive,
                                     )
                                 )
-                            return JsonResponse({'error': 'identity_unavailable'}, status=503)
+                            return JsonResponse(
+                                self._result(
+                                    req_id,
+                                    {'content': [{'type': 'text', 'text': 'Approval already used.'}], 'isError': True},
+                                )
+                            )
                     else:
                         if self.on_call:
                             self.on_call(

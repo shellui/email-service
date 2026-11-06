@@ -76,6 +76,30 @@ class IdentityCallLogContractTests(SimpleTestCase):
         self.assertEqual(body['outcome'], 'allowed')
         self.assertEqual(body['access_kind'], 'read')
         self.assertIn('approval_id', body)
+
+    @override_settings(**MCP_SETTINGS)
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_forward_call_log_tool_destructive_keeps_destructive_when_entry_access_kind_write(self, mock_post):
+        """Ingest must not map destructive tools to ``write`` (``tool_destructive`` wins)."""
+        mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
+        forward_call_log(
+            {
+                'company_id': 42,
+                'agent_id': str(uuid.uuid4()),
+                'grant_version': 0,
+                'service': 'email',
+                'tool': 'api_v1_rules_destroy',
+                'method': 'DELETE',
+                'resource_path': '/api/v1/rules/{rule_id}',
+                'access_kind': 'write',
+                'tool_destructive': True,
+                'outcome': 'session_used',
+                'duration_ms': 1,
+                'http_status': 200,
+            }
+        )
+        body = mock_post.call_args.kwargs['json']
+        self.assertEqual(body['access_kind'], 'destructive')
         self.assertNotIn('resource_path', body)
         self.assertNotIn('http_status', body)
         self.assertNotIn('company_name', body)
