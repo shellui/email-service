@@ -810,11 +810,8 @@ def consume_approval(approval_id: str, *, payload: dict[str, Any] | None = None)
         raise McpIdentityUnavailable('approval_consume_failed') from exc
 
 
-# Identity ``canonical_outcome_ingest`` (``call_log_outcome.py``, d7fe351 ``pending_approval`` alias).
+# Identity ``canonical_outcome_ingest`` (``call_log_outcome.py``): ``pending_approval`` aliases to ``waiting_approval``.
 _IDENTITY_OUTCOME_ALIASES: dict[str, str] = {'pending_approval': 'waiting_approval'}
-
-# Identity ``McpInternalCallLogView`` (d7fe351): destructive ``access_kind`` only when outcome is allowed or session_used.
-_IDENTITY_DESTRUCTIVE_OK_OUTCOMES = frozenset({'allowed', 'session_used'})
 
 
 def _canonical_outcome_for_identity_ingest(raw: str) -> str:
@@ -822,52 +819,45 @@ def _canonical_outcome_for_identity_ingest(raw: str) -> str:
     return _IDENTITY_OUTCOME_ALIASES.get(s, s)
 
 
-def _call_log_access_kind_for_ingest(entry: dict[str, Any], *, outcome_norm: str) -> str:
-    """Map local audit fields to Identity ``access_kind`` (see ``McpInternalCallLogView``)."""
+def _call_log_access_kind_for_ingest(entry: dict[str, Any]) -> str:
+    """Truthful OpenAPI destructive flag for Identity ingest (all outcomes)."""
     raw = str(entry.get('access_kind') or '').strip().lower()
-    td = entry.get('tool_destructive')
-    if td is True:
-        ak = 'destructive'
-    elif raw in ('read', 'write', 'destructive'):
-        ak = raw
-    else:
-        ak = 'unknown'
-    # Until Identity #136 widens destructive ingest, non-success destructive rows use ``write`` (approval linkage still on ``approval_id``).
-    if ak == 'destructive' and outcome_norm not in _IDENTITY_DESTRUCTIVE_OK_OUTCOMES:
-        return 'write'
-    return ak
+    if entry.get('tool_destructive') is True:
+        return 'destructive'
+    if raw in ('read', 'write', 'destructive'):
+        return raw
+    return 'unknown'
 
 
-def _map_email_error_code_to_identity(local_code: str | None, *, outcome_norm: str) -> str | None:
-    """Map email local audit codes to Identity allowlist (``mcp_audit_codes.ALLOWED_ERROR_CODES``)."""
+# email-service local ``_flat_audit_entry`` / DRF codes -> Identity ``mcp_audit_codes.ALLOWED_ERROR_CODES`` (develop).
+_EMAIL_TO_IDENTITY_ERROR_CODE: dict[str, str] = {
+    'forbidden': 'forbidden',
+    'not_found': 'not_found',
+    'validation_failed': 'bad_request',
+    'conflict': 'conflict',
+    'server_error': 'server_error',
+    'request_failed': 'unknown',
+    'identity_unavailable': 'identity_unreachable',
+    'tool_error': 'downstream_error',
+    'read_only_blocked': 'forbidden',
+    'approval_pending': 'waiting_approval',
+    'approval_denied': 'denied',
+    'approval_expired': 'expired',
+    'rate_limited': 'rate_limited',
+    'authority_ambiguous': 'unknown',
+    'authority_mismatch': 'denied',
+    'authority_row_missing': 'unknown',
+    'authority_binding_missing': 'conflict',
+    'out_of_sync': 'out_of_sync',
+}
+
+
+def _map_email_error_code_to_identity(local_code: str | None) -> str | None:
+    """Map local audit codes to Identity ingest allowlist; unknown locals become ``unknown`` after sanitize."""
     if not local_code:
         return None
     lc = str(local_code).strip()
-    if outcome_norm == 'waiting_approval' and lc in {'approval_pending', 'approval_denied'}:
-        return None
-    mapping: dict[str, str] = {
-        'forbidden': 'forbidden',
-        'not_found': 'not_found',
-        'validation_failed': 'bad_request',
-        'conflict': 'conflict',
-        'server_error': 'server_error',
-        'request_failed': 'unknown',
-        'identity_unavailable': 'identity_unreachable',
-        'tool_error': 'downstream_error',
-        'read_only_blocked': 'forbidden',
-        'approval_pending': 'waiting_approval',
-        'approval_denied': 'denied',
-        'approval_expired': 'expired',
-        'rate_limited': 'rate_limited',
-        'authority_ambiguous': 'unknown',
-        'authority_mismatch': 'denied',
-        'authority_row_missing': 'unknown',
-        'authority_binding_missing': 'conflict',
-        'out_of_sync': 'out_of_sync',
-    }
-    mapped = mapping.get(lc)
-    if mapped is None:
-        return sanitize_call_log_error_code_for_identity(lc)
+    mapped = _EMAIL_TO_IDENTITY_ERROR_CODE.get(lc, lc)
     return sanitize_call_log_error_code_for_identity(mapped) or sanitize_call_log_error_code_for_identity('unknown')
 
 
@@ -914,6 +904,9 @@ def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def forward_call_log(entry: dict[str, Any]) -> None:
+    # Truthful ``access_kind`` for OpenAPI-destructive tools. Identity ``develop``
+    # ``McpInternalCallLogView`` may still reject some destructive outcome pairs until PR #136 lands;
+    # forward failures are logged and do not weaken local audits.
     try:
         _require_service_assertions()
     except McpIdentityUnavailable:
@@ -977,7 +970,7 @@ def forward_call_log(entry: dict[str, Any]) -> None:
         return
     outcome_raw = str(entry.get('outcome') or '').strip().lower()
     outcome_norm = _canonical_outcome_for_identity_ingest(outcome_raw)
-    ak = _call_log_access_kind_for_ingest(entry, outcome_norm=outcome_norm)
+    ak = _call_log_access_kind_for_ingest(entry)
     try:
         hs = strict_json_nonneg_int(stat, field='http_status') if stat is not None else 0
     except AgentClaimsValidationError:
@@ -1014,15 +1007,19 @@ def forward_call_log(entry: dict[str, Any]) -> None:
             body['company_binding_version'] = strict_json_nonneg_int(cbv_entry, field='company_binding_version')
         except AgentClaimsValidationError:
             return
-    ec_ingest = _map_email_error_code_to_identity(entry.get('error_code'), outcome_norm=outcome_norm)
+    ec_ingest = _map_email_error_code_to_identity(entry.get('error_code'))
     if ec_ingest:
         body['error_code'] = ec_ingest
     appr = entry.get('approval_request_id')
     if appr:
-        try:
-            body['approval_id'] = str(uuid.UUID(str(appr)))
-        except (ValueError, TypeError):
+        # Do not imply a consumed destructive grant on pre-execution denial (Identity matches row to tool + agent).
+        if ak == 'destructive' and outcome_norm == 'denied':
             pass
+        else:
+            try:
+                body['approval_id'] = str(uuid.UUID(str(appr)))
+            except (ValueError, TypeError):
+                pass
     try:
         response = requests.post(
             url,

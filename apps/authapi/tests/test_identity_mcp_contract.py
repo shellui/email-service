@@ -136,8 +136,8 @@ class IdentityCallLogContractTests(SimpleTestCase):
 
     @override_settings(**MCP_SETTINGS)
     @patch('apps.authapi.mcp_identity.requests.post')
-    def test_forward_call_log_destructive_failed_maps_write_and_error_code(self, mock_post):
-        """Identity #135: destructive + non-allowed outcome uses ``write``; local codes map to allowlist."""
+    def test_forward_call_log_destructive_failed_with_approval_id(self, mock_post):
+        """Destructive tool failed after consume: ``access_kind`` destructive, ``approval_id``, mapped error_code."""
         appr = str(uuid.uuid4())
         mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
         forward_call_log(
@@ -157,10 +157,38 @@ class IdentityCallLogContractTests(SimpleTestCase):
             }
         )
         body = mock_post.call_args.kwargs['json']
-        self.assertEqual(body['access_kind'], 'write')
+        self.assertEqual(body['access_kind'], 'destructive')
         self.assertEqual(body['outcome'], 'failed')
         self.assertEqual(body['error_code'], 'bad_request')
         self.assertEqual(body['approval_id'], appr)
+        self.assertNotIn('operation_title', body)
+        self.assertEqual(body['path'], '/mcp')
+
+    @override_settings(**MCP_SETTINGS)
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_forward_call_log_destructive_denied_before_consume_omits_approval_id(self, mock_post):
+        """Pre-execution denial: truthful destructive, no ``approval_id`` (row not consumed)."""
+        mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
+        forward_call_log(
+            {
+                'company_id': 42,
+                'agent_id': str(uuid.uuid4()),
+                'grant_version': 0,
+                'service': 'email',
+                'tool': 'api_v1_rules_destroy',
+                'access_kind': 'destructive',
+                'tool_destructive': True,
+                'outcome': 'denied',
+                'duration_ms': 1,
+                'http_status': 200,
+                'error_code': 'approval_denied',
+            }
+        )
+        body = mock_post.call_args.kwargs['json']
+        self.assertEqual(body['access_kind'], 'destructive')
+        self.assertEqual(body['outcome'], 'denied')
+        self.assertEqual(body['error_code'], 'denied')
+        self.assertNotIn('approval_id', body)
 
     @override_settings(**MCP_SETTINGS)
     @patch('apps.authapi.mcp_identity.requests.post')
@@ -184,7 +212,7 @@ class IdentityCallLogContractTests(SimpleTestCase):
         )
         body = mock_post.call_args.kwargs['json']
         self.assertEqual(body['outcome'], 'waiting_approval')
-        self.assertNotIn('error_code', body)
+        self.assertEqual(body['error_code'], 'waiting_approval')
 
     @override_settings(**MCP_SETTINGS)
     @patch('apps.authapi.mcp_identity.requests.post')

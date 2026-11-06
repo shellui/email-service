@@ -1,12 +1,12 @@
-"""Identity ``McpInternalCallLogView`` error_code allowlist (``mcp_audit_codes.sanitize_error_code``, d7fe351).
+"""Identity ``McpInternalCallLogView`` error_code allowlist (``mcp_audit_codes.sanitize_error_code``).
 
 email-service uses this for mapping local MCP audit codes before ``POST …/mcp-call-logs``.
-Source of truth: identity-service ``apps/agents/mcp_audit_codes.py``.
+Source of truth: identity-service ``develop`` ``apps/agents/mcp_audit_codes.py`` (sync on bumps).
 """
 
 from __future__ import annotations
 
-# Copied from Identity ``ALLOWED_ERROR_CODES`` at d7fe351 (keep in sync on Identity bumps).
+# Copied from Identity ``ALLOWED_ERROR_CODES`` on ``develop`` (must match byte-for-byte).
 IDENTITY_CALL_LOG_ALLOWED_ERROR_CODES = frozenset(
     {
         'bad_request',
