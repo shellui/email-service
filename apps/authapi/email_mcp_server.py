@@ -26,6 +26,27 @@ from apps.authapi.mcp_identity import (
 
 _BODYLESS_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS', 'TRACE'})
 
+
+def _access_kind_for_audit(
+    *,
+    tool_destructive: bool,
+    method: str,
+    outcome: str,
+    error_code: str | None,
+) -> str:
+    """
+    Identity ingest ``access_kind`` for destructive tools: only success paths use ``destructive``;
+    denied, waiting, and failed rows use ``write`` so ingest stays in the supported vocabulary.
+    """
+    m = method.upper()
+    if tool_destructive:
+        if outcome in {'allowed', 'session_used'} and error_code is None:
+            return 'destructive'
+        return 'write'
+    if m in _BODYLESS_METHODS:
+        return 'read'
+    return 'write'
+
 # Identity ``canonical_outcome_ingest`` (``waiting_approval``); legacy ``pending_`` kept for local audit only if needed.
 _OUTCOMES = frozenset({'failed', 'denied', 'pending_approval', 'waiting_approval', 'allowed', 'session_used'})
 _ERROR_CODES = frozenset(
@@ -89,12 +110,9 @@ def _flat_audit_entry(
     if error_code is not None and error_code not in _ERROR_CODES:
         error_code = 'request_failed'
     m = method.upper()
-    if tool_destructive:
-        access_kind = 'destructive'
-    elif m in _BODYLESS_METHODS:
-        access_kind = 'read'
-    else:
-        access_kind = 'write'
+    access_kind = _access_kind_for_audit(
+        tool_destructive=tool_destructive, method=m, outcome=outcome, error_code=error_code
+    )
     entry: dict[str, Any] = {
         'agent_id': agent_claims.get('agent_id'),
         'company_id': agent_claims.get('company_id'),
@@ -124,6 +142,9 @@ def _flat_audit_entry(
     if gci is not None:
         entry['global_company_id'] = str(gci)
         entry['company_binding_version'] = strict_json_nonneg_int(cbv, field='company_binding_version')
+    for claim_key in ('mcp_access', 'mcp_read', 'mcp_destructive', 'scope', 'global_agent_id'):
+        if claim_key in agent_claims:
+            entry[claim_key] = agent_claims[claim_key]
     return entry
 
 
@@ -240,11 +261,7 @@ class EmailMcpServer(McpServer):
             'service': self.service_name,
             'action': tool_name,
             'arguments_hash': args_hash,
-            'path': resolved_path,
-            'method': method,
-            'mcp_access': agent_claims.get('mcp_access'),
-            'mcp_read': agent_claims.get('mcp_read'),
-            'mcp_destructive': agent_claims.get('mcp_destructive'),
+            'verified_agent_claims': dict(agent_claims),
         }
         gv = agent_claims.get('grant_version')
         if gv is not None:

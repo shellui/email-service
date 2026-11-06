@@ -209,6 +209,10 @@ def _parse_live_delegated_authority_body(
     if row_global_agent == row_agent:
         raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
 
+    token_global_agent = claims.get('global_agent_id')
+    if token_global_agent is not None and str(token_global_agent).strip() != row_global_agent:
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+
     cid_raw = body.get('company_id')
     if type(cid_raw) is not int or isinstance(cid_raw, bool):
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
@@ -266,6 +270,18 @@ def _parse_live_delegated_authority_body(
         'company_binding_version': int(cbv_raw),
         'grant_version': int(gv_raw),
     }
+
+
+def _claims_subset_for_live_delegated(claims: dict[str, Any]) -> dict[str, Any]:
+    """Verified JWT fields needed for ``_parse_live_delegated_authority_body`` (no approval extras)."""
+    keys = (
+        'mcp_access',
+        'mcp_read',
+        'mcp_destructive',
+        'scope',
+        'global_agent_id',
+    )
+    return {k: claims[k] for k in keys if k in claims}
 
 
 # Tests and contract checks compare this to Identity ``_delegated_authority_fixed_payload`` keys (15 total).
@@ -580,6 +596,7 @@ def _approval_assertion_extra_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
         'mcp_access',
         'mcp_read',
         'mcp_destructive',
+        'verified_agent_claims',
     }
     unknown = set(payload.keys()) - allowed_payload_keys
     if unknown:
@@ -646,10 +663,22 @@ def _approval_assertion(payload: dict[str, Any]) -> str:
 def _maybe_verify_live_delegated_for_approval(payload: dict[str, Any]) -> None:
     if payload.get('global_company_id') is None:
         return
+    # Approval payloads carry assertion fields only; merge normalized JWT claims for live parse
+    # (``mcp_access``, ``mcp_read``, ``scope``, ``mcp_destructive``, optional ``global_agent_id``).
+    merged: dict[str, Any] = dict(payload.get('verified_agent_claims') or {})
+    merged.update(
+        {
+            'agent_id': payload.get('agent_id'),
+            'company_id': int(payload['company_id']),
+            'global_company_id': payload.get('global_company_id'),
+            'company_binding_version': payload.get('company_binding_version'),
+            'grant_version': payload.get('grant_version'),
+        }
+    )
     verify_live_delegated_authority_against_token(
         str(payload.get('agent_id') or ''),
         int(payload['company_id']),
-        payload,
+        merged,
     )
 
 
@@ -765,7 +794,6 @@ def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
     base = identity_api_base()
     if not origin or not base:
         raise McpIdentityUnavailable('identity_service_url_not_configured')
-    _maybe_verify_live_delegated_for_approval(payload)
     assertion = build_mcp_approval_assertion(**_approval_assertion_kwargs(payload))
     body: dict[str, Any] = {}
     url = f'{base}/api/v1/mcp/internal/mcp-approval-requests'
@@ -830,11 +858,14 @@ def forward_call_log(entry: dict[str, Any]) -> None:
             cbv_i = strict_json_nonneg_int(cbv_for_live, field='company_binding_version')
         except AgentClaimsValidationError:
             return
-        live_claims: dict[str, Any] = {
-            'global_company_id': gci_live,
-            'company_binding_version': cbv_i,
-            'grant_version': gv_i,
-        }
+        merged_entry = dict(entry)
+        merged_entry['global_company_id'] = gci_live
+        merged_entry['company_binding_version'] = cbv_i
+        merged_entry['grant_version'] = gv_i
+        live_claims = _claims_subset_for_live_delegated(merged_entry)
+        live_claims['global_company_id'] = str(gci_live)
+        live_claims['company_binding_version'] = cbv_i
+        live_claims['grant_version'] = gv_i
         try:
             verify_live_delegated_authority_against_token(str(entry['agent_id']), cc_val, live_claims)
         except McpIdentityUnavailable:

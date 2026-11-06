@@ -54,8 +54,9 @@ def normalize_mcp_agent_claims(agent_claims: dict[str, Any]) -> dict[str, Any]:
         read_level = str(read_raw).strip()
         if read_level not in _VALID_MCP_READ:
             raise AgentClaimsValidationError('mcp_read')
-    dest_raw = agent_claims.get('mcp_destructive')
-    destructive_flag = _strict_bool_claim(False if dest_raw is None else dest_raw, field='mcp_destructive')
+    if 'mcp_destructive' not in agent_claims:
+        raise AgentClaimsValidationError('mcp_destructive')
+    destructive_flag = _strict_bool_claim(agent_claims.get('mcp_destructive'), field='mcp_destructive')
 
     company_id = strict_json_nonneg_int(agent_claims.get('company_id'), field='company_id')
 
@@ -70,6 +71,20 @@ def normalize_mcp_agent_claims(agent_claims: dict[str, Any]) -> dict[str, Any]:
     if 'grant_version' not in agent_claims:
         raise AgentClaimsValidationError('grant_version')
     gv = strict_json_nonneg_int(agent_claims.get('grant_version'), field='grant_version')
+
+    ga_catalog: str | None = None
+    if 'global_agent_id' in agent_claims:
+        gaid_raw = agent_claims.get('global_agent_id')
+        if gaid_raw is None:
+            ga_catalog = None
+        else:
+            try:
+                uga = uuid.UUID(str(gaid_raw))
+            except (ValueError, TypeError) as exc:
+                raise AgentClaimsValidationError('global_agent_id') from exc
+            if uga.int == 0:
+                raise AgentClaimsValidationError('global_agent_id')
+            ga_catalog = str(uga)
 
     gci: str | None = None
     if 'global_company_id' in agent_claims:
@@ -110,6 +125,10 @@ def normalize_mcp_agent_claims(agent_claims: dict[str, Any]) -> dict[str, Any]:
     out['mcp_destructive'] = destructive_flag
     out['company_id'] = company_id
     out['grant_version'] = gv
+    if ga_catalog is None:
+        out.pop('global_agent_id', None)
+    else:
+        out['global_agent_id'] = ga_catalog
     if gci is None:
         out.pop('global_company_id', None)
     else:

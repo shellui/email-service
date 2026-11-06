@@ -1508,6 +1508,7 @@ class McpEndpointTests(TestCase):
             'mcp_access': 'read_only',
             'mcp_read': 'safe',
             'mcp_destructive': False,
+            'grant_version': 0,
             'mcp_authority': 'delegated',
             'exp': int(time.time()) + 600,
             'iss': ISSUER,
@@ -1531,6 +1532,60 @@ class McpEndpointTests(TestCase):
         bad = jwt.encode(claims, SIGNING, algorithm='HS256')
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
+
+    def test_agent_token_omitted_mcp_destructive_rejected(self):
+        claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
+        claims.pop('mcp_destructive', None)
+        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        response = _rpc(self.client, bad, 'tools/list')
+        self.assertEqual(response.status_code, 401)
+
+    def test_delegated_live_global_agent_id_must_match_token_when_present(self):
+        """When the JWT carries ``global_agent_id``, it must equal Identity live ``global_agent_id``."""
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        catalog_id = str(uuid.uuid4())
+        token_catalog = str(uuid.uuid4())
+        agents = [
+            {
+                'agent_id': agent_id,
+                'company_id': 42,
+                'global_company_id': gcid,
+                'company_binding_version': 0,
+                'grant_version': 0,
+                'global_agent_id': catalog_id,
+                'access_mode': 'read_only',
+                'read_level': 'safe',
+                'allow_destructive': False,
+                'services_allowed': ['email'],
+            }
+        ]
+        self._set_revocation_agents(agents)
+        reset_mcp_server_cache()
+        reset_revocation_cache_for_tests()
+        claims = {
+            'sub': f'agent:{agent_id}',
+            'agent_id': agent_id,
+            'company_id': 42,
+            'scope': 'email',
+            'mcp_access': 'read_only',
+            'mcp_read': 'safe',
+            'mcp_destructive': False,
+            'grant_version': 0,
+            'global_company_id': gcid,
+            'company_binding_version': 0,
+            'mcp_authority': 'delegated',
+            'global_agent_id': token_catalog,
+            'exp': int(time.time()) + 600,
+            'iss': ISSUER,
+            'aud': MCP_RESOURCE,
+        }
+        token = jwt.encode(claims, SIGNING, algorithm='HS256')
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 403)
+        self._set_revocation_agents(None)
 
     def test_agent_token_company_id_string_rejected(self):
         claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
@@ -1675,6 +1730,7 @@ class McpEndpointTests(TestCase):
                 'service': 'email',
                 'action': 'api_v1_rules_create',
                 'arguments_hash': 'abc',
+                'grant_version': 0,
             }
         )
         body = mock_post.call_args.kwargs.get('json')
@@ -1726,6 +1782,20 @@ class McpEndpointTests(TestCase):
         result = response.json()['result']
         self.assertTrue(result.get('isError'))
         self.assertIn('Destructive', result['content'][0]['text'])
+
+    def test_audit_access_kind_destructive_tool_non_success_uses_write(self):
+        from apps.authapi.email_mcp_server import _access_kind_for_audit
+
+        self.assertEqual(
+            _access_kind_for_audit(
+                tool_destructive=True, method='DELETE', outcome='waiting_approval', error_code='approval_pending'
+            ),
+            'write',
+        )
+        self.assertEqual(
+            _access_kind_for_audit(tool_destructive=True, method='DELETE', outcome='allowed', error_code=None),
+            'destructive',
+        )
 
     @patch('apps.email.views.ensure_builtin_rules')
     @patch('apps.authapi.mcp_identity.forward_call_log')
