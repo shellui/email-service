@@ -23,7 +23,8 @@ dependencies = [
     "prometheus-client==0.21.1",
     "redis==8.1.0",
     "celery==5.6.3",
-    "shellui-django[mcp]==0.4.0",
+    # Exact git pin: PyPI has no 0.4.1 yet; django-commons PR 14 is the canonical helper source.
+    "shellui-django[mcp] @ git+https://github.com/shellui/django-commons.git@5f0fdf44bb140848fb1440cf04da6ada7996711d",
 ]
 
 [dependency-groups]

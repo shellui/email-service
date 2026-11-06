@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import inspect
 import logging
 import time
+import uuid
 from typing import Any
 
 import requests
@@ -197,10 +197,32 @@ def _refresh_revocations() -> None:
     _revocation_snapshot['trusted'] = True
 
 
+def _approval_assertion_extra_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
+    """Extra kwargs for ``build_mcp_approval_assertion`` (django-commons #14): strict presence, never default 0."""
+    raw_global = payload.get('global_company_id', None)
+    has_global = raw_global is not None
+    has_binding = payload.get('company_binding_version', None) is not None
+    has_grant = 'grant_version' in payload and payload['grant_version'] is not None
+    extra: dict[str, Any] = {}
+    if has_global or has_binding:
+        if not (has_global and has_binding and has_grant):
+            raise McpIdentityUnavailable('Global delegation fields incomplete for approval assertion.')
+        try:
+            extra['global_company_id'] = str(uuid.UUID(str(raw_global)))
+        except (ValueError, TypeError) as exc:
+            raise McpIdentityUnavailable('global_company_id must be a UUID string.') from exc
+        extra['company_binding_version'] = int(payload['company_binding_version'])
+        extra['grant_version'] = int(payload['grant_version'])
+        return extra
+    if has_grant:
+        extra['grant_version'] = int(payload['grant_version'])
+    return extra
+
+
 def _approval_assertion_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
     """Keyword args for ``build_mcp_approval_assertion`` aligned with identity #135 / django-commons #14."""
     origin = identity_origin()
-    kwargs: dict[str, Any] = {
+    return {
         'company_id': int(payload['company_id']),
         'agent_id': str(payload['agent_id']),
         'service': str(payload.get('service') or 'email'),
@@ -208,15 +230,8 @@ def _approval_assertion_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
         'arguments_hash': str(payload.get('arguments_hash') or ''),
         'audience_url': origin,
         **signing_kwargs(),
+        **_approval_assertion_extra_kwargs(payload),
     }
-    sig = inspect.signature(build_mcp_approval_assertion)
-    if 'grant_version' in sig.parameters and 'grant_version' in payload:
-        kwargs['grant_version'] = int(payload['grant_version'])
-    if 'global_company_id' in sig.parameters and payload.get('global_company_id') is not None:
-        kwargs['global_company_id'] = str(payload['global_company_id'])
-    if 'company_binding_version' in sig.parameters and payload.get('company_binding_version') is not None:
-        kwargs['company_binding_version'] = int(payload['company_binding_version'])
-    return kwargs
 
 
 def _approval_assertion(payload: dict[str, Any]) -> str:

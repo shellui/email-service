@@ -25,7 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🛠 Improvements
 
-- MCP: stricter Identity approval consume (only literal JSON `true` for `consumed`), optional global delegation claims on agent JWTs checked against the signed revocation list, safe `activity` metadata and trusted `company_name` on call log forwards, and approval assertion kwargs wired for django-commons PR 14 when the installed `shellui-django` supports them.
+- MCP: stricter Identity approval consume (only literal JSON `true` for `consumed`), optional global delegation claims on agent JWTs checked against the signed revocation list, safe `activity` metadata and trusted `company_name` on call log forwards, strict `build_mcp_approval_assertion` kwargs for personal vs delegated agents, and `shellui-django` pinned to the django-commons PR 14 git SHA (PyPI 0.4.1 not published yet).
 
 ## [0.8.0] - 2026-11-01
 

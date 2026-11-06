@@ -57,7 +57,14 @@ email-service reuses existing Identity URL settings (no new required env vars):
 
 Internal calls use short-lived JWT assertions from the shared `shellui_django.mcp` helpers (`aud` `shellui-mcp-call-log` or `shellui-mcp-approval`). Outbound signing uses `JWT_PRIVATE_KEY` (RS256, same key as identity-service in production). Revocation poll responses are verified with Identity JWKS via `parse_trusted_revocation_poll_response`.
 
-Approval assertions include `grant_version`, `global_company_id`, and `company_binding_version` when the installed `shellui-django` exposes those kwargs (django-commons PR 14) and the agent JWT carries the same claims. Identity must treat canonical `0` grant and binding versions as valid. Before django-commons merges, email-service still forwards authority in approval payloads for tests and stays compatible with the current 0.4.0 helper signature.
+email-service pins **`shellui-django`** to the exact **django-commons PR 14** merge candidate (git SHA in `uv.lock`), not PyPI: there is **no** published `0.4.1` wheel yet. Merge **django-commons** into `develop` before landing this branch, or bump the git ref after green CI there. Coordinator: do not expect a package publish for that pin.
+
+Approval assertions always use `shellui_django.mcp.internal.build_mcp_approval_assertion` from that pin:
+
+- **Personal regional:** optional `grant_version` only when the claim is present (including explicit `0`); omit `global_company_id` and `company_binding_version`.
+- **Globally delegated:** `global_company_id` (UUID string), `company_binding_version`, and `grant_version` are **all required** on every create, state, and consume path (never truthiness: `0` is valid). Incomplete triples are refused.
+
+Revocation poll responses must carry signed `max_active_grant_version` (and matching HTTP body); the trusted parser from `shellui-django` enforces per-agent snapshots and fingerprints.
 
 After a successful HTTP write in `ask` mode, Identity `mcp-approval-consume` must return JSON with `consumed` set to the boolean `true`. A `2xx` response with any other value is treated as failure (no silent success).
 
@@ -217,6 +224,6 @@ Send `Authorization: Bearer <agent_access_token>` on every `POST /mcp` request.
 
 ## Internal assertions to Identity
 
-Revocation polling, approvals and call logs send Identity a short-lived RS256 assertion signed with this service's own key (`EMAIL_SERVICE_SIGNING_KEY`, issuer `EMAIL_SERVICE_ISSUER`, `shellui-django` 0.4.0+). The public key is served at `GET /.well-known/jwks.json`. Identity trusts it only when its own `EMAIL_SERVICE_ISSUER` matches, and reads the key from `EMAIL_SERVICE_JWKS_URL` or a pinned `EMAIL_SERVICE_JWKS`. Without a key, MCP fails closed: agents are refused and call logs are skipped.
+Revocation polling, approvals and call logs send Identity a short-lived RS256 assertion signed with this service's own key (`EMAIL_SERVICE_SIGNING_KEY`, issuer `EMAIL_SERVICE_ISSUER`, `shellui-django` from the git pin in `uv.lock`). The public key is served at `GET /.well-known/jwks.json`. Identity trusts it only when its own `EMAIL_SERVICE_ISSUER` matches, and reads the key from `EMAIL_SERVICE_JWKS_URL` or a pinned `EMAIL_SERVICE_JWKS`. Without a key, MCP fails closed: agents are refused and call logs are skipped.
 
 Generate a key with `openssl genrsa 3072` and keep it in a secret store or a mounted file (`EMAIL_SERVICE_SIGNING_KEY_FILE`).

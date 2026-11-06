@@ -18,6 +18,7 @@ from shellui_django.mcp.internal import (
     REVOCATION_AUDIENCE,
     REVOCATION_CACHE_SECONDS,
     REVOCATION_SCOPE,
+    build_mcp_approval_assertion,
     verify_mcp_internal_assertion,
 )
 from shellui_django.mcp.openapi_tools import tools_from_schema
@@ -99,6 +100,7 @@ def _rpc(client: Client, token: str, method: str, params: dict | None = None, re
 
 
 def _revocation_ok_response(*, agents=None):
+    max_cap = 1_000_000
     assertion = sign_test_revocation_list_assertion(
         private_pem=_TEST_PRIVATE_PEM,
         kid=_TEST_KID,
@@ -106,10 +108,12 @@ def _revocation_ok_response(*, agents=None):
         revoked_agent_ids=[],
         agents=agents or [],
         cache_seconds=REVOCATION_CACHE_SECONDS,
+        max_active_grant_version=max_cap,
     )
     body = {
         'revoked_agent_ids': [],
         'cache_seconds': REVOCATION_CACHE_SECONDS,
+        'max_active_grant_version': max_cap,
         'revocation_assertion': assertion,
         'agents': agents or [],
     }
@@ -748,14 +752,11 @@ class McpEndpointTests(TestCase):
         body = mock_post.call_args.kwargs['json']
         self.assertEqual(body.get('company_name'), 'Audit Co MCP')
 
-    def test_grant_version_zero_forwarded_to_approval_assertion_when_supported(self):
-        import inspect
+    def test_approval_assertion_personal_optional_grant_version_zero(self):
+        import jwt
 
         from apps.authapi.mcp_identity import _approval_assertion_kwargs
-        from shellui_django.mcp.internal import build_mcp_approval_assertion
 
-        if 'grant_version' not in inspect.signature(build_mcp_approval_assertion).parameters:
-            self.skipTest('shellui-django build_mcp_approval_assertion has no grant_version yet.')
         payload = {
             'company_id': 42,
             'agent_id': str(uuid.uuid4()),
@@ -765,7 +766,48 @@ class McpEndpointTests(TestCase):
             'grant_version': 0,
         }
         kwargs = _approval_assertion_kwargs(payload)
-        self.assertEqual(kwargs.get('grant_version'), 0)
+        token = build_mcp_approval_assertion(**kwargs)
+        decoded = jwt.decode(token, options={'verify_signature': False})
+        self.assertEqual(decoded.get('grant_version'), 0)
+        self.assertNotIn('global_company_id', decoded)
+
+    def test_approval_assertion_delegation_full_triple(self):
+        import jwt
+
+        from apps.authapi.mcp_identity import _approval_assertion_kwargs
+
+        gcid = str(uuid.uuid4())
+        payload = {
+            'company_id': 42,
+            'agent_id': str(uuid.uuid4()),
+            'service': 'email',
+            'action': 'api_v1_rules_create',
+            'arguments_hash': 'abc',
+            'global_company_id': gcid,
+            'company_binding_version': 0,
+            'grant_version': 0,
+        }
+        kwargs = _approval_assertion_kwargs(payload)
+        token = build_mcp_approval_assertion(**kwargs)
+        decoded = jwt.decode(token, options={'verify_signature': False})
+        self.assertEqual(decoded['global_company_id'], gcid)
+        self.assertEqual(decoded['company_binding_version'], 0)
+        self.assertEqual(decoded['grant_version'], 0)
+
+    def test_approval_assertion_delegation_incomplete_raises(self):
+        from apps.authapi.mcp_identity import McpIdentityUnavailable, _approval_assertion_extra_kwargs
+
+        gcid = str(uuid.uuid4())
+        with self.assertRaises(McpIdentityUnavailable):
+            _approval_assertion_extra_kwargs(
+                {
+                    'global_company_id': gcid,
+                }
+            )
+        with self.assertRaises(McpIdentityUnavailable):
+            _approval_assertion_extra_kwargs(
+                {'global_company_id': gcid, 'company_binding_version': 0},
+            )
 
     def test_registry_covers_every_mcp_tool(self):
         from apps.authapi.mcp_views import _schema
