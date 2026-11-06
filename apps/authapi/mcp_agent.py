@@ -239,9 +239,9 @@ def agent_claims_from_token(raw_token: str, *, request=None) -> dict[str, Any]:
     has_global = claims.get('global_company_id') is not None
     has_binding = claims.get('company_binding_version') is not None
     if has_global != has_binding:
-        raise exceptions.AuthenticationFailed('Agent token global authority claims are incomplete.')
+        raise exceptions.AuthenticationFailed('agent_token_authority_incomplete')
     if has_global and 'grant_version' not in claims:
-        raise exceptions.AuthenticationFailed('Agent token global authority claims are incomplete.')
+        raise exceptions.AuthenticationFailed('agent_token_authority_incomplete')
     return dict(claims)
 
 

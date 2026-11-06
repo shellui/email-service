@@ -57,7 +57,7 @@ email-service reuses existing Identity URL settings (no new required env vars):
 
 Internal calls use short-lived JWT assertions from the shared `shellui_django.mcp` helpers (`aud` `shellui-mcp-call-log` or `shellui-mcp-approval`). Outbound signing uses `JWT_PRIVATE_KEY` (RS256, same key as identity-service in production). Revocation poll responses are verified with Identity JWKS via `parse_trusted_revocation_poll_response`.
 
-email-service pins **`shellui-django`** to the exact **django-commons PR 14** merge candidate (git SHA in `uv.lock`), not PyPI: there is **no** published `0.4.1` wheel yet. Merge **django-commons** into `develop` before landing this branch, or bump the git ref after green CI there. Coordinator: do not expect a package publish for that pin.
+email-service pins **`shellui-django`** to the merged **django-commons** `develop` commit (`1f0754b421688ed26b7eb2e76b25b6fa3eea2a37`, see `pyproject.toml` / `uv.lock`). PyPI may lag that commit: coordinator installs use **git**, not a published wheel, until the package is released.
 
 Approval assertions always use `shellui_django.mcp.internal.build_mcp_approval_assertion` from that pin:
 
