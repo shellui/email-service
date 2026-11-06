@@ -657,6 +657,41 @@ class McpEndpointTests(TestCase):
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
+    def test_agent_token_invalid_mcp_access_rejected(self):
+        claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
+        claims['mcp_access'] = 'superuser'
+        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        response = _rpc(self.client, bad, 'tools/list')
+        self.assertEqual(response.status_code, 401)
+
+    def test_agent_token_mcp_destructive_string_rejected(self):
+        claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
+        claims['mcp_destructive'] = 'true'
+        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        response = _rpc(self.client, bad, 'tools/list')
+        self.assertEqual(response.status_code, 401)
+
+    def test_agent_token_company_id_nondecimal_string_rejected(self):
+        claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
+        claims['company_id'] = 'not-a-number'
+        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        response = _rpc(self.client, bad, 'tools/list')
+        self.assertEqual(response.status_code, 401)
+
+    def test_agent_token_grant_version_negative_rejected(self):
+        token, _ = _agent_token(grant_version=-1)
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 401)
+
+    def test_agent_token_global_company_id_invalid_uuid_rejected(self):
+        claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
+        claims['global_company_id'] = 'not-a-uuid'
+        claims['company_binding_version'] = 1
+        claims['grant_version'] = 1
+        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        response = _rpc(self.client, bad, 'tools/list')
+        self.assertEqual(response.status_code, 401)
+
     @patch('apps.authapi.mcp_identity.resolve_approval_state', return_value=None)
     @patch('apps.authapi.mcp_identity.create_approval_request', return_value=None)
     def test_destructive_full_mode_still_requires_approval(self, _create, _state):
@@ -724,11 +759,11 @@ class McpEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(mock_forward.called)
         entry = mock_forward.call_args[0][0]
-        act = entry.get('activity') or {}
-        self.assertEqual(act.get('resource_path'), '/api/v1/rules')
-        self.assertEqual(act.get('access_kind'), 'read')
-        self.assertEqual(act.get('outcome'), 'ok')
-        self.assertNotIn('arguments', act)
+        self.assertEqual(entry.get('resource_path'), '/api/v1/rules')
+        self.assertEqual(entry.get('access_kind'), 'read')
+        self.assertEqual(entry.get('outcome'), 'succeeded')
+        self.assertNotIn('arguments', entry)
+        self.assertNotIn('activity', entry)
 
     @patch('apps.authapi.mcp_identity.requests.post')
     def test_forward_call_log_adds_company_name_from_profile(self, mock_post):
@@ -743,14 +778,16 @@ class McpEndpointTests(TestCase):
                 'service': 'email',
                 'tool': 'api_v1_rules_list',
                 'method': 'GET',
-                'path': '/api/v1/rules',
-                'status': 200,
-                'arguments': {},
-                'activity': {'resource_path': '/api/v1/rules', 'access_kind': 'read', 'outcome': 'ok', 'duration_ms': 1},
+                'resource_path': '/api/v1/rules',
+                'access_kind': 'read',
+                'outcome': 'succeeded',
+                'duration_ms': 1,
             }
         )
         body = mock_post.call_args.kwargs['json']
         self.assertEqual(body.get('company_name'), 'Audit Co MCP')
+        self.assertNotIn('arguments', body)
+        self.assertEqual(body.get('resource_path'), '/api/v1/rules')
 
     def test_approval_assertion_personal_optional_grant_version_zero(self):
         import jwt

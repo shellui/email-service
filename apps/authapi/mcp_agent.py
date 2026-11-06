@@ -19,6 +19,29 @@ logger = logging.getLogger(__name__)
 
 MCP_SERVICE_ID = 'email'
 
+_VALID_MCP_ACCESS = frozenset({'read_only', 'ask', 'full'})
+_VALID_MCP_READ = frozenset({'safe', 'sensitive'})
+
+
+def _strict_bool_claim(raw: Any, *, field: str) -> bool:
+    if raw is True or raw is False:
+        return raw
+    if raw in {0, 1}:
+        return bool(raw)
+    raise exceptions.AuthenticationFailed(f'Agent token has invalid {field}.')
+
+
+def _normalize_company_claim(raw: Any) -> int:
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s.isdecimal():
+            raise exceptions.AuthenticationFailed('Agent token has invalid company_id.')
+        return int(s)
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise exceptions.AuthenticationFailed('Agent token has invalid company_id.') from exc
+
 
 def is_agent_principal(user) -> bool:
     if user is None:
@@ -36,9 +59,9 @@ def agent_token_company_id(user) -> int:
         raise ValueError('Not an agent principal.')
     raw = getattr(user, 'company_id', None)
     try:
-        return int(raw)
-    except (TypeError, ValueError) as exc:
-        raise ValueError('Agent token missing company_id.') from exc
+        return _normalize_company_claim(raw)
+    except exceptions.AuthenticationFailed as exc:
+        raise ValueError(str(exc)) from exc
 
 
 _BODYLESS_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS', 'TRACE'})
@@ -198,6 +221,25 @@ def agent_claims_from_token(raw_token: str, *, request=None) -> dict[str, Any]:
         raise exceptions.AuthenticationFailed('Agent is not allowed to use email.')
     if _staff_agent_refused(claims):
         raise exceptions.AuthenticationFailed('Staff accounts cannot use MCP agents.')
+    raw_access = claims.get('mcp_access')
+    if raw_access is None:
+        claims['mcp_access'] = 'read_only'
+    else:
+        access = str(raw_access).strip()
+        if access not in _VALID_MCP_ACCESS:
+            raise exceptions.AuthenticationFailed('Agent token has invalid mcp_access.')
+        claims['mcp_access'] = access
+    raw_read = claims.get('mcp_read')
+    if raw_read is None:
+        claims['mcp_read'] = 'safe'
+    else:
+        read_level = str(raw_read).strip()
+        if read_level not in _VALID_MCP_READ:
+            raise exceptions.AuthenticationFailed('Agent token has invalid mcp_read.')
+        claims['mcp_read'] = read_level
+    dest_raw = claims.get('mcp_destructive')
+    claims['mcp_destructive'] = _strict_bool_claim(False if dest_raw is None else dest_raw, field='mcp_destructive')
+    claims['company_id'] = _normalize_company_claim(claims.get('company_id'))
     # Regional numeric company_id plus optional global delegation claims (identity #135).
     if 'grant_version' in claims:
         gv_raw = claims.get('grant_version')
@@ -246,11 +288,12 @@ def agent_claims_from_token(raw_token: str, *, request=None) -> dict[str, Any]:
 
 
 def agent_principal_from_claims(claims: dict[str, Any]) -> EmailPrincipal:
-    raw_company = claims.get('company_id')
+    if claims.get('company_id') is None:
+        raise exceptions.AuthenticationFailed('Agent token missing company_id.')
     try:
-        company_id = int(raw_company)
-    except (TypeError, ValueError) as exc:
-        raise exceptions.AuthenticationFailed('Agent token missing company_id.') from exc
+        company_id = _normalize_company_claim(claims.get('company_id'))
+    except exceptions.AuthenticationFailed as exc:
+        raise exc
     return EmailPrincipal(
         user_id=0,
         company_id=company_id,

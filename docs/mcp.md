@@ -25,9 +25,9 @@ Required claims:
 | `scope` | Must include `email` |
 | `mcp_access` | `read_only`, `ask`, or `full` |
 | `mcp_read` | `safe` or `sensitive` |
-| `mcp_destructive` | Skip extra approval for destructive tools when true |
+| `mcp_destructive` | Must be JSON boolean (`true` or `false`). Grants eligibility for destructive tools but **every** destructive call still needs a fresh human approval in Identity. It never skips approvals. |
 
-Optional claims for globally delegated agents (see identity PR 135 and django-commons PR 14). All must be present together when `global_company_id` is set:
+Optional claims for globally delegated agents (Identity admin docs). All must be present together when `global_company_id` is set:
 
 | Claim | Purpose |
 | --- | --- |
@@ -43,7 +43,7 @@ Personal regional agents omit these three claims. Tokens with only one of `globa
 | --- | --- |
 | `read_only` | HTTP GET-style tools only |
 | `ask` | Writes create an approval request in Identity |
-| `full` | Writes run immediately (destructive tools may still need approval) |
+| `full` | Non-destructive writes run without a pending approval. Destructive tools always need a fresh approval per call. |
 
 Read-safe mode (`mcp_read=safe`) masks emails and other sensitive strings in tool results. Fields marked `x-mcp-secret` in OpenAPI are never returned (for example webhook signing secrets and provider passwords).
 
@@ -52,12 +52,12 @@ Read-safe mode (`mcp_read=safe`) masks emails and other sensitive strings in too
 email-service reuses existing Identity URL settings (no new required env vars):
 
 - Poll `GET {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-revocations` (30 second cache) with a signed service assertion (`aud` `shellui-mcp-revocation`, scope `mcp.revocation.read`). If the revocation list or approval internal APIs fail, MCP calls are refused (fail closed).
-- Forward redacted call rows to `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-call-logs`
+- Forward **flat** audit rows to `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-call-logs` (no tool `arguments`, no response bodies).
 - Create approval rows with `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-approval-requests`
 
 Internal calls use short-lived JWT assertions from the shared `shellui_django.mcp` helpers (`aud` `shellui-mcp-call-log` or `shellui-mcp-approval`). Outbound signing uses `JWT_PRIVATE_KEY` (RS256, same key as identity-service in production). Revocation poll responses are verified with Identity JWKS via `parse_trusted_revocation_poll_response`.
 
-email-service pins **`shellui-django`** to the merged **django-commons** `develop` commit (`1f0754b421688ed26b7eb2e76b25b6fa3eea2a37`, see `pyproject.toml` / `uv.lock`). PyPI may lag that commit: coordinator installs use **git**, not a published wheel, until the package is released.
+email-service pins **`shellui-django`** to django-commons **`develop`** at git commit **`1f0754b421688ed26b7eb2e76b25b6fa3eea2a37`** (`pyproject.toml` / `uv.lock`). Install from that git ref, not PyPI, when you need a matching build.
 
 Approval assertions always use `shellui_django.mcp.internal.build_mcp_approval_assertion` from that pin:
 
@@ -70,9 +70,9 @@ After a successful HTTP write in `ask` mode, Identity `mcp-approval-consume` mus
 
 ## Workflows agents drive (audit-oriented)
 
-These map MCP tools to what Identity records when call logs include the optional `activity` object email-service sends:
+These map MCP tools to flat fields on each forwarded call log row (OpenAPI path **template**, not a materialized URL with filled path parameters or query strings):
 
-| Agent goal | Tool (`operation_id`) | HTTP | `activity.resource_path` (template) | `activity.access_kind` |
+| Agent goal | Tool (`operation_id`) | HTTP | `resource_path` (template) | `access_kind` |
 | --- | --- | --- | --- | --- |
 | List template copies | `api_v1_templates_list` | GET | `/api/v1/templates` | read |
 | List email rules | `api_v1_rules_list` | GET | `/api/v1/rules` | read |
@@ -81,7 +81,7 @@ These map MCP tools to what Identity records when call logs include the optional
 | Create an email rule (and template copy) | `api_v1_rules_create` | POST | `/api/v1/rules` | write |
 | Send a design test | `api_v1_templates_send_test` | POST | `/api/v1/templates/{template_id}/send-test` | write |
 
-`activity` also includes `operation_title` from the OpenAPI summary when present, `outcome` (`ok`, `denied`, `not_found`, `rejected`, `conflict`, `error`), optional `error_code` from a fixed set (`forbidden`, `not_found`, `validation_failed`, `conflict`, `server_error`, `request_failed`), and `duration_ms`. It never includes raw tool arguments, response bodies, provider text, or URLs passed through from an agent.
+Rows also include `operation_title` from the OpenAPI summary when present, categorical `outcome` (`succeeded`, `failed`, `denied`, `pending`), optional `error_code` from a fixed set (`forbidden`, `not_found`, `validation_failed`, `conflict`, `server_error`, `request_failed`, `identity_unavailable`, `tool_error`, `read_only_blocked`, `approval_pending`, `approval_denied`, `approval_expired`), optional `http_status` after the DRF view runs, and `duration_ms` for that execution. Outcomes before execution (validation failure, write gate, approval branch) log `duration_ms` as `0`; timing for approvals and access denials is measured after those gates. Rows never include raw tool arguments, response bodies, provider text, or URLs passed through from an agent.
 
 Trusted `company_name` on forwarded call logs comes from this service's `CompanyProfile` row for the regional `company_id` when one exists.
 

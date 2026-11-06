@@ -81,7 +81,7 @@ def verify_agent_company_binding(
     *,
     claims: dict[str, Any] | None = None,
 ) -> None:
-    """When Identity publishes ``agents[]`` rows, regional and global authority must match the token (fail closed)."""
+    """When Identity publishes a row for this agent, regional and global authority must match the token."""
     if not _revocation_snapshot['trusted']:
         raise McpIdentityUnavailable('revocation_list_unavailable')
     agent_id = str(agent_id or '')
@@ -90,14 +90,12 @@ def verify_agent_company_binding(
     token_binding = claims.get('company_binding_version')
     token_grant = claims.get('grant_version')
     token_has_global = token_global is not None
-    matched = False
     for row in _revocation_snapshot.get('agents') or []:
         if not isinstance(row, dict):
             continue
         row_id = str(row.get('agent_id') or row.get('id') or '')
         if row_id != agent_id:
             continue
-        matched = True
         g = row.get('global_company_id', None)
         b = row.get('company_binding_version', None)
         row_has_global = g is not None and b is not None
@@ -119,8 +117,7 @@ def verify_agent_company_binding(
             if int(raw_company) != int(company_id):
                 raise McpAgentCompanyMismatch('regional_company_mismatch')
         return
-    if token_has_global and not matched:
-        raise McpAgentCompanyMismatch('authority_delegated_agent_missing')
+    return
 
 
 def _revocation_assertion_headers() -> dict[str, str]:
@@ -352,13 +349,17 @@ def forward_call_log(entry: dict[str, Any]) -> None:
         'service': entry.get('service'),
         'tool': entry.get('tool'),
         'method': entry.get('method'),
-        'path': entry.get('path'),
-        'status': entry.get('status'),
-        'arguments': entry.get('arguments') or {},
+        'resource_path': entry.get('resource_path'),
+        'access_kind': entry.get('access_kind'),
+        'outcome': entry.get('outcome'),
+        'duration_ms': entry.get('duration_ms'),
     }
-    activity = entry.get('activity')
-    if isinstance(activity, dict):
-        body['activity'] = activity
+    if entry.get('operation_title'):
+        body['operation_title'] = entry.get('operation_title')
+    if entry.get('http_status') is not None:
+        body['http_status'] = int(entry['http_status'])
+    if entry.get('error_code'):
+        body['error_code'] = str(entry['error_code'])
     gv = entry.get('grant_version')
     if gv is not None:
         body['grant_version'] = int(gv)
