@@ -115,6 +115,8 @@ def normalize_mcp_agent_claims(agent_claims: dict[str, Any]) -> dict[str, Any]:
             raise AgentClaimsValidationError('delegation_incomplete')
         if authority != 'delegated':
             raise AgentClaimsValidationError('mcp_authority')
+        if ga_catalog is None:
+            raise AgentClaimsValidationError('global_agent_id')
     else:
         if authority == 'delegated':
             raise AgentClaimsValidationError('delegation_incomplete')

@@ -209,8 +209,10 @@ def _parse_live_delegated_authority_body(
     if row_global_agent == row_agent:
         raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
 
-    token_global_agent = claims.get('global_agent_id')
-    if token_global_agent is not None and str(token_global_agent).strip() != row_global_agent:
+    tok_gaid = claims.get('global_agent_id')
+    if tok_gaid is None:
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    if str(tok_gaid).strip() != row_global_agent:
         raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
 
     cid_raw = body.get('company_id')
@@ -253,8 +255,9 @@ def _parse_live_delegated_authority_body(
     if tok_read != str(rl).strip():
         raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
     scope_raw = str(claims.get('scope') or '')
-    scope_services = {p for p in scope_raw.split() if p.strip()}
-    if 'email' in scope_services and 'email' not in set(svc):
+    scope_services = {p.strip() for p in scope_raw.split() if p.strip()}
+    live_services = {str(x).strip() for x in svc if str(x).strip()}
+    if scope_services != live_services:
         raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
     tok_dest = claims.get('mcp_destructive')
     if tok_dest is not True and tok_dest is not False:
@@ -270,18 +273,6 @@ def _parse_live_delegated_authority_body(
         'company_binding_version': int(cbv_raw),
         'grant_version': int(gv_raw),
     }
-
-
-def _claims_subset_for_live_delegated(claims: dict[str, Any]) -> dict[str, Any]:
-    """Verified JWT fields needed for ``_parse_live_delegated_authority_body`` (no approval extras)."""
-    keys = (
-        'mcp_access',
-        'mcp_read',
-        'mcp_destructive',
-        'scope',
-        'global_agent_id',
-    )
-    return {k: claims[k] for k in keys if k in claims}
 
 
 # Tests and contract checks compare this to Identity ``_delegated_authority_fixed_payload`` keys (15 total).
@@ -664,7 +655,7 @@ def _maybe_verify_live_delegated_for_approval(payload: dict[str, Any]) -> None:
     if payload.get('global_company_id') is None:
         return
     # Approval payloads carry assertion fields only; merge normalized JWT claims for live parse
-    # (``mcp_access``, ``mcp_read``, ``scope``, ``mcp_destructive``, optional ``global_agent_id``).
+    # (``mcp_access``, ``mcp_read``, ``scope``, ``mcp_destructive``, ``global_agent_id`` required for delegated).
     merged: dict[str, Any] = dict(payload.get('verified_agent_claims') or {})
     merged.update(
         {
@@ -858,11 +849,10 @@ def forward_call_log(entry: dict[str, Any]) -> None:
             cbv_i = strict_json_nonneg_int(cbv_for_live, field='company_binding_version')
         except AgentClaimsValidationError:
             return
-        merged_entry = dict(entry)
-        merged_entry['global_company_id'] = gci_live
-        merged_entry['company_binding_version'] = cbv_i
-        merged_entry['grant_version'] = gv_i
-        live_claims = _claims_subset_for_live_delegated(merged_entry)
+        vc = entry.get('verified_agent_claims')
+        if not isinstance(vc, dict):
+            return
+        live_claims: dict[str, Any] = dict(vc)
         live_claims['global_company_id'] = str(gci_live)
         live_claims['company_binding_version'] = cbv_i
         live_claims['grant_version'] = gv_i

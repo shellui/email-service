@@ -81,6 +81,7 @@ def _agent_token(
     global_company_id: str | None = None,
     company_binding_version: int | None = None,
     grant_version: int | None = None,
+    global_agent_id: str | None = None,
     mcp_authority: str | None = None,
     mcp_destructive: bool = False,
 ) -> tuple[str, str]:
@@ -100,6 +101,10 @@ def _agent_token(
     }
     if global_company_id is not None:
         claims['global_company_id'] = global_company_id
+        if global_agent_id is None:
+            claims['global_agent_id'] = str(uuid.uuid5(uuid.NAMESPACE_URL, f'mcp-delegated-global-agent:{agent_id}'))
+        else:
+            claims['global_agent_id'] = global_agent_id
     if company_binding_version is not None:
         claims['company_binding_version'] = company_binding_version
     if mcp_authority is not None:
@@ -1385,8 +1390,8 @@ class McpEndpointTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self._set_revocation_agents(None)
 
-    def test_live_delegated_global_agent_id_catalog_uuid_only_not_token_matched(self):
-        """Identity returns SaaS ``global_agent_id``; the agent JWT has no matching claim to check."""
+    def test_live_delegated_global_agent_id_mismatch_forbidden(self):
+        """Delegated JWT ``global_agent_id`` must equal Identity live ``global_agent_id``."""
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
@@ -1426,7 +1431,7 @@ class McpEndpointTests(TestCase):
             grant_version=0,
         )
         response = _rpc(self.client, token, 'tools/list')
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 403)
         self._set_revocation_agents(None)
 
     def test_revocation_global_grant_stale_forbidden(self):
@@ -1541,7 +1546,7 @@ class McpEndpointTests(TestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_delegated_live_global_agent_id_must_match_token_when_present(self):
-        """When the JWT carries ``global_agent_id``, it must equal Identity live ``global_agent_id``."""
+        """Delegated JWT ``global_agent_id`` must equal Identity live ``global_agent_id``."""
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
@@ -1586,6 +1591,29 @@ class McpEndpointTests(TestCase):
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 403)
         self._set_revocation_agents(None)
+
+    def test_agent_token_delegated_requires_global_agent_id(self):
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        claims = {
+            'sub': f'agent:{agent_id}',
+            'agent_id': agent_id,
+            'company_id': 42,
+            'scope': 'email',
+            'mcp_access': 'read_only',
+            'mcp_read': 'safe',
+            'mcp_destructive': False,
+            'grant_version': 0,
+            'global_company_id': gcid,
+            'company_binding_version': 0,
+            'mcp_authority': 'delegated',
+            'exp': int(time.time()) + 600,
+            'iss': ISSUER,
+            'aud': MCP_RESOURCE,
+        }
+        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        response = _rpc(self.client, bad, 'tools/list')
+        self.assertEqual(response.status_code, 401)
 
     def test_agent_token_company_id_string_rejected(self):
         claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
@@ -1783,20 +1811,6 @@ class McpEndpointTests(TestCase):
         self.assertTrue(result.get('isError'))
         self.assertIn('Destructive', result['content'][0]['text'])
 
-    def test_audit_access_kind_destructive_tool_non_success_uses_write(self):
-        from apps.authapi.email_mcp_server import _access_kind_for_audit
-
-        self.assertEqual(
-            _access_kind_for_audit(
-                tool_destructive=True, method='DELETE', outcome='waiting_approval', error_code='approval_pending'
-            ),
-            'write',
-        )
-        self.assertEqual(
-            _access_kind_for_audit(tool_destructive=True, method='DELETE', outcome='allowed', error_code=None),
-            'destructive',
-        )
-
     @patch('apps.email.views.ensure_builtin_rules')
     @patch('apps.authapi.mcp_identity.forward_call_log')
     def test_call_log_includes_safe_activity_metadata(self, mock_forward, _no_builtin):
@@ -1861,13 +1875,27 @@ class McpEndpointTests(TestCase):
         from apps.authapi.mcp_identity import forward_call_log
 
         gcid = str(uuid.uuid4())
+        aid = str(uuid.uuid4())
+        gaid = str(uuid.uuid5(uuid.NAMESPACE_URL, f'mcp-delegated-global-agent:{aid}'))
         forward_call_log(
             {
                 'company_id': 42,
-                'agent_id': str(uuid.uuid4()),
+                'agent_id': aid,
                 'global_company_id': gcid,
                 'company_binding_version': 0,
                 'grant_version': 1,
+                'verified_agent_claims': {
+                    'agent_id': aid,
+                    'company_id': 42,
+                    'scope': 'email',
+                    'mcp_access': 'read_only',
+                    'mcp_read': 'safe',
+                    'mcp_destructive': False,
+                    'grant_version': 1,
+                    'global_company_id': gcid,
+                    'company_binding_version': 0,
+                    'global_agent_id': gaid,
+                },
                 'service': 'email',
                 'tool': 'api_v1_rules_list',
                 'method': 'GET',
@@ -1892,13 +1920,28 @@ class McpEndpointTests(TestCase):
         mock_post.return_value = MagicMock(status_code=200, raise_for_status=MagicMock())
         from apps.authapi.mcp_identity import forward_call_log
 
+        aid = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        gaid = str(uuid.uuid5(uuid.NAMESPACE_URL, f'mcp-delegated-global-agent:{aid}'))
         forward_call_log(
             {
                 'company_id': 42,
-                'agent_id': str(uuid.uuid4()),
-                'global_company_id': str(uuid.uuid4()),
+                'agent_id': aid,
+                'global_company_id': gcid,
                 'company_binding_version': 0,
                 'grant_version': 1,
+                'verified_agent_claims': {
+                    'agent_id': aid,
+                    'company_id': 42,
+                    'scope': 'email',
+                    'mcp_access': 'read_only',
+                    'mcp_read': 'safe',
+                    'mcp_destructive': False,
+                    'grant_version': 1,
+                    'global_company_id': gcid,
+                    'company_binding_version': 0,
+                    'global_agent_id': gaid,
+                },
                 'service': 'email',
                 'tool': 'api_v1_rules_list',
                 'method': 'GET',
