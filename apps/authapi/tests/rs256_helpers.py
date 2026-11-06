@@ -56,9 +56,12 @@ def sign_test_revocation_list_assertion(
     revoked_agent_ids: list[str],
     agents: list[dict] | None = None,
     cache_seconds: int = 30,
+    max_active_grant_version: int | None = 1_000_000,
+    revocation_policy_version: int | None = None,
 ) -> str:
+    """Identity-signed revocation list JWT for tests (must match HTTP body for version fields)."""
     now = int(time.time())
-    claims = {
+    claims: dict = {
         'iss': issuer,
         'aud': 'shellui-mcp-revocation',
         'sub': 'identity',
@@ -70,5 +73,9 @@ def sign_test_revocation_list_assertion(
         'exp': now + cache_seconds,
         'jti': uuid.uuid4().hex,
     }
+    if max_active_grant_version is not None:
+        claims['max_active_grant_version'] = int(max_active_grant_version)
+    if revocation_policy_version is not None:
+        claims['revocation_policy_version'] = int(revocation_policy_version)
     token = jwt.encode(claims, private_pem, algorithm='RS256', headers={'kid': kid})
     return token.decode('utf-8') if isinstance(token, bytes) else token

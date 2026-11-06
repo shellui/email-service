@@ -24,7 +24,13 @@ from apps.email.models import (
     TemplateVersion,
 )
 
-from apps.authapi.tests.test_mcp_endpoint import MCP_SETTINGS, _agent_token, _revocation_ok_response, _rpc
+from apps.authapi.tests.test_mcp_endpoint import (
+    MCP_SETTINGS,
+    _agent_token,
+    make_identity_get_side_effect,
+    make_identity_post_side_effect,
+    _rpc,
+)
 
 COMPANY_A = 10
 COMPANY_B = 20
@@ -128,13 +134,25 @@ class McpTenantIsolationTests(TestCase):
         reset_mcp_server_cache()
         reset_revocation_cache_for_tests()
         self.client = Client()
-        self.token, _ = _agent_token(company_id=COMPANY_A)
-        self.revocation_patcher = patch('apps.authapi.mcp_identity.requests.get')
+        self.token, self.tenant_agent_id = _agent_token(company_id=COMPANY_A)
+
+        def _agents_fn():
+            return [{'agent_id': self.tenant_agent_id, 'company_id': COMPANY_A}]
+
+        self.revocation_patcher = patch(
+            'apps.authapi.mcp_identity.requests.get',
+            side_effect=make_identity_get_side_effect(_agents_fn),
+        )
         self.mock_revocation_get = self.revocation_patcher.start()
-        self.mock_revocation_get.return_value = _revocation_ok_response()
+        self.post_patcher = patch(
+            'apps.authapi.mcp_identity.requests.post',
+            side_effect=make_identity_post_side_effect(_agents_fn),
+        )
+        self.mock_identity_post = self.post_patcher.start()
 
     def tearDown(self):
         self.revocation_patcher.stop()
+        self.post_patcher.stop()
 
     def _deny(self, response, *, req_id: int):
         self.assertEqual(response.status_code, 200, response.content)
@@ -281,27 +299,42 @@ class McpTenantIsolationTests(TestCase):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
-        self.mock_revocation_get.return_value = _revocation_ok_response(
-            agents=[{'agent_id': agent_id, 'company_id': COMPANY_B}],
-        )
-        reset_mcp_server_cache()
-        reset_revocation_cache_for_tests()
-        token = jwt.encode(
-            {
-                'sub': f'agent:{agent_id}',
-                'agent_id': agent_id,
-                'company_id': COMPANY_A,
-                'scope': 'email',
-                'mcp_access': 'read_only',
-                'mcp_read': 'safe',
-                'mcp_destructive': False,
-                'exp': int(timezone.now().timestamp()) + 600,
-                'iss': MCP_SETTINGS['IDENTITY_ISSUER'],
-                'aud': 'https://email.test/mcp',
-            },
-            MCP_SETTINGS['JWT_HS256_FALLBACK_SECRET'],
-            algorithm='HS256',
-        )
-        response = _rpc(self.client, token, 'tools/list')
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()['error'], 'forbidden')
+        try:
+
+            def _agents_mismatch():
+                return [{'agent_id': agent_id, 'company_id': COMPANY_B}]
+
+            self.mock_revocation_get.side_effect = make_identity_get_side_effect(_agents_mismatch)
+            self.mock_identity_post.side_effect = make_identity_post_side_effect(_agents_mismatch)
+            reset_mcp_server_cache()
+            reset_revocation_cache_for_tests()
+            token = jwt.encode(
+                {
+                    'sub': f'agent:{agent_id}',
+                    'agent_id': agent_id,
+                    'company_id': COMPANY_A,
+                    'grant_version': 0,
+                    'scope': 'email',
+                    'mcp_access': 'read_only',
+                    'mcp_read': 'safe',
+                    'mcp_destructive': False,
+                    'mcp_authority': 'personal',
+                    'exp': int(timezone.now().timestamp()) + 600,
+                    'iss': MCP_SETTINGS['IDENTITY_ISSUER'],
+                    'aud': 'https://email.test/mcp',
+                },
+                MCP_SETTINGS['JWT_HS256_FALLBACK_SECRET'],
+                algorithm='HS256',
+            )
+            response = _rpc(self.client, token, 'tools/list')
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(response.json()['error'], 'forbidden')
+        finally:
+
+            def _agents_ok():
+                return [{'agent_id': self.tenant_agent_id, 'company_id': COMPANY_A}]
+
+            self.mock_revocation_get.side_effect = make_identity_get_side_effect(_agents_ok)
+            self.mock_identity_post.side_effect = make_identity_post_side_effect(_agents_ok)
+            reset_mcp_server_cache()
+            reset_revocation_cache_for_tests()

@@ -23,7 +23,8 @@ dependencies = [
     "prometheus-client==0.21.1",
     "redis==8.1.0",
     "celery==5.6.3",
-    "shellui-django[mcp]==0.4.0",
+    # Exact git pin: merged django-commons (shellui-django 0.4.1+) until PyPI publishes a matching wheel.
+    "shellui-django[mcp] @ git+https://github.com/shellui/django-commons.git@1f0754b421688ed26b7eb2e76b25b6fa3eea2a37",
 ]
 
 [dependency-groups]

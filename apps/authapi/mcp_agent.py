@@ -11,12 +11,21 @@ from rest_framework import authentication, exceptions
 
 from apps.authapi.authentication import _safe_jwt_meta
 from apps.authapi.jwks_client import get_jwks_client
+from apps.authapi.mcp_claims import AgentClaimsValidationError, normalize_mcp_agent_claims
 from apps.authapi.principal import EmailPrincipal
 from shellui_django.mcp.resources import access_token_audience_matches, mcp_resource_from_origin
 
 logger = logging.getLogger(__name__)
 
 MCP_SERVICE_ID = 'email'
+
+
+def _normalize_company_claim(raw: Any) -> int:
+    """Regional company id for principals (already normalized in ``normalize_mcp_agent_claims``)."""
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise exceptions.AuthenticationFailed('Agent token has invalid company_id.') from exc
 
 
 def is_agent_principal(user) -> bool:
@@ -35,9 +44,9 @@ def agent_token_company_id(user) -> int:
         raise ValueError('Not an agent principal.')
     raw = getattr(user, 'company_id', None)
     try:
-        return int(raw)
-    except (TypeError, ValueError) as exc:
-        raise ValueError('Agent token missing company_id.') from exc
+        return _normalize_company_claim(raw)
+    except exceptions.AuthenticationFailed as exc:
+        raise ValueError(str(exc)) from exc
 
 
 _BODYLESS_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS', 'TRACE'})
@@ -197,15 +206,20 @@ def agent_claims_from_token(raw_token: str, *, request=None) -> dict[str, Any]:
         raise exceptions.AuthenticationFailed('Agent is not allowed to use email.')
     if _staff_agent_refused(claims):
         raise exceptions.AuthenticationFailed('Staff accounts cannot use MCP agents.')
+    try:
+        claims = normalize_mcp_agent_claims(claims)
+    except AgentClaimsValidationError:
+        raise exceptions.AuthenticationFailed('agent_token_claims_invalid') from None
     return dict(claims)
 
 
 def agent_principal_from_claims(claims: dict[str, Any]) -> EmailPrincipal:
-    raw_company = claims.get('company_id')
+    if claims.get('company_id') is None:
+        raise exceptions.AuthenticationFailed('Agent token missing company_id.')
     try:
-        company_id = int(raw_company)
-    except (TypeError, ValueError) as exc:
-        raise exceptions.AuthenticationFailed('Agent token missing company_id.') from exc
+        company_id = _normalize_company_claim(claims.get('company_id'))
+    except exceptions.AuthenticationFailed as exc:
+        raise exc
     return EmailPrincipal(
         user_id=0,
         company_id=company_id,

@@ -9,19 +9,21 @@ from drf_spectacular.generators import SchemaGenerator
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.views import APIView
-from shellui_django.mcp.server import McpServer
 
+from apps.authapi.email_mcp_server import EmailMcpServer
 from apps.authapi.mcp_agent import authenticate_agent_request
 from apps.authapi.mcp_identity import (
+    McpDelegatedApprovalRoutingError,
     McpAgentCompanyMismatch,
     McpIdentityUnavailable,
+    agent_is_revoked,
     ensure_revocation_snapshot,
     identity_origin,
     verify_agent_company_binding,
 )
 from apps.authapi.spectacular_hooks import mcp_schema_for_server
 
-_server: McpServer | None = None
+_server: EmailMcpServer | None = None
 
 
 def _schema() -> dict:
@@ -60,10 +62,10 @@ def _forward_call(entry: dict) -> None:
     forward_call_log(entry)
 
 
-def _get_server() -> McpServer:
+def _get_server() -> EmailMcpServer:
     global _server
     if _server is None:
-        _server = McpServer(
+        _server = EmailMcpServer(
             schema_provider=_schema,
             urlconf=settings.ROOT_URLCONF,
             service_name='email',
@@ -124,14 +126,24 @@ def mcp_endpoint(request: HttpRequest):
     if claims is not None:
         try:
             ensure_revocation_snapshot()
-            verify_agent_company_binding(str(claims.get('agent_id') or ''), int(claims['company_id']))
+            aid_bind = str(claims.get('agent_id') or '')
+            if aid_bind and agent_is_revoked(aid_bind):
+                return JsonResponse({'error': 'agent_revoked'}, status=403)
+            verify_agent_company_binding(aid_bind, int(claims['company_id']), claims=claims)
         except McpIdentityUnavailable:
             return JsonResponse({'error': 'identity_unavailable'}, status=503)
-        except McpAgentCompanyMismatch:
+        except McpAgentCompanyMismatch as exc:
+            code = str(exc.args[0]) if exc.args else 'forbidden'
+            if code == 'authority_row_missing':
+                return JsonResponse({'error_code': 'authority_row_missing'}, status=403)
+            if code == 'authority_binding_missing':
+                return JsonResponse({'error_code': 'authority_binding_missing'}, status=403)
             return JsonResponse({'error': 'forbidden'}, status=403)
         except (KeyError, TypeError, ValueError):
             return JsonResponse({'error': 'forbidden'}, status=403)
     try:
         return _get_server().handle(request, agent_claims=claims)
+    except McpDelegatedApprovalRoutingError:
+        return JsonResponse({'error_code': 'out_of_sync'}, status=409)
     except McpIdentityUnavailable:
         return JsonResponse({'error': 'identity_unavailable'}, status=503)
