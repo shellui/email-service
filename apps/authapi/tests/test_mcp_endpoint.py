@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, call, patch
 import jwt
 from django.test import Client, TestCase, override_settings
 
-from apps.authapi.mcp_identity import reset_revocation_cache_for_tests
+from apps.authapi.mcp_identity import McpAgentCompanyMismatch, reset_revocation_cache_for_tests
 from apps.email.models import CompanyProfile
 from apps.authapi.mcp_openapi import MCP_EXPLICIT_REGISTRY, MCP_FORBIDDEN_OPERATION_IDS
 from apps.authapi.tests.rs256_helpers import generate_test_rsa_jwks, sign_test_revocation_list_assertion
@@ -156,21 +156,38 @@ def _live_delegated_authority_response(*, row: dict) -> MagicMock:
     return response
 
 
-def _delegated_live_row_from_snapshot_row(match: dict, *, agent_id: str) -> dict:
+def _delegated_live_row_from_snapshot_row(
+    match: dict,
+    *,
+    agent_id: str,
+    access_mode: str | None = None,
+    read_level: str | None = None,
+    mcp_destructive: bool = False,
+) -> dict:
     gcid = match.get('global_company_id')
     if not gcid:
         raise ValueError('expected global row')
     aid = str(agent_id)
+    gaid = str(match.get('global_agent_id') or '').strip()
+    if not gaid:
+        gaid = str(uuid.uuid5(uuid.NAMESPACE_URL, f'mcp-delegated-global-agent:{aid}'))
+    access = access_mode if access_mode is not None else str(match.get('mcp_access') or 'read_only')
+    read = read_level if read_level is not None else str(match.get('mcp_read') or 'safe')
     return {
         'authorized': True,
         'revoked': False,
         'paused': False,
-        'regional_id': aid,
-        'global_agent_id': aid,
+        'agent_id': aid,
+        'global_agent_id': gaid,
         'company_id': int(match['company_id']),
         'global_company_id': str(gcid),
         'company_binding_version': int(match['company_binding_version']),
         'grant_version': int(match['grant_version']),
+        'services_allowed': ['email'],
+        'global_allowed_services': ['email'],
+        'access_mode': access,
+        'read_level': read,
+        'allow_destructive_without_asking': False,
     }
 
 
@@ -227,7 +244,7 @@ def make_identity_post_side_effect(agents_fn):
                 raise AssertionError('delegated authority POST must include full binding json')
             rows = agents_fn()
             match = next(
-                (r for r in rows if isinstance(r, dict) and str(r.get('agent_id') or r.get('id') or '') == aid),
+                (r for r in rows if isinstance(r, dict) and str(r.get('agent_id') or '') == aid),
                 None,
             )
             if match is None:
@@ -839,17 +856,8 @@ class McpEndpointTests(TestCase):
         def post_split(url, **kwargs):
             s = str(url)
             if 'mcp-agent-delegated-authority' in s:
-                row = {
-                    'authorized': True,
-                    'revoked': False,
-                    'paused': False,
-                    'regional_id': agent_id,
-                    'global_agent_id': agent_id,
-                    'company_id': 42,
-                    'global_company_id': gcid,
-                    'company_binding_version': 0,
-                    'grant_version': 99,
-                }
+                row = _delegated_live_row_from_snapshot_row(agents[0], agent_id=agent_id)
+                row['grant_version'] = 99
                 r = MagicMock()
                 r.status_code = 200
                 r.raise_for_status = MagicMock()
@@ -1023,7 +1031,8 @@ class McpEndpointTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self._set_revocation_agents(None)
 
-    def test_live_delegated_inactive_flags_forbidden(self):
+    def test_live_delegated_extra_keys_rejected(self):
+        """Identity #135 success responses use a fixed key set; unknown keys are refused."""
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
@@ -1040,11 +1049,11 @@ class McpEndpointTests(TestCase):
         self._set_revocation_agents(agents)
         base_delegated = make_identity_post_side_effect(lambda: agents)
 
-        def post_inactive(url, **kwargs):
+        def post_extra(url, **kwargs):
             s = str(url)
             if 'mcp-agent-delegated-authority' in s:
                 row = _delegated_live_row_from_snapshot_row(agents[0], agent_id=agent_id)
-                row['active'] = False
+                row['legacy_active'] = True
                 r = MagicMock()
                 r.status_code = 200
                 r.raise_for_status = MagicMock()
@@ -1052,7 +1061,7 @@ class McpEndpointTests(TestCase):
                 return r
             return base_delegated(url, **kwargs)
 
-        self.mock_identity_post.side_effect = post_inactive
+        self.mock_identity_post.side_effect = post_extra
         reset_mcp_server_cache()
         reset_revocation_cache_for_tests()
         token, _ = _agent_token(
@@ -1183,7 +1192,7 @@ class McpEndpointTests(TestCase):
             s = str(url)
             if 'mcp-agent-delegated-authority' in s:
                 row = _delegated_live_row_from_snapshot_row(agents[0], agent_id=agent_id)
-                row['active'] = 'true'
+                row['authorized'] = 'true'
                 r = MagicMock()
                 r.status_code = 200
                 r.raise_for_status = MagicMock()
@@ -1205,7 +1214,38 @@ class McpEndpointTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self._set_revocation_agents(None)
 
-    def test_live_delegated_global_agent_id_must_match_token(self):
+    def test_live_delegated_global_agent_id_must_differ_from_regional(self):
+        """SaaS catalog ``global_agent_id`` must not equal the regional ``agent_id``."""
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        agents = [
+            {
+                'agent_id': agent_id,
+                'global_agent_id': agent_id,
+                'company_id': 42,
+                'global_company_id': gcid,
+                'company_binding_version': 0,
+                'grant_version': 0,
+            }
+        ]
+        self._set_revocation_agents(agents)
+        reset_mcp_server_cache()
+        reset_revocation_cache_for_tests()
+        token, _ = _agent_token(
+            agent_id=agent_id,
+            company_id=42,
+            global_company_id=gcid,
+            company_binding_version=0,
+            grant_version=0,
+        )
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 403)
+        self._set_revocation_agents(None)
+
+    def test_live_delegated_global_agent_id_catalog_uuid_only_not_token_matched(self):
+        """Identity returns SaaS ``global_agent_id``; the agent JWT has no matching claim to check."""
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
@@ -1245,7 +1285,7 @@ class McpEndpointTests(TestCase):
             grant_version=0,
         )
         response = _rpc(self.client, token, 'tools/list')
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 200)
         self._set_revocation_agents(None)
 
     def test_revocation_global_grant_stale_forbidden(self):
@@ -1597,6 +1637,37 @@ class McpEndpointTests(TestCase):
         self.assertEqual(body.get('resource_path'), '/api/v1/rules')
         self.assertEqual(body.get('method'), 'GET')
         self.assertNotIn('http_method', body)
+
+    @patch('apps.authapi.mcp_identity.verify_live_delegated_authority_against_token')
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_forward_call_log_rewrites_outcome_when_live_delegated_check_fails(
+        self, mock_post, mock_verify_live
+    ):
+        mock_verify_live.side_effect = McpAgentCompanyMismatch('authority_snapshot_mismatch')
+        mock_post.return_value = MagicMock(status_code=200, raise_for_status=MagicMock())
+        from apps.authapi.mcp_identity import forward_call_log
+
+        forward_call_log(
+            {
+                'company_id': 42,
+                'agent_id': str(uuid.uuid4()),
+                'global_company_id': str(uuid.uuid4()),
+                'company_binding_version': 0,
+                'grant_version': 1,
+                'mcp_access': 'read_only',
+                'mcp_read': 'safe',
+                'service': 'email',
+                'tool': 'api_v1_rules_list',
+                'method': 'GET',
+                'resource_path': '/api/v1/rules',
+                'access_kind': 'read',
+                'outcome': 'allowed',
+                'duration_ms': 1,
+            }
+        )
+        body = mock_post.call_args.kwargs['json']
+        self.assertEqual(body.get('outcome'), 'denied')
+        self.assertEqual(body.get('error_code'), 'authority_mismatch')
 
     def test_approval_assertion_personal_optional_grant_version_zero(self):
         import jwt

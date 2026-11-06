@@ -112,6 +112,10 @@ def _flat_audit_entry(
     cbv = agent_claims.get('company_binding_version')
     if cbv is not None:
         entry['company_binding_version'] = strict_json_nonneg_int(cbv, field='company_binding_version')
+    if 'mcp_access' in agent_claims and agent_claims.get('mcp_access') is not None:
+        entry['mcp_access'] = str(agent_claims.get('mcp_access') or '').strip()
+    if 'mcp_read' in agent_claims and agent_claims.get('mcp_read') is not None:
+        entry['mcp_read'] = str(agent_claims.get('mcp_read') or '').strip()
     return entry
 
 
@@ -228,6 +232,9 @@ class EmailMcpServer(McpServer):
             'arguments_hash': args_hash,
             'path': resolved_path,
             'method': method,
+            'mcp_access': agent_claims.get('mcp_access'),
+            'mcp_read': agent_claims.get('mcp_read'),
+            'mcp_destructive': agent_claims.get('mcp_destructive'),
         }
         gv = agent_claims.get('grant_version')
         if gv is not None:
