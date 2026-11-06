@@ -24,7 +24,12 @@ from apps.email.models import (
     TemplateVersion,
 )
 
-from apps.authapi.tests.test_mcp_endpoint import MCP_SETTINGS, _agent_token, _revocation_ok_response, _rpc
+from apps.authapi.tests.test_mcp_endpoint import (
+    MCP_SETTINGS,
+    _agent_token,
+    make_identity_get_side_effect,
+    _rpc,
+)
 
 COMPANY_A = 10
 COMPANY_B = 20
@@ -131,8 +136,8 @@ class McpTenantIsolationTests(TestCase):
         self.token, self.tenant_agent_id = _agent_token(company_id=COMPANY_A)
         self.revocation_patcher = patch('apps.authapi.mcp_identity.requests.get')
         self.mock_revocation_get = self.revocation_patcher.start()
-        self.mock_revocation_get.return_value = _revocation_ok_response(
-            agents=[{'agent_id': self.tenant_agent_id, 'company_id': COMPANY_A}],
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect(
+            revocation_agents=[{'agent_id': self.tenant_agent_id, 'company_id': COMPANY_A}],
         )
 
     def tearDown(self):
@@ -283,27 +288,34 @@ class McpTenantIsolationTests(TestCase):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
-        self.mock_revocation_get.return_value = _revocation_ok_response(
-            agents=[{'agent_id': agent_id, 'company_id': COMPANY_B}],
-        )
-        reset_mcp_server_cache()
-        reset_revocation_cache_for_tests()
-        token = jwt.encode(
-            {
-                'sub': f'agent:{agent_id}',
-                'agent_id': agent_id,
-                'company_id': COMPANY_A,
-                'scope': 'email',
-                'mcp_access': 'read_only',
-                'mcp_read': 'safe',
-                'mcp_destructive': False,
-                'exp': int(timezone.now().timestamp()) + 600,
-                'iss': MCP_SETTINGS['IDENTITY_ISSUER'],
-                'aud': 'https://email.test/mcp',
-            },
-            MCP_SETTINGS['JWT_HS256_FALLBACK_SECRET'],
-            algorithm='HS256',
-        )
-        response = _rpc(self.client, token, 'tools/list')
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()['error'], 'forbidden')
+        try:
+            self.mock_revocation_get.side_effect = make_identity_get_side_effect(
+                revocation_agents=[{'agent_id': agent_id, 'company_id': COMPANY_B}],
+            )
+            reset_mcp_server_cache()
+            reset_revocation_cache_for_tests()
+            token = jwt.encode(
+                {
+                    'sub': f'agent:{agent_id}',
+                    'agent_id': agent_id,
+                    'company_id': COMPANY_A,
+                    'scope': 'email',
+                    'mcp_access': 'read_only',
+                    'mcp_read': 'safe',
+                    'mcp_destructive': False,
+                    'exp': int(timezone.now().timestamp()) + 600,
+                    'iss': MCP_SETTINGS['IDENTITY_ISSUER'],
+                    'aud': 'https://email.test/mcp',
+                },
+                MCP_SETTINGS['JWT_HS256_FALLBACK_SECRET'],
+                algorithm='HS256',
+            )
+            response = _rpc(self.client, token, 'tools/list')
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(response.json()['error'], 'forbidden')
+        finally:
+            self.mock_revocation_get.side_effect = make_identity_get_side_effect(
+                revocation_agents=[{'agent_id': self.tenant_agent_id, 'company_id': COMPANY_A}],
+            )
+            reset_mcp_server_cache()
+            reset_revocation_cache_for_tests()

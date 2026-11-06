@@ -103,6 +103,94 @@ def _strict_snapshot_int(raw: Any, *, field: str) -> int:
     return raw
 
 
+def _parse_live_delegated_authority_body(body: Any, *, agent_id: str) -> dict[str, Any]:
+    """
+    Strict JSON body from Identity ``mcp-agent-delegated-authority`` (service-authenticated GET).
+
+    Returns canonical ``agent_id``, ``company_id``, ``global_company_id``, ``company_binding_version``,
+    ``grant_version`` with JSON int types only for numeric fields (``0`` is valid).
+    """
+    if not isinstance(body, dict):
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    row = body.get('agent') if isinstance(body.get('agent'), dict) else body
+    if not isinstance(row, dict):
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    rid = str(row.get('agent_id') or row.get('id') or '')
+    if not rid or rid != str(agent_id):
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    cid_raw = row.get('company_id')
+    if type(cid_raw) is not int or isinstance(cid_raw, bool):
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    if cid_raw < 0:
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    g_raw = row.get('global_company_id', None)
+    try:
+        ug = uuid.UUID(str(g_raw))
+    except (ValueError, TypeError) as exc:
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid') from exc
+    if ug.int == 0:
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    cbv_raw = row.get('company_binding_version')
+    gv_raw = row.get('grant_version')
+    if type(cbv_raw) is not int or isinstance(cbv_raw, bool):
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    if cbv_raw < 0:
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    if type(gv_raw) is not int or isinstance(gv_raw, bool):
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    if gv_raw < 0:
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    # Identity may signal non-authoritative rows (revoked, paused, stale binding) with explicit flags.
+    for flag in ('revoked', 'paused', 'grant_disabled', 'binding_stale'):
+        v = row.get(flag)
+        if v is True:
+            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+        if v is not None and v is not False:
+            raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    return {
+        'agent_id': rid,
+        'company_id': cid_raw,
+        'global_company_id': str(ug),
+        'company_binding_version': cbv_raw,
+        'grant_version': gv_raw,
+    }
+
+
+def _fetch_live_delegated_authority(agent_id: str) -> dict[str, Any]:
+    """
+    Current delegated-agent row from Identity (not only the signed revocation snapshot).
+
+    Uses the same service-signed assertion as revocation poll (trusted caller). Fails closed on
+    transport or malformed JSON.
+    """
+    _require_service_assertions()
+    base = identity_api_base()
+    if not base:
+        raise McpIdentityUnavailable('identity_service_url_not_configured')
+    url = f'{base}/api/v1/mcp/internal/mcp-agent-delegated-authority'
+    try:
+        response = requests.get(
+            url,
+            params={'agent_id': str(agent_id)},
+            headers=_revocation_assertion_headers(),
+            timeout=getattr(settings, 'JWKS_TIMEOUT', 15),
+        )
+    except (requests.RequestException, OSError) as exc:
+        logger.warning('MCP delegated authority fetch failed (%s).', type(exc).__name__)
+        raise McpIdentityUnavailable('delegated_authority_fetch_failed') from exc
+    if response.status_code == 404:
+        raise McpAgentCompanyMismatch('authority_row_missing')
+    if response.status_code >= 500:
+        raise McpIdentityUnavailable('delegated_authority_fetch_failed')
+    if response.status_code != 200:
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise McpIdentityUnavailable('delegated_authority_response_invalid') from exc
+    return _parse_live_delegated_authority_body(payload, agent_id=str(agent_id))
+
+
 def verify_agent_company_binding(
     agent_id: str,
     company_id: int,
@@ -115,6 +203,8 @@ def verify_agent_company_binding(
     - Exactly one row for this ``agent_id`` must exist; if absent, deny (no silent allow).
     - Multiple rows for the same agent id: ambiguous, deny.
     - Token must match regional ``company_id`` and delegated triple when the row is global.
+    - For delegated (global) rows, a live Identity service-only row must match the same triple
+      (snapshot agreement alone is not sufficient).
     """
     if not _revocation_snapshot['trusted']:
         raise McpIdentityUnavailable('revocation_list_unavailable')
@@ -163,6 +253,20 @@ def verify_agent_company_binding(
             raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
         if row_company is not None and row_company != int(company_id):
             raise McpAgentCompanyMismatch('regional_company_mismatch')
+        try:
+            live = _fetch_live_delegated_authority(agent_id)
+        except McpIdentityUnavailable:
+            raise
+        except McpAgentCompanyMismatch:
+            raise
+        if int(live['company_id']) != int(company_id):
+            raise McpAgentCompanyMismatch('regional_company_mismatch')
+        if str(live['global_company_id']) != str(token_global):
+            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+        if int(live['company_binding_version']) != int(token_binding):
+            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+        if int(live['grant_version']) != int(token_grant):
+            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
     else:
         if token_has_global:
             raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
@@ -261,7 +365,6 @@ def _approval_assertion_extra_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
         'company_id',
         'service',
         'action',
-        'arguments',
         'arguments_hash',
         'path',
         'method',

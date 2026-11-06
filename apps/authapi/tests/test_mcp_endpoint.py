@@ -139,6 +139,61 @@ def _revocation_ok_response(*, agents=None):
     return response
 
 
+def _live_delegated_authority_response(*, row: dict) -> MagicMock:
+    """Minimal live row for GET mcp-agent-delegated-authority (matches strict parse)."""
+    body = {'agent': row}
+    response = MagicMock()
+    response.status_code = 200
+    response.raise_for_status = MagicMock()
+    response.json = MagicMock(return_value=body)
+    return response
+
+
+def make_identity_get_side_effect(*, revocation_agents: list[dict] | None = None):
+    """Revocation poll and delegated live row share ``requests.get``; rows drive both paths."""
+
+    def side_effect(url, **kwargs):
+        s = str(url)
+        if 'oauth-redirects' in s:
+            r = MagicMock()
+            r.status_code = 200
+            r.content = b'[]'
+            r.json = MagicMock(return_value=[])
+            return r
+        if 'mcp-revocations' in s:
+            return _revocation_ok_response(agents=revocation_agents)
+        if 'mcp-agent-delegated-authority' in s:
+            params = kwargs.get('params') or {}
+            aid = str(params.get('agent_id') or '')
+            rows = revocation_agents if revocation_agents is not None else _default_revocation_agents()
+            match = next(
+                (r for r in rows if isinstance(r, dict) and str(r.get('agent_id') or r.get('id') or '') == aid),
+                None,
+            )
+            if match is None:
+                nf = MagicMock()
+                nf.status_code = 404
+                return nf
+            gcid = match.get('global_company_id')
+            if not gcid:
+                nf = MagicMock()
+                nf.status_code = 404
+                return nf
+            row = {
+                'agent_id': aid,
+                'company_id': int(match['company_id']),
+                'global_company_id': str(gcid),
+                'company_binding_version': int(match['company_binding_version']),
+                'grant_version': int(match['grant_version']),
+                'revoked': False,
+                'paused': False,
+            }
+            return _live_delegated_authority_response(row=row)
+        raise AssertionError(f'unexpected GET url in test mock: {url}')
+
+    return side_effect
+
+
 @override_settings(**MCP_SETTINGS)
 class McpEndpointTests(TestCase):
     def setUp(self):
@@ -151,7 +206,7 @@ class McpEndpointTests(TestCase):
         self.client = Client()
         self.revocation_patcher = patch('apps.authapi.mcp_identity.requests.get')
         self.mock_revocation_get = self.revocation_patcher.start()
-        self.mock_revocation_get.return_value = _revocation_ok_response()
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect()
 
     def tearDown(self):
         self.mock_revocation_get.side_effect = None
@@ -255,25 +310,62 @@ class McpEndpointTests(TestCase):
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()['error'], 'identity_unavailable')
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect()
 
     def test_revocation_404_refuses_mcp(self):
         response404 = MagicMock()
         response404.status_code = 404
-        self.mock_revocation_get.return_value = response404
+
+        def _404_side_effect(url, **kwargs):
+            s = str(url)
+            if 'oauth-redirects' in s:
+                r = MagicMock()
+                r.status_code = 200
+                r.content = b'[]'
+                r.json = MagicMock(return_value=[])
+                return r
+            if 'mcp-revocations' in s:
+                return response404
+            if 'mcp-agent-delegated-authority' in s:
+                nf = MagicMock()
+                nf.status_code = 404
+                return nf
+            raise AssertionError(url)
+
+        self.mock_revocation_get.side_effect = _404_side_effect
         token, _agent_id = _agent_token()
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 503)
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect()
 
     def test_revocation_unsigned_payload_refuses_mcp(self):
         bad = MagicMock()
         bad.status_code = 200
         bad.raise_for_status = MagicMock()
         bad.json = MagicMock(return_value={'revoked_agent_ids': [], 'cache_seconds': 30})
-        self.mock_revocation_get.return_value = bad
+
+        def _bad_side_effect(url, **kwargs):
+            s = str(url)
+            if 'oauth-redirects' in s:
+                r = MagicMock()
+                r.status_code = 200
+                r.content = b'[]'
+                r.json = MagicMock(return_value=[])
+                return r
+            if 'mcp-revocations' in s:
+                return bad
+            if 'mcp-agent-delegated-authority' in s:
+                nf = MagicMock()
+                nf.status_code = 404
+                return nf
+            raise AssertionError(url)
+
+        self.mock_revocation_get.side_effect = _bad_side_effect
         token, _agent_id = _agent_token()
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()['error'], 'identity_unavailable')
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect()
 
     @patch('apps.authapi.mcp_identity.agent_is_revoked', return_value=True)
     def test_revoked_agent_refused(self, _revoked):
@@ -586,21 +678,77 @@ class McpEndpointTests(TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()['error'], 'identity_unavailable')
 
+    def test_delegated_live_authority_grant_mismatch_forbidden(self):
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        agents = [
+            {
+                'agent_id': agent_id,
+                'company_id': 42,
+                'global_company_id': gcid,
+                'company_binding_version': 0,
+                'grant_version': 1,
+            }
+        ]
+
+        def _split_side(url, **kwargs):
+            s = str(url)
+            if 'oauth-redirects' in s:
+                r = MagicMock()
+                r.status_code = 200
+                r.content = b'[]'
+                r.json = MagicMock(return_value=[])
+                return r
+            if 'mcp-revocations' in s:
+                return _revocation_ok_response(agents=agents)
+            if 'mcp-agent-delegated-authority' in s:
+                row = {
+                    'agent_id': agent_id,
+                    'company_id': 42,
+                    'global_company_id': gcid,
+                    'company_binding_version': 0,
+                    'grant_version': 99,
+                    'revoked': False,
+                    'paused': False,
+                }
+                r = MagicMock()
+                r.status_code = 200
+                r.raise_for_status = MagicMock()
+                r.json = MagicMock(return_value={'agent': row})
+                return r
+            raise AssertionError(url)
+
+        self.mock_revocation_get.side_effect = _split_side
+        reset_mcp_server_cache()
+        reset_revocation_cache_for_tests()
+        token, _ = _agent_token(
+            agent_id=agent_id,
+            company_id=42,
+            global_company_id=gcid,
+            company_binding_version=0,
+            grant_version=1,
+        )
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()['error'], 'forbidden')
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect()
+
     def test_revocation_global_grant_stale_forbidden(self):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
         gcid = str(uuid.uuid4())
-        self.mock_revocation_get.return_value = _revocation_ok_response(
-            agents=[
-                {
-                    'agent_id': agent_id,
-                    'global_company_id': gcid,
-                    'company_binding_version': 0,
-                    'grant_version': 1,
-                }
-            ],
-        )
+        agents = [
+            {
+                'agent_id': agent_id,
+                'global_company_id': gcid,
+                'company_binding_version': 0,
+                'grant_version': 1,
+            }
+        ]
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect(revocation_agents=agents)
         reset_mcp_server_cache()
         reset_revocation_cache_for_tests()
         token, _ = _agent_token(
@@ -613,14 +761,15 @@ class McpEndpointTests(TestCase):
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()['error'], 'forbidden')
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect()
 
     def test_revocation_personal_row_global_token_forbidden(self):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
         gcid = str(uuid.uuid4())
-        self.mock_revocation_get.return_value = _revocation_ok_response(
-            agents=[{'agent_id': agent_id, 'company_id': 42}],
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect(
+            revocation_agents=[{'agent_id': agent_id, 'company_id': 42}],
         )
         reset_mcp_server_cache()
         reset_revocation_cache_for_tests()
@@ -633,14 +782,15 @@ class McpEndpointTests(TestCase):
         )
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 403)
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect()
 
     def test_revocation_global_row_missing_token_claims_forbidden(self):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
         gcid = str(uuid.uuid4())
-        self.mock_revocation_get.return_value = _revocation_ok_response(
-            agents=[
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect(
+            revocation_agents=[
                 {
                     'agent_id': agent_id,
                     'global_company_id': gcid,
@@ -654,6 +804,7 @@ class McpEndpointTests(TestCase):
         token, _ = _agent_token(agent_id=agent_id, company_id=42)
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 403)
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect()
 
     def test_global_claims_require_complete_pair_in_token(self):
         agent_id = str(uuid.uuid4())
@@ -730,7 +881,7 @@ class McpEndpointTests(TestCase):
 
         agent_id = str(uuid.uuid4())
         gcid = str(uuid.uuid4())
-        self.mock_revocation_get.return_value = _revocation_ok_response(agents=[])
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect(revocation_agents=[])
         reset_mcp_server_cache()
         reset_revocation_cache_for_tests()
         token, _ = _agent_token(
@@ -743,13 +894,14 @@ class McpEndpointTests(TestCase):
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json().get('error_code'), 'authority_row_missing')
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect()
 
     def test_revocation_duplicate_agent_rows_forbidden(self):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
-        self.mock_revocation_get.return_value = _revocation_ok_response(
-            agents=[
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect(
+            revocation_agents=[
                 {'agent_id': agent_id, 'company_id': 42},
                 {'agent_id': agent_id, 'company_id': 42},
             ],
@@ -759,19 +911,21 @@ class McpEndpointTests(TestCase):
         token, _ = _agent_token(agent_id=agent_id, company_id=42)
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 403)
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect()
 
     def test_revocation_regional_company_mismatch_forbidden(self):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         agent_id = str(uuid.uuid4())
-        self.mock_revocation_get.return_value = _revocation_ok_response(
-            agents=[{'agent_id': agent_id, 'company_id': 99}],
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect(
+            revocation_agents=[{'agent_id': agent_id, 'company_id': 99}],
         )
         reset_mcp_server_cache()
         reset_revocation_cache_for_tests()
         token, _ = _agent_token(agent_id=agent_id, company_id=42)
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 403)
+        self.mock_revocation_get.side_effect = make_identity_get_side_effect()
 
     @patch('apps.authapi.mcp_identity.resolve_approval_state', return_value='unknown')
     @patch('apps.authapi.mcp_identity.create_approval_request')

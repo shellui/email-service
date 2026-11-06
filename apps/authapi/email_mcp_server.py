@@ -229,7 +229,6 @@ class EmailMcpServer(McpServer):
             'company_id': agent_claims.get('company_id'),
             'service': self.service_name,
             'action': tool_name,
-            'arguments': {},
             'arguments_hash': args_hash,
             'path': resolved_path,
             'method': method,

@@ -14,7 +14,7 @@ Service keys (`esk_`), staff-only routes, and internal callbacks are never MCP t
 
 ## Agent JWT
 
-Agents use the same Identity JWKS settings as the admin panel (`IDENTITY_JWKS`, `IDENTITY_ISSUER`). Access tokens must include `email` in the `scope` claim and use audience `{EMAIL_PUBLIC_URL}/mcp` exactly (RFC 8707 resource indicator). Tokens with any other `aud` are rejected.
+Agents use the same Identity JWKS settings as the admin panel (`IDENTITY_JWKS`, `IDENTITY_ISSUER`). Access tokens must include `email` in the `scope` claim and use audience `{EMAIL_PUBLIC_URL}/mcp` exactly (RFC 8707 resource indicator). Tokens with any other `aud` are rejected (including SaaS-wide or global gateway issuances that are not minted for this resource).
 
 Required claims:
 
@@ -52,10 +52,13 @@ Read-safe mode (`mcp_read=safe`) masks emails and other sensitive strings in too
 email-service reuses existing Identity URL settings (no new required env vars):
 
 - Poll `GET {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-revocations` (30 second cache) with a signed service assertion (`aud` `shellui-mcp-revocation`, scope `mcp.revocation.read`). The response includes revoked agent ids plus a signed `agents[]` snapshot. If the list or snapshot is missing or untrusted on a poll, MCP fails closed. Before each MCP request, the token must match **exactly one** row for `agent_id`: regional `company_id` must match the JWT (JSON integers only in the snapshot; no string coercion). A delegated row must include `global_company_id`, `company_binding_version`, and `grant_version`, and those must match the JWT triple (including `0` values). Duplicate rows for one agent id or no row for a live token are refused.
+- **Delegated agents (global triple in the JWT):** After the snapshot check, email-service calls `GET {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-agent-delegated-authority?agent_id=…` with the same service-signed assertion as the revocation poll. Identity returns a minimal live row (no agent signing secret, no JWT for the agent). MCP matches that row to the regional token: same `agent_id`, same regional `company_id`, same canonical `global_company_id`, and same non-negative JSON integers for `company_binding_version` and `grant_version` (`0` is valid). Snapshot agreement alone is not enough. If Identity omits the row (`404`), returns a non-authoritative row (for example `revoked` or `paused` true), or email-service cannot reach Identity, MCP fails closed (`403` or `503`). Personal regional agents (no global triple) do not use this call; they keep the snapshot plus `max_active_grant_version` behavior.
 - Forward **flat** audit rows to `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-call-logs` (no tool `arguments`, no response bodies).
-- Create approval rows with `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-approval-requests` using an `Authorization: Bearer` service assertion only (JSON body is `{}`; the action fingerprint is in the assertion claims, not in tool arguments).
+- Create approval rows with `POST {IDENTITY_SERVICE_URL}/api/v1/mcp/internal/mcp-approval-requests` using an `Authorization: Bearer` service assertion only (JSON body is `{}`; the action fingerprint is in the assertion claims, not in the POST body). Do not send `arguments`, `arguments_redacted`, titles, or paths in the request body. For delegated agents, the assertion must carry the **full** triple from the verified regional JWT (`global_company_id`, `company_binding_version`, `grant_version`); do not default `grant_version` to `0` or omit fields when the token carries a global triple.
 
-Approval state lookup (`mcp-approval-state`) returns `not_found` when Identity has no row yet for that assertion fingerprint, `pending`, `approved`, `denied`, or `expired` (treated as already consumed). Any other status, a missing `status`, invalid JSON, an `approved` row without an approval id, or transport failure makes the write path stop without creating a duplicate pending row (treated as denied when the contract is broken; transport errors return `503 identity_unavailable`).
+Approval state lookup (`mcp-approval-state`) returns `not_found` when Identity has no row yet for that assertion fingerprint, `pending`, `approved`, `denied`, or `expired` (treated as already consumed). Any other status, a missing `status`, invalid JSON, an `approved` row without an approval id, or transport failure makes the write path stop without creating a duplicate pending row (treated as denied when the contract is broken; transport errors return `503 identity_unavailable`). Identity approval APIs validate the assertion and live authority; email-service maps unknown HTTP success shapes to failure, not success.
+
+Activity and call logs use the categorical **`outcome`** values above. Older activity labels (`pending`, `success`, `session`, and similar) may still appear read-only in UIs; this service writes only the five outcomes listed here. **`error_code`** on forwarded rows is taken from this service's own enums (for example validation, approval, rate limit), not from arbitrary provider response bodies or external URLs.
 
 Internal calls use short-lived JWT assertions from the shared `shellui_django.mcp` helpers (`aud` `shellui-mcp-call-log` or `shellui-mcp-approval`). Outbound signing uses `JWT_PRIVATE_KEY` (RS256, same key as identity-service in production). Revocation poll responses are verified with Identity JWKS via `parse_trusted_revocation_poll_response`.
 
@@ -91,7 +94,7 @@ Rows also include `operation_title` from the OpenAPI summary when present, `argu
 - **`session_used`**: Same as `allowed` but this execution consumed a one-shot Identity approval for this fingerprint (`ask` mode after successful `mcp-approval-consume`).
 - **`pending_approval`**: Waiting on a human decision in Identity (new request or existing pending row).
 - **`denied`**: Identity denied the approval, write gate denied the call, or approval already used (`session_used` is not used there).
-- **`failed`**: Validation error, transport or Identity internal error, API error response, or rate limit.
+- **`failed`**: Validation error, transport or Identity internal error, API error response, rate limit, or any outcome that is not a known success path (do not treat an unspecified `2xx` as allowed when the contract does not define a result).
 
 Optional **`error_code`**: `forbidden`, `not_found`, `validation_failed`, `conflict`, `server_error`, `request_failed`, `identity_unavailable`, `tool_error`, `read_only_blocked`, `approval_pending`, `approval_denied`, `approval_expired`, `rate_limited`, `authority_ambiguous`, `authority_mismatch`, `authority_row_missing`.
 
@@ -187,22 +190,37 @@ These routes are omitted from the published schema or never carry `x-mcp`:
 
 ## Calling render-preview
 
-`POST /api/v1/templates/{template_id}/render-preview` accepts optional `number`, `document`, `subject`, `preheader`, `theme`, and `variables`. When `document` is omitted, the newest draft is used, then the active published version.
+`POST /api/v1/templates/{template_id}/render-preview` accepts optional `number`, `document`, `subject`, `preheader`, `theme`, and `variables`. When `document` is omitted, the newest draft is used, then the active published version. Use **`variables`** as a JSON object of strings (and other JSON types the template expects). Optional **`theme`** is a string such as `barebone` or `shellui` (see [Templates and translations](templates.md) for valid theme names in this repo).
 
-Example body:
+Example MCP tool `api_v1_templates_render_preview` call (OpenAPI path template in `path`, ids in `path_params`, tool body under `body`):
 
 ```json
 {
-  "variables": {
-    "company_name": "Acme",
-    "action_url": "https://app.example.com/auth/callback?token=sample"
+  "name": "api_v1_templates_render_preview",
+  "arguments": {
+    "path": "/api/v1/templates/{template_id}/render-preview",
+    "path_params": {"template_id": "1"},
+    "method": "POST",
+    "body": {
+      "theme": "barebone",
+      "variables": {
+        "company_name": "Acme",
+        "action_url": "https://app.example.com/auth/callback?token=sample"
+      }
+    }
   }
 }
 ```
 
+This only renders HTML and plain text in the response. It does not send email. Tools that send or schedule real delivery (for example `api_v1_templates_send_test`) are destructive or external: in `ask` mode they require a **fresh** human approval in Identity per call even when `mcp_access` is `full`.
+
 The response includes `subject`, `html`, `text`, and `missing_variables` for any `{{ token }}` that stayed empty after substitution.
 
+Provider configuration (Resend, SES, SMTP, and similar) is per company or local dev; documentation examples use plain provider names only and never include live API keys.
+
 ## Example JSON-RPC
+
+Use exact tool names from `tools/list` (for example `api_v1_rules_list`), not shortened aliases.
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
@@ -235,6 +253,8 @@ Paths with placeholders (for example `/api/v1/templates/{template_id}/render-pre
 ```
 
 Send `Authorization: Bearer <agent_access_token>` on every `POST /mcp` request.
+
+Regional agent tokens are minted for this host and `{origin}/mcp`. Other products (storage, engines, and similar) use different tools and resources even when a company shares the same numeric `company_id`.
 
 ## Internal assertions to Identity
 
