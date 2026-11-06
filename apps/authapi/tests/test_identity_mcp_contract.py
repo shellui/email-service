@@ -55,6 +55,7 @@ class IdentityCallLogContractTests(SimpleTestCase):
             {
                 'company_id': 42,
                 'agent_id': str(uuid.uuid4()),
+                'grant_version': 0,
                 'service': 'email',
                 'tool': 'api_v1_rules_list',
                 'method': 'GET',

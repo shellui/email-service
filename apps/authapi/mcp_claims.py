@@ -66,13 +66,10 @@ def normalize_mcp_agent_claims(agent_claims: dict[str, Any]) -> dict[str, Any]:
         if authority not in _VALID_MCP_AUTHORITY:
             raise AgentClaimsValidationError('mcp_authority')
 
-    gv: int | None = None
-    if 'grant_version' in agent_claims:
-        gv_raw = agent_claims.get('grant_version')
-        if gv_raw is None:
-            gv = None
-        else:
-            gv = strict_json_nonneg_int(gv_raw, field='grant_version')
+    # Identity call-log ingest requires ``grant_version`` in the JWT body (never omitted or guessed downstream).
+    if 'grant_version' not in agent_claims:
+        raise AgentClaimsValidationError('grant_version')
+    gv = strict_json_nonneg_int(agent_claims.get('grant_version'), field='grant_version')
 
     gci: str | None = None
     if 'global_company_id' in agent_claims:
@@ -98,9 +95,8 @@ def normalize_mcp_agent_claims(agent_claims: dict[str, Any]) -> dict[str, Any]:
 
     has_gci = gci is not None
     has_cbv = cbv is not None
-    has_gv = gv is not None
-    if has_gci or has_cbv or has_gv:
-        if not (has_gci and has_cbv and has_gv):
+    if has_gci or has_cbv:
+        if not (has_gci and has_cbv):
             raise AgentClaimsValidationError('delegation_incomplete')
         if authority != 'delegated':
             raise AgentClaimsValidationError('mcp_authority')
@@ -113,10 +109,7 @@ def normalize_mcp_agent_claims(agent_claims: dict[str, Any]) -> dict[str, Any]:
     out['mcp_read'] = read_level
     out['mcp_destructive'] = destructive_flag
     out['company_id'] = company_id
-    if gv is None:
-        out.pop('grant_version', None)
-    else:
-        out['grant_version'] = gv
+    out['grant_version'] = gv
     if gci is None:
         out.pop('global_company_id', None)
     else:

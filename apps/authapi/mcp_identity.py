@@ -242,6 +242,23 @@ def _parse_live_delegated_authority_body(
     if int(gv_raw) != int(grant_version):
         raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
 
+    tok_access = str(claims.get('mcp_access') or '').strip()
+    if tok_access != str(am).strip():
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    tok_read = str(claims.get('mcp_read') or '').strip()
+    if tok_read != str(rl).strip():
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    scope_raw = str(claims.get('scope') or '')
+    scope_services = {p for p in scope_raw.split() if p.strip()}
+    if 'email' in scope_services and 'email' not in set(svc):
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    tok_dest = claims.get('mcp_destructive')
+    if tok_dest is not True and tok_dest is not False:
+        raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    body_ad = _strict_bool(body.get('allow_destructive'))
+    if body_ad != tok_dest:
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+
     return {
         'agent_id': aid,
         'company_id': int(cid_raw),
@@ -453,6 +470,11 @@ def verify_agent_company_binding(
     else:
         if token_has_global:
             raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+        gv_row_raw = row.get('grant_version')
+        if gv_row_raw not in (None, ''):
+            gv_row = _strict_snapshot_int(gv_row_raw, field='grant_version')
+            if type(token_grant) is not int or token_grant != gv_row:
+                raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
         if row_company is None:
             raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
         if row_company != int(company_id):
@@ -736,6 +758,9 @@ def consume_approval(approval_id: str, *, payload: dict[str, Any] | None = None)
 
 def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
     _require_service_assertions()
+    # Delegated agents obtain approvals through the regional AI gateway; email-service does not open approval rows directly.
+    if payload.get('global_company_id') is not None:
+        raise McpDelegatedApprovalRoutingError('approval_routed_via_ai_only')
     origin = identity_origin()
     base = identity_api_base()
     if not origin or not base:
@@ -793,12 +818,13 @@ def forward_call_log(entry: dict[str, Any]) -> None:
     gv_for_live = entry.get('grant_version')
     cbv_for_live = entry.get('company_binding_version')
     gci_live = entry.get('global_company_id')
-    if (
-        gci_live is not None
-        and cbv_for_live is not None
-        and gv_for_live is not None
-        and entry.get('agent_id') is not None
-    ):
+    has_gci = gci_live is not None
+    has_cbv = cbv_for_live is not None
+    if has_gci != has_cbv:
+        return
+    if has_gci and has_cbv:
+        if gv_for_live is None or entry.get('agent_id') is None:
+            return
         try:
             gv_i = strict_json_nonneg_int(gv_for_live, field='grant_version')
             cbv_i = strict_json_nonneg_int(cbv_for_live, field='company_binding_version')
@@ -853,17 +879,20 @@ def forward_call_log(entry: dict[str, Any]) -> None:
         'outcome': str(entry.get('outcome') or '').strip().lower(),
         'access_kind': ak,
     }
+    gv_entry = entry.get('grant_version')
+    if gv_entry is None:
+        return
     try:
-        gv_entry = entry.get('grant_version')
-        if gv_entry is None:
-            body['grant_version'] = 0
-        else:
-            body['grant_version'] = strict_json_nonneg_int(gv_entry, field='grant_version')
+        body['grant_version'] = strict_json_nonneg_int(gv_entry, field='grant_version')
     except AgentClaimsValidationError:
         return
     gci_entry = entry.get('global_company_id')
     cbv_entry = entry.get('company_binding_version')
-    if gci_entry is not None and cbv_entry is not None:
+    has_gci_b = gci_entry is not None
+    has_cbv_b = cbv_entry is not None
+    if has_gci_b != has_cbv_b:
+        return
+    if has_gci_b:
         try:
             body['global_company_id'] = str(gci_entry)
             body['company_binding_version'] = strict_json_nonneg_int(cbv_entry, field='company_binding_version')

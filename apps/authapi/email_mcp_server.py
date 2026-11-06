@@ -26,8 +26,8 @@ from apps.authapi.mcp_identity import (
 
 _BODYLESS_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS', 'TRACE'})
 
-# Identity-aligned categorical outcomes (call log contract).
-_OUTCOMES = frozenset({'failed', 'denied', 'pending_approval', 'allowed', 'session_used'})
+# Identity ``canonical_outcome_ingest`` (``waiting_approval``); legacy ``pending_`` kept for local audit only if needed.
+_OUTCOMES = frozenset({'failed', 'denied', 'pending_approval', 'waiting_approval', 'allowed', 'session_used'})
 _ERROR_CODES = frozenset(
     {
         'forbidden',
@@ -47,6 +47,7 @@ _ERROR_CODES = frozenset(
         'authority_mismatch',
         'authority_row_missing',
         'authority_binding_missing',
+        'out_of_sync',
     }
 )
 
@@ -115,14 +116,13 @@ def _flat_audit_entry(
         entry['arguments_hash'] = arguments_hash
     if request_id:
         entry['request_id'] = request_id
-    if 'grant_version' in agent_claims:
-        entry['grant_version'] = strict_json_nonneg_int(agent_claims['grant_version'], field='grant_version')
-    else:
-        entry['grant_version'] = 0
-    if agent_claims.get('global_company_id') is not None:
-        entry['global_company_id'] = str(agent_claims['global_company_id'])
+    entry['grant_version'] = strict_json_nonneg_int(agent_claims['grant_version'], field='grant_version')
+    gci = agent_claims.get('global_company_id')
     cbv = agent_claims.get('company_binding_version')
-    if cbv is not None:
+    if (gci is not None) != (cbv is not None):
+        raise ValueError('delegation_incomplete')
+    if gci is not None:
+        entry['global_company_id'] = str(gci)
         entry['company_binding_version'] = strict_json_nonneg_int(cbv, field='company_binding_version')
     return entry
 
@@ -375,7 +375,7 @@ class EmailMcpServer(McpServer):
                                 path_template=path_template,
                                 method=method,
                                 operation=operation,
-                                outcome='pending_approval',
+                                outcome='waiting_approval',
                                 duration_ms=_after_gate_ms(),
                                 error_code='approval_pending',
                                 approval_request_id=approval_req_id,
@@ -470,6 +470,23 @@ class EmailMcpServer(McpServer):
                 try:
                     pending = self.approval_handler(approval_payload)
                 except McpDelegatedApprovalRoutingError:
+                    if self.on_call:
+                        self.on_call(
+                            _flat_audit_entry(
+                                agent_claims=agent_claims,
+                                service_name=self.service_name,
+                                tool_name=tool_name,
+                                path_template=path_template,
+                                method=method,
+                                operation=operation,
+                                outcome='waiting_approval',
+                                duration_ms=_after_gate_ms(),
+                                error_code='out_of_sync',
+                                arguments_hash=args_hash,
+                                request_id=req_trace,
+                                tool_destructive=destructive,
+                            )
+                        )
                     raise
                 except McpIdentityUnavailable:
                     if self.on_call:
@@ -502,7 +519,7 @@ class EmailMcpServer(McpServer):
                                 path_template=path_template,
                                 method=method,
                                 operation=operation,
-                                outcome='pending_approval',
+                                outcome='waiting_approval',
                                 duration_ms=_after_gate_ms(),
                                 error_code='approval_pending',
                                 approval_request_id=approval_req_id,

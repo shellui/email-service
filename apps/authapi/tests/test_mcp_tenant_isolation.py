@@ -313,6 +313,7 @@ class McpTenantIsolationTests(TestCase):
                     'sub': f'agent:{agent_id}',
                     'agent_id': agent_id,
                     'company_id': COMPANY_A,
+                    'grant_version': 0,
                     'scope': 'email',
                     'mcp_access': 'read_only',
                     'mcp_read': 'safe',

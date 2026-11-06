@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, call, patch
 import jwt
 from django.test import Client, TestCase, override_settings
 
-from apps.authapi.mcp_identity import McpAgentCompanyMismatch, reset_revocation_cache_for_tests
+from apps.authapi.mcp_identity import McpAgentCompanyMismatch, McpDelegatedApprovalRoutingError, reset_revocation_cache_for_tests
 from apps.email.models import CompanyProfile
 from apps.authapi.mcp_openapi import MCP_EXPLICIT_REGISTRY, MCP_FORBIDDEN_OPERATION_IDS
 from apps.authapi.tests.rs256_helpers import generate_test_rsa_jwks, sign_test_revocation_list_assertion
@@ -93,12 +93,11 @@ def _agent_token(
         'mcp_access': access,
         'mcp_read': read_level,
         'mcp_destructive': mcp_destructive,
+        'grant_version': 0 if grant_version is None else grant_version,
         'exp': int(time.time()) + 600,
         'iss': ISSUER,
         'aud': audience if audience is not None else MCP_RESOURCE,
     }
-    if grant_version is not None:
-        claims['grant_version'] = grant_version
     if global_company_id is not None:
         claims['global_company_id'] = global_company_id
     if company_binding_version is not None:
@@ -168,6 +167,12 @@ def _delegated_live_row_from_snapshot_row(
     gaid = str(match.get('global_agent_id') or '').strip()
     if not gaid:
         gaid = str(uuid.uuid5(uuid.NAMESPACE_URL, f'mcp-delegated-global-agent:{aid}'))
+    access_mode = str(match.get('access_mode') or 'read_only')
+    read_lv = str(match.get('read_level') or 'safe')
+    allow_dest = bool(match.get('allow_destructive', False))
+    svc = match.get('services_allowed')
+    if svc is None:
+        svc = ['email']
     return {
         'authorized': True,
         'active': True,
@@ -179,10 +184,10 @@ def _delegated_live_row_from_snapshot_row(
         'global_company_id': str(gcid),
         'grant_version': int(match['grant_version']),
         'company_binding_version': int(match['company_binding_version']),
-        'access_mode': 'read_only',
-        'read_level': 'safe',
-        'allow_destructive': False,
-        'services_allowed': ['email'],
+        'access_mode': access_mode,
+        'read_level': read_lv,
+        'allow_destructive': allow_dest,
+        'services_allowed': list(svc),
         'revoked_at': None,
     }
 
@@ -651,7 +656,7 @@ class McpEndpointTests(TestCase):
 
     @patch('apps.authapi.mcp_identity.resolve_approval_state', return_value='not_found')
     @patch('apps.authapi.mcp_identity.create_approval_request', return_value={'id': 'approval-123'})
-    def test_write_requires_approval_in_ask_mode(self, _create, _state):
+    def test_write_requires_approval_in_ask_mode_personal(self, _create, _state):
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
         reset_mcp_server_cache()
@@ -674,6 +679,62 @@ class McpEndpointTests(TestCase):
         self.assertTrue(result.get('isError'))
         self.assertEqual(result.get('meta', {}).get('status'), 'pending')
         self.assertEqual(result.get('meta', {}).get('approval_request_id'), 'approval-123')
+
+    @patch('apps.authapi.mcp_identity.forward_call_log')
+    @patch('apps.authapi.mcp_identity.resolve_approval_state', return_value='not_found')
+    @patch(
+        'apps.authapi.mcp_identity.create_approval_request',
+        side_effect=McpDelegatedApprovalRoutingError('approval_routed_via_ai_only'),
+    )
+    def test_delegated_ask_mode_no_direct_approval_create_returns_409(self, _create, _state, mock_forward):
+        """Delegated agents must not open approval rows from email-service (gateway-only)."""
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        reset_mcp_server_cache()
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        self._set_revocation_agents(
+            [
+                {
+                    'agent_id': agent_id,
+                    'company_id': 42,
+                    'global_company_id': gcid,
+                    'company_binding_version': 0,
+                    'grant_version': 0,
+                    'access_mode': 'ask',
+                    'read_level': 'safe',
+                    'allow_destructive': False,
+                    'services_allowed': ['email'],
+                }
+            ]
+        )
+        token, _ = _agent_token(
+            agent_id=agent_id,
+            access='ask',
+            global_company_id=gcid,
+            company_binding_version=0,
+            grant_version=0,
+        )
+        response = _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {
+                'name': 'api_v1_rules_create',
+                'arguments': {
+                    'path': '/api/v1/rules',
+                    'method': 'POST',
+                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json().get('error_code'), 'out_of_sync')
+        self.assertTrue(mock_forward.called)
+        row = mock_forward.call_args[0][0]
+        self.assertEqual(row.get('outcome'), 'waiting_approval')
+        self.assertEqual(row.get('error_code'), 'out_of_sync')
+        self._set_revocation_agents(None)
 
     @patch('apps.authapi.mcp_identity.requests.post')
     def test_delegated_approval_out_of_sync_returns_409(self, mock_post):
@@ -703,6 +764,10 @@ class McpEndpointTests(TestCase):
                     'global_company_id': gcid,
                     'company_binding_version': 0,
                     'grant_version': 0,
+                    'access_mode': 'ask',
+                    'read_level': 'safe',
+                    'allow_destructive': False,
+                    'services_allowed': ['email'],
                 }
             ]
         )
@@ -1697,6 +1762,7 @@ class McpEndpointTests(TestCase):
             {
                 'company_id': 42,
                 'agent_id': str(uuid.uuid4()),
+                'grant_version': 0,
                 'service': 'email',
                 'tool': 'api_v1_rules_list',
                 'method': 'GET',
