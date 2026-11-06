@@ -6,23 +6,38 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter
 from rest_framework import serializers
 
+from apps.authapi.mcp_fields import McpSecretCharField, McpSensitiveCharField, McpSensitiveJSONField
+
 COMPANY_QUERY = OpenApiParameter(
     name='company_id',
     type=OpenApiTypes.INT,
     location=OpenApiParameter.QUERY,
     required=False,
-    description='Company to read. Staff may set this. Owners use the company on the JWT when it is omitted.',
+    description=(
+        'Target company. Company owners omit this when the JWT already includes `company_id`. '
+        'Shellui staff may set it to manage another company.'
+    ),
 )
 
 
 class ErrorSerializer(serializers.Serializer):
-    error_code = serializers.CharField()
+    error_code = serializers.CharField(
+        help_text='Stable machine code (for example `validation_failed`, `not_found`, `forbidden`). Never a translated sentence.',
+    )
     field_errors = serializers.DictField(
         child=serializers.ListField(child=serializers.CharField()),
         required=False,
+        help_text='Optional map of field names to lists of stable error tokens (for example `required`, `invalid`).',
     )
-    missing_variables = serializers.ListField(child=serializers.CharField(), required=False)
-    request_id = serializers.CharField(required=False)
+    missing_variables = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        help_text='Template preview only: placeholder tokens that were not supplied.',
+    )
+    request_id = serializers.CharField(
+        required=False,
+        help_text='Echo of the `X-Request-ID` header when present.',
+    )
 
 
 class HealthSerializer(serializers.Serializer):
@@ -140,7 +155,7 @@ class MessageListItemSerializer(serializers.Serializer):
     template_key = serializers.CharField()
     lane = serializers.CharField()
     status = serializers.CharField()
-    to = serializers.CharField()
+    to = McpSensitiveCharField()
     accepted_at = serializers.CharField()
 
 
@@ -319,6 +334,31 @@ class TemplateTestSendRequestSerializer(serializers.Serializer):
     theme = serializers.JSONField(required=False, help_text=THEME_HELP + ' Used with document.')
 
 
+class TemplateRenderPreviewRequestSerializer(serializers.Serializer):
+    number = serializers.IntegerField(
+        required=False,
+        help_text='Version number. Default: newest draft, else the active published version.',
+    )
+    subject = serializers.CharField(required=False)
+    preheader = serializers.CharField(required=False, allow_blank=True)
+    document = serializers.JSONField(
+        required=False,
+        help_text='Unsaved editor JSON. When sent, `subject` is required unless the version supplies it.',
+    )
+    theme = serializers.JSONField(required=False, help_text=THEME_HELP + ' Used with `document`.')
+    variables = serializers.JSONField(
+        required=False,
+        help_text='Placeholder map for `{{ token }}` values. Omitted keys use catalog examples where available.',
+    )
+
+
+class TemplateRenderPreviewResponseSerializer(serializers.Serializer):
+    subject = serializers.CharField()
+    html = serializers.CharField()
+    text = serializers.CharField()
+    missing_variables = serializers.ListField(child=serializers.CharField())
+
+
 class TestSendResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     provider = serializers.CharField()
@@ -377,15 +417,15 @@ class EmailRulePatchSerializer(serializers.Serializer):
 
 
 class ProviderCredentialsSerializer(serializers.Serializer):
-    api_key = serializers.CharField(required=False)
+    api_key = McpSecretCharField(required=False)
     host = serializers.CharField(required=False)
     port = serializers.IntegerField(required=False)
     username = serializers.CharField(required=False, allow_blank=True)
-    password = serializers.CharField(required=False)
+    password = McpSecretCharField(required=False)
     use_tls = serializers.BooleanField(required=False)
     use_ssl = serializers.BooleanField(required=False)
     access_key_id = serializers.CharField(required=False, help_text='Amazon SES access key id.')
-    secret_access_key = serializers.CharField(required=False, help_text='Amazon SES secret access key. Write-only.')
+    secret_access_key = McpSecretCharField(required=False, help_text='Amazon SES secret access key. Write-only.')
     region = serializers.CharField(required=False, help_text='Amazon SES region. Defaults to eu-central-2.')
     configuration_set = serializers.CharField(required=False, allow_blank=True, help_text='Optional Amazon SES configuration set.')
 
@@ -398,9 +438,9 @@ class ProviderSerializer(serializers.Serializer):
     from_name = serializers.CharField(allow_blank=True)
     sending_domain = serializers.CharField(allow_blank=True)
     bulk_from_email = serializers.CharField(allow_blank=True)
-    credentials_hint = serializers.CharField(allow_blank=True)
+    credentials_hint = McpSensitiveCharField(allow_blank=True)
     webhook_configured = serializers.BooleanField()
-    webhook_hint = serializers.CharField(allow_blank=True)
+    webhook_hint = McpSensitiveCharField(allow_blank=True)
     fallback_provider = serializers.CharField()
     fallback_configured = serializers.BooleanField()
     smtp_allowed = serializers.BooleanField()
@@ -426,7 +466,7 @@ class ProviderWriteSerializer(serializers.Serializer):
     sending_domain = serializers.CharField(required=False, allow_blank=True)
     bulk_from_email = serializers.CharField(required=False, allow_blank=True)
     credentials = ProviderCredentialsSerializer(required=False)
-    webhook_secret = serializers.CharField(required=False, allow_blank=True)
+    webhook_secret = McpSecretCharField(required=False, allow_blank=True)
 
 
 class ProviderTestSendRequestSerializer(serializers.Serializer):
@@ -550,7 +590,7 @@ class ServiceClientCreateSerializer(serializers.Serializer):
 class ServiceClientCreatedSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     service = serializers.CharField()
-    key = serializers.CharField()
+    key = McpSecretCharField()
     key_prefix = serializers.CharField()
 
 
@@ -680,12 +720,16 @@ class NewsletterWriteSerializer(serializers.Serializer):
     allowed_origins = serializers.ListField(child=serializers.CharField(), required=False)
     confirmed_redirect_url = serializers.CharField(required=False, allow_blank=True)
     turnstile_site_key = serializers.CharField(required=False, allow_blank=True)
-    turnstile_secret = serializers.CharField(required=False, allow_blank=True, help_text='Write only. Empty clears it.')
+    turnstile_secret = McpSecretCharField(
+        required=False,
+        allow_blank=True,
+        help_text='Write only. Empty clears it.',
+    )
 
 
 class NewsletterSubscriberSerializer(serializers.Serializer):
     id = serializers.IntegerField()
-    email = serializers.CharField(help_text='Masked once the address is cleared after unsubscribing.')
+    email = McpSensitiveCharField(help_text='Masked once the address is cleared after unsubscribing.')
     first_name = serializers.CharField(allow_blank=True)
     metadata = serializers.DictField(child=serializers.CharField(allow_blank=True), help_text='Extra details sent with the sign-up. Untrusted text.')
     language = serializers.CharField()

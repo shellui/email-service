@@ -109,5 +109,7 @@ def root(request):
         'n8n_docs_url': f'{docs_url}/n8n',
         'identity_docs_url': settings.SHELLUI_IDENTITY_DOCS_URL,
         'github_url': settings.SHELLUI_GITHUB_EMAIL_URL,
+        'mcp_url': reverse('mcp'),
+        'mcp_resource_metadata_url': reverse('mcp-oauth-protected-resource'),
     }
     return render(request, 'home.html', context)

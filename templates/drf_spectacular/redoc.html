@@ -74,10 +74,27 @@
         renderRedoc(message?.payload?.settings?.appearance ?? null);
       };
 
-      await init();
-      renderRedoc(shellui.initialSettings?.appearance ?? null);
+      const applyShelluiAppearance = () => {
+        renderRedoc(shellui.initialSettings?.appearance ?? null);
+      };
+
+      const SHELLUI_INIT_TIMEOUT_MS = 3000;
+
+      renderRedoc(null);
       shellui.addMessageListener("SHELLUI_SETTINGS", handleSettingsMessage);
       shellui.addMessageListener("SHELLUI_SETTINGS_UPDATED", handleSettingsMessage);
+
+      Promise.race([
+        init(),
+        new Promise((_, reject) => {
+          setTimeout(
+            () => reject(new Error("Shellui SDK init timed out")),
+            SHELLUI_INIT_TIMEOUT_MS,
+          );
+        }),
+      ])
+        .then(applyShelluiAppearance)
+        .catch(() => {});
     </script>
     {% endblock body %}
   </body>

@@ -41,6 +41,17 @@ from apps.email.models import (
     parse_message_id,
 )
 from apps.email.renderers import PrometheusTextRenderer
+from apps.authapi.mcp_openapi import mcp_tool
+from apps.email.openapi_admin import (
+    ADMIN_API_ERRORS,
+    EXAMPLE_EMAIL_RULE,
+    EXAMPLE_RENDER_PREVIEW_REQUEST,
+    EXAMPLE_RENDER_PREVIEW_RESPONSE,
+    EXAMPLE_TEMPLATE_LIST,
+    MESSAGE_ID_PATH,
+    TEMPLATE_ID_PATH,
+    mcp_openapi_fields,
+)
 from apps.email.schema import (
     COMPANY_QUERY,
     BatchRequestSerializer,
@@ -85,6 +96,8 @@ from apps.email.schema import (
     SuppressionListSerializer,
     TemplateListSerializer,
     TemplatePublishResponseSerializer,
+    TemplateRenderPreviewRequestSerializer,
+    TemplateRenderPreviewResponseSerializer,
     TemplateSummarySerializer,
     TemplateTestSendRequestSerializer,
     TemplateVersionCreateRequestSerializer,
@@ -170,11 +183,7 @@ def _request_id(request) -> dict:
 
 
 _API_ERRORS = {
-    400: ErrorSerializer,
-    401: ErrorSerializer,
-    403: ErrorSerializer,
-    404: ErrorSerializer,
-    409: ErrorSerializer,
+    **ADMIN_API_ERRORS,
     422: ErrorSerializer,
 }
 
@@ -270,7 +279,10 @@ def _can_read_message(user, message: Message) -> bool:
     get=extend_schema(
         tags=['messages'],
         operation_id='api_v1_messages_retrieve',
+        parameters=[MESSAGE_ID_PATH],
         responses={200: MessageDetailSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_messages_retrieve'),
+        **mcp_tool(operation_id='api_v1_messages_retrieve', read_only=True, sensitive=True),
     ),
 )
 class MessageDetailView(APIView):
@@ -307,8 +319,11 @@ class MessageDetailView(APIView):
     post=extend_schema(
         tags=['messages'],
         operation_id='api_v1_messages_cancel',
+        parameters=[MESSAGE_ID_PATH],
         request=None,
         responses={200: MessageCancelSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_messages_cancel'),
+        **mcp_tool(operation_id='api_v1_messages_cancel', read_only=False, sensitive=True),
     ),
 )
 class MessageCancelView(APIView):
@@ -333,12 +348,34 @@ class MessageCancelView(APIView):
         operation_id='api_v1_messages_list',
         parameters=[
             COMPANY_QUERY,
-            OpenApiParameter('status', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('lane', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('template_key', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('limit', int, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter(
+                'status',
+                str,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                'lane',
+                str,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                'template_key',
+                str,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                'limit',
+                int,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
         ],
         responses={200: MessageListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_messages_list'),
+        **mcp_tool(operation_id='api_v1_messages_list', read_only=True, sensitive=True),
     ),
 )
 class MessageListView(APIView):
@@ -377,6 +414,8 @@ class MessageListView(APIView):
         tags=['catalog'],
         operation_id='api_v1_catalog_retrieve',
         responses={200: CatalogSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_catalog_retrieve'),
+        **mcp_tool(operation_id='api_v1_catalog_retrieve', read_only=True),
     ),
 )
 class CatalogView(APIView):
@@ -422,6 +461,8 @@ class CatalogView(APIView):
         operation_id='api_v1_library_list',
         parameters=[COMPANY_QUERY],
         responses={200: LibraryListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_library_list'),
+        **mcp_tool(operation_id='api_v1_library_list', read_only=True),
     ),
     post=extend_schema(
         tags=['library'],
@@ -429,6 +470,8 @@ class CatalogView(APIView):
         parameters=[COMPANY_QUERY],
         request=LibraryWriteSerializer,
         responses={201: LibraryDetailSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_library_create'),
+        **mcp_tool(operation_id='api_v1_library_create', read_only=False, sensitive=True),
     ),
 )
 class LibraryListView(APIView):
@@ -464,6 +507,8 @@ class LibraryListView(APIView):
         operation_id='api_v1_library_retrieve',
         parameters=[COMPANY_QUERY],
         responses={200: LibraryDetailSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_library_retrieve'),
+        **mcp_tool(operation_id='api_v1_library_retrieve', read_only=True),
     ),
     put=extend_schema(
         tags=['library'],
@@ -471,12 +516,16 @@ class LibraryListView(APIView):
         parameters=[COMPANY_QUERY],
         request=LibraryWriteSerializer,
         responses={200: LibraryDetailSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_library_update'),
+        **mcp_tool(operation_id='api_v1_library_update', read_only=False, sensitive=True),
     ),
     delete=extend_schema(
         tags=['library'],
         operation_id='api_v1_library_destroy',
         parameters=[COMPANY_QUERY],
         responses={204: None, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_library_destroy'),
+        **mcp_tool(operation_id='api_v1_library_destroy', read_only=False, destructive=True),
     ),
 )
 class LibraryDetailView(APIView):
@@ -530,9 +579,17 @@ def _require_editable(template: EmailTemplate) -> None:
         operation_id='api_v1_templates_list',
         parameters=[
             COMPANY_QUERY,
-            OpenApiParameter('event_type', OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter(
+                'event_type',
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
         ],
         responses={200: TemplateListSerializer, **_API_ERRORS},
+        examples=[EXAMPLE_TEMPLATE_LIST],
+        **mcp_openapi_fields('api_v1_templates_list'),
+        **mcp_tool(operation_id='api_v1_templates_list', read_only=True),
     ),
 )
 class TemplateListView(APIView):
@@ -562,12 +619,18 @@ class TemplateListView(APIView):
     get=extend_schema(
         tags=['templates'],
         operation_id='api_v1_templates_retrieve',
+        parameters=[TEMPLATE_ID_PATH],
         responses={200: TemplateSummarySerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_templates_retrieve'),
+        **mcp_tool(operation_id='api_v1_templates_retrieve', read_only=True),
     ),
     delete=extend_schema(
         tags=['templates'],
         operation_id='api_v1_templates_destroy',
+        parameters=[TEMPLATE_ID_PATH],
         responses={204: None, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_templates_destroy'),
+        **mcp_tool(operation_id='api_v1_templates_destroy', read_only=False, destructive=True),
     ),
 )
 class TemplateDetailView(APIView):
@@ -612,12 +675,16 @@ def _version_payload(version: TemplateVersion) -> dict:
         tags=['templates'],
         operation_id='api_v1_template_versions_list',
         responses={200: TemplateVersionListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_template_versions_list'),
+        **mcp_tool(operation_id='api_v1_template_versions_list', read_only=True),
     ),
     post=extend_schema(
         tags=['templates'],
         operation_id='api_v1_template_versions_create',
         request=TemplateVersionCreateRequestSerializer,
         responses={201: TemplateVersionCreateResponseSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_template_versions_create'),
+        **mcp_tool(operation_id='api_v1_template_versions_create', read_only=False, sensitive=True),
     ),
 )
 class TemplateVersionListView(APIView):
@@ -672,6 +739,8 @@ class TemplateVersionListView(APIView):
         operation_id='api_v1_template_versions_publish',
         request=None,
         responses={200: TemplatePublishResponseSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_template_versions_publish'),
+        **mcp_tool(operation_id='api_v1_template_versions_publish', read_only=False, sensitive=True),
     ),
 )
 class TemplatePublishView(APIView):
@@ -695,6 +764,8 @@ class TemplatePublishView(APIView):
         tags=['templates'],
         operation_id='api_v1_template_versions_retrieve',
         responses={200: TemplateVersionSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_template_versions_retrieve'),
+        **mcp_tool(operation_id='api_v1_template_versions_retrieve', read_only=True),
     ),
 )
 class TemplateVersionDetailView(APIView):
@@ -721,12 +792,95 @@ def _example_variables(definition: dict | None) -> dict:
     return variables
 
 
+def _render_template_bodies(template: EmailTemplate, data: dict, *, preview_email: str) -> dict:
+    definition = definition_for(template)
+    company_id = template.company_id
+    if 'document' in data:
+        subject = str(data.get('subject') or '')
+        preheader = str(data.get('preheader') or '')
+        if not subject:
+            raise SendError(400, 'validation_failed', {'subject': ['required']})
+        document = validate_document(data.get('document'))
+        document_tokens(document, subject, preheader)
+        colors = theme_colors(clean_theme(data.get('theme')))
+        html, text = compose(document, head=set_head(template.set), preheader=preheader, colors=colors)
+    else:
+        number = data.get('number')
+        version = None
+        if number not in (None, ''):
+            version = TemplateVersion.objects.filter(template=template, number=int(number)).first()
+            if version is None:
+                raise SendError(404, 'template_not_found')
+        if version is None:
+            version = template.versions.filter(state=TemplateVersion.STATE_DRAFT).order_by('-number').first()
+        if version is None and template.active_version:
+            version = template.versions.filter(number=template.active_version).first()
+        if version is None:
+            raise SendError(400, 'validation_failed', {'version': ['draft_required']})
+        subject, html, text = version.subject, version.html, version.text
+        if not html:
+            html, text = compose(
+                version.document,
+                head=set_head(template.set),
+                preheader=version.preheader,
+                colors=theme_colors(version.theme),
+            )
+    raw_variables = data.get('variables') if isinstance(data.get('variables'), dict) else None
+    variables = dict(_example_variables(definition))
+    if raw_variables:
+        variables.update(raw_variables)
+    if not definition or definition.get('lane_class') != 'auth':
+        category = (definition or {}).get('lane_class') or 'transactional'
+        link = unsubscribe_url(int(company_id), preview_email, category)
+        variables['system.unsubscribe_url'] = link
+        variables['system.preferences_url'] = link
+    url_tokens = _url_tokens(definition, company_id) if definition else {}
+    subject, missing_subject = substitute(subject, variables, html=False, subject=True, url_tokens=url_tokens)
+    html, missing_html = substitute(
+        html, variables, html=True, url_tokens=url_tokens, allow_http_localhost=settings.DEBUG
+    )
+    text, missing_text = substitute(
+        text, variables, html=False, url_tokens=url_tokens, allow_http_localhost=settings.DEBUG
+    )
+    missing = sorted(set(missing_subject) | set(missing_html) | set(missing_text))
+    return {'subject': subject, 'html': html, 'text': text, 'missing_variables': missing}
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=['templates'],
+        operation_id='api_v1_templates_render_preview',
+        request=TemplateRenderPreviewRequestSerializer,
+        responses={200: TemplateRenderPreviewResponseSerializer, **_API_ERRORS},
+        examples=[EXAMPLE_RENDER_PREVIEW_REQUEST, EXAMPLE_RENDER_PREVIEW_RESPONSE],
+        **mcp_openapi_fields('api_v1_templates_render_preview'),
+        **mcp_tool(operation_id='api_v1_templates_render_preview', read_only=True, sensitive=True),
+    ),
+)
+class TemplateRenderPreviewView(APIView):
+    def post(self, request, template_id):
+        try:
+            template, user = _company_template(request, template_id)
+            data = request.data if isinstance(request.data, dict) else {}
+            preview_email = (getattr(user, 'email', '') or 'preview@example.com').strip()
+            if '@' not in preview_email:
+                preview_email = 'preview@example.com'
+            payload = _render_template_bodies(template, data, preview_email=preview_email)
+        except SubstitutionError:
+            return error_response(SendError(400, 'validation_failed', {'document': ['template_tags_forbidden']}), request)
+        except SendError as exc:
+            return error_response(exc, request)
+        return Response(payload)
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=['templates'],
         operation_id='api_v1_templates_send_test',
         request=TemplateTestSendRequestSerializer,
         responses={200: TestSendResponseSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_templates_send_test'),
+        **mcp_tool(operation_id='api_v1_templates_send_test', read_only=False, sensitive=True),
     ),
 )
 class TemplateTestSendView(APIView):
@@ -794,9 +948,16 @@ class TemplateTestSendView(APIView):
         operation_id='api_v1_rules_list',
         parameters=[
             COMPANY_QUERY,
-            OpenApiParameter('service', OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter(
+                'service',
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
         ],
         responses={200: EmailRuleListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_rules_list'),
+        **mcp_tool(operation_id='api_v1_rules_list', read_only=True),
     ),
     post=extend_schema(
         tags=['rules'],
@@ -804,6 +965,9 @@ class TemplateTestSendView(APIView):
         parameters=[COMPANY_QUERY],
         request=EmailRuleWriteSerializer,
         responses={201: EmailRuleSerializer, **_API_ERRORS},
+        examples=[EXAMPLE_EMAIL_RULE],
+        **mcp_openapi_fields('api_v1_rules_create'),
+        **mcp_tool(operation_id='api_v1_rules_create', read_only=False, sensitive=True),
     ),
 )
 class RuleListView(APIView):
@@ -836,6 +1000,8 @@ class RuleListView(APIView):
         operation_id='api_v1_rules_retrieve',
         parameters=[COMPANY_QUERY],
         responses={200: EmailRuleSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_rules_retrieve'),
+        **mcp_tool(operation_id='api_v1_rules_retrieve', read_only=True),
     ),
     patch=extend_schema(
         tags=['rules'],
@@ -843,12 +1009,16 @@ class RuleListView(APIView):
         parameters=[COMPANY_QUERY],
         request=EmailRulePatchSerializer,
         responses={200: EmailRuleSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_rules_partial_update'),
+        **mcp_tool(operation_id='api_v1_rules_partial_update', read_only=False, sensitive=True),
     ),
     delete=extend_schema(
         tags=['rules'],
         operation_id='api_v1_rules_destroy',
         parameters=[COMPANY_QUERY],
         responses={204: None, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_rules_destroy'),
+        **mcp_tool(operation_id='api_v1_rules_destroy', read_only=False, destructive=True),
     ),
 )
 class RuleDetailView(APIView):
@@ -953,6 +1123,8 @@ def _kept_text(request, key: str, existing: CompanyProvider | None, default: str
         operation_id='api_v1_provider_retrieve',
         parameters=[COMPANY_QUERY],
         responses={200: ProviderSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_provider_retrieve'),
+        **mcp_tool(operation_id='api_v1_provider_retrieve', read_only=True, sensitive=True),
     ),
     put=extend_schema(
         tags=['provider'],
@@ -960,6 +1132,8 @@ def _kept_text(request, key: str, existing: CompanyProvider | None, default: str
         parameters=[COMPANY_QUERY],
         request=ProviderWriteSerializer,
         responses={200: ProviderSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_provider_update'),
+        **mcp_tool(operation_id='api_v1_provider_update', read_only=False, sensitive=True),
     ),
 )
 class ProviderView(APIView):
@@ -1069,6 +1243,8 @@ class ProviderView(APIView):
         operation_id='api_v1_auth_link_hosts_retrieve',
         parameters=[COMPANY_QUERY],
         responses={200: AuthLinkHostsSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_auth_link_hosts_retrieve'),
+        **mcp_tool(operation_id='api_v1_auth_link_hosts_retrieve', read_only=True),
     ),
     put=extend_schema(
         tags=['auth-link-hosts'],
@@ -1076,6 +1252,8 @@ class ProviderView(APIView):
         parameters=[COMPANY_QUERY],
         request=AuthLinkHostsWriteSerializer,
         responses={200: AuthLinkHostsSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_auth_link_hosts_update'),
+        **mcp_tool(operation_id='api_v1_auth_link_hosts_update', read_only=False, sensitive=True),
     ),
 )
 class AuthLinkHostsView(APIView):
@@ -1114,6 +1292,8 @@ class AuthLinkHostsView(APIView):
         parameters=[COMPANY_QUERY],
         request=ProviderTestSendRequestSerializer,
         responses={200: TestSendResponseSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_provider_test_send'),
+        **mcp_tool(operation_id='api_v1_provider_test_send', read_only=False, sensitive=True),
     ),
 )
 class ProviderTestSendView(APIView):
@@ -1144,6 +1324,8 @@ class ProviderTestSendView(APIView):
             OpenApiParameter('event_type', str, OpenApiParameter.QUERY, required=False),
         ],
         responses={200: StatsSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_stats_retrieve'),
+        **mcp_tool(operation_id='api_v1_stats_retrieve', read_only=True, sensitive=True),
     ),
 )
 class StatsView(APIView):
@@ -1169,6 +1351,8 @@ class StatsView(APIView):
         operation_id='api_v1_suppressions_list',
         parameters=[COMPANY_QUERY],
         responses={200: SuppressionListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_suppressions_list'),
+        **mcp_tool(operation_id='api_v1_suppressions_list', read_only=True, sensitive=True),
     ),
     post=extend_schema(
         tags=['suppressions'],
@@ -1176,6 +1360,8 @@ class StatsView(APIView):
         parameters=[COMPANY_QUERY],
         request=SuppressionCreateSerializer,
         responses={201: SuppressionCreatedSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_suppressions_create'),
+        **mcp_tool(operation_id='api_v1_suppressions_create', read_only=False, sensitive=True),
     ),
 )
 class SuppressionListView(APIView):
@@ -1226,6 +1412,8 @@ class SuppressionListView(APIView):
         tags=['suppressions'],
         operation_id='api_v1_suppressions_destroy',
         responses={204: None, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_suppressions_destroy'),
+        **mcp_tool(operation_id='api_v1_suppressions_destroy', read_only=False, destructive=True),
     ),
 )
 class SuppressionDetailView(APIView):
@@ -1543,6 +1731,8 @@ def _audience_authorization(request, user, company_id: int) -> str:
         operation_id='api_v1_broadcasts_list',
         parameters=[COMPANY_QUERY],
         responses={200: BroadcastListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_broadcasts_list'),
+        **mcp_tool(operation_id='api_v1_broadcasts_list', read_only=True),
     ),
     post=extend_schema(
         tags=['broadcasts'],
@@ -1550,6 +1740,8 @@ def _audience_authorization(request, user, company_id: int) -> str:
         parameters=[COMPANY_QUERY],
         request=BroadcastCreateSerializer,
         responses={201: BroadcastSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_broadcasts_create'),
+        **mcp_tool(operation_id='api_v1_broadcasts_create', read_only=False, sensitive=True),
     ),
 )
 class BroadcastListView(APIView):
@@ -1579,17 +1771,23 @@ class BroadcastListView(APIView):
         tags=['broadcasts'],
         operation_id='api_v1_broadcasts_retrieve',
         responses={200: BroadcastSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_broadcasts_retrieve'),
+        **mcp_tool(operation_id='api_v1_broadcasts_retrieve', read_only=True),
     ),
     patch=extend_schema(
         tags=['broadcasts'],
         operation_id='api_v1_broadcasts_partial_update',
         request=BroadcastPatchSerializer,
         responses={200: BroadcastSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_broadcasts_partial_update'),
+        **mcp_tool(operation_id='api_v1_broadcasts_partial_update', read_only=False, sensitive=True),
     ),
     delete=extend_schema(
         tags=['broadcasts'],
         operation_id='api_v1_broadcasts_destroy',
         responses={204: None, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_broadcasts_destroy'),
+        **mcp_tool(operation_id='api_v1_broadcasts_destroy', read_only=False, destructive=True),
     ),
 )
 class BroadcastDetailView(APIView):
@@ -1628,9 +1826,10 @@ class BroadcastDetailView(APIView):
     post=extend_schema(
         tags=['broadcasts'],
         operation_id='api_v1_broadcasts_preview',
-        description='Who would get the broadcast now: counts per send language and skips. Asks identity with your token.',
         request=BroadcastPreviewRequestSerializer,
         responses={200: BroadcastPreviewSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_broadcasts_preview'),
+        **mcp_tool(operation_id='api_v1_broadcasts_preview', read_only=True, sensitive=True),
     ),
 )
 class BroadcastPreviewView(APIView):
@@ -1650,13 +1849,10 @@ class BroadcastPreviewView(APIView):
     post=extend_schema(
         tags=['broadcasts'],
         operation_id='api_v1_broadcasts_send',
-        description=(
-            'Snapshot the saved audience and send the published content. Each recipient gets their '
-            'language when the content has it, else the main language. Unsubscribed and suppressed '
-            'addresses are skipped.'
-        ),
         request=None,
         responses={202: BroadcastSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_broadcasts_send'),
+        **mcp_tool(operation_id='api_v1_broadcasts_send', read_only=False, sensitive=True),
     ),
 )
 class BroadcastSendView(APIView):

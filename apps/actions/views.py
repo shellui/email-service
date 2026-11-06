@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, extend_schema_view
+
+from apps.authapi.mcp_openapi import mcp_tool
+from apps.email.openapi_admin import ADMIN_API_ERRORS, EXAMPLE_ACTION_RULE, mcp_openapi_fields
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -31,12 +34,7 @@ from apps.email.schema import COMPANY_QUERY, ErrorSerializer
 from apps.email.service import SendError
 from apps.email.views import error_response
 
-_API_ERRORS = {
-    400: ErrorSerializer,
-    401: ErrorSerializer,
-    403: ErrorSerializer,
-    404: ErrorSerializer,
-}
+_API_ERRORS = ADMIN_API_ERRORS
 
 
 def _public_webhook_url(url: str) -> str:
@@ -107,6 +105,8 @@ def _rule_payload(rule: ActionRule, *, reveal_secret: bool = False) -> dict:
         operation_id='api_v1_actions_events_list',
         parameters=[COMPANY_QUERY],
         responses={200: ActionEventListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_events_list'),
+        **mcp_tool(operation_id='api_v1_actions_events_list', read_only=True),
     ),
 )
 class ActionEventsView(APIView):
@@ -132,6 +132,8 @@ class ActionEventsView(APIView):
         operation_id='api_v1_actions_rules_list',
         parameters=[COMPANY_QUERY],
         responses={200: ActionRuleListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_list'),
+        **mcp_tool(operation_id='api_v1_actions_rules_list', read_only=True, sensitive=True),
     ),
     post=extend_schema(
         tags=['actions'],
@@ -139,6 +141,9 @@ class ActionEventsView(APIView):
         parameters=[COMPANY_QUERY],
         request=ActionRuleCreateSerializer,
         responses={201: ActionRuleSerializer, **_API_ERRORS},
+        examples=[EXAMPLE_ACTION_RULE],
+        **mcp_openapi_fields('api_v1_actions_rules_create'),
+        **mcp_tool(operation_id='api_v1_actions_rules_create', read_only=False, sensitive=True),
     ),
 )
 class ActionRuleListCreateView(APIView):
@@ -192,17 +197,23 @@ class ActionRuleListCreateView(APIView):
         tags=['actions'],
         operation_id='api_v1_actions_rules_retrieve',
         responses={200: ActionRuleSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_retrieve'),
+        **mcp_tool(operation_id='api_v1_actions_rules_retrieve', read_only=True, sensitive=True),
     ),
     patch=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_rules_partial_update',
         request=ActionRuleUpdateSerializer,
         responses={200: ActionRuleSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_partial_update'),
+        **mcp_tool(operation_id='api_v1_actions_rules_partial_update', read_only=False, sensitive=True),
     ),
     delete=extend_schema(
         tags=['actions'],
         operation_id='api_v1_actions_rules_destroy',
         responses={204: None, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_destroy'),
+        **mcp_tool(operation_id='api_v1_actions_rules_destroy', read_only=False, destructive=True),
     ),
 )
 class ActionRuleDetailView(APIView):
@@ -262,6 +273,8 @@ class ActionRuleDetailView(APIView):
         operation_id='api_v1_actions_rules_rotate_secret',
         request=None,
         responses={200: ActionRuleSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_rotate_secret'),
+        **mcp_tool(operation_id='api_v1_actions_rules_rotate_secret', read_only=False, sensitive=True),
     ),
 )
 class ActionRuleRotateSecretView(APIView):
@@ -286,6 +299,8 @@ class ActionRuleRotateSecretView(APIView):
         operation_id='api_v1_actions_rules_send_test',
         request=None,
         responses={200: ActionTestQueuedSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_rules_send_test'),
+        **mcp_tool(operation_id='api_v1_actions_rules_send_test', read_only=False, sensitive=True),
     ),
 )
 class ActionRuleSendTestView(APIView):
@@ -313,6 +328,8 @@ class ActionRuleSendTestView(APIView):
         operation_id='api_v1_actions_deliveries_list',
         parameters=[COMPANY_QUERY],
         responses={200: DeliveryListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_deliveries_list'),
+        **mcp_tool(operation_id='api_v1_actions_deliveries_list', read_only=True, sensitive=True),
     ),
 )
 class ActionDeliveryListView(APIView):
@@ -343,6 +360,8 @@ class ActionDeliveryListView(APIView):
         tags=['actions'],
         operation_id='api_v1_actions_deliveries_retrieve',
         responses={200: DeliveryDetailSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_deliveries_retrieve'),
+        **mcp_tool(operation_id='api_v1_actions_deliveries_retrieve', read_only=True, sensitive=True),
     ),
 )
 class ActionDeliveryDetailView(APIView):
@@ -369,6 +388,8 @@ class ActionDeliveryDetailView(APIView):
         operation_id='api_v1_actions_deliveries_requeue',
         request=None,
         responses={200: DeliverySerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_deliveries_requeue'),
+        **mcp_tool(operation_id='api_v1_actions_deliveries_requeue', read_only=False, sensitive=True),
     ),
 )
 class ActionDeliveryRequeueView(APIView):
@@ -421,6 +442,8 @@ def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False, incl
         operation_id='api_v1_actions_event_log_list',
         parameters=[COMPANY_QUERY],
         responses={200: EventLogListSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_event_log_list'),
+        **mcp_tool(operation_id='api_v1_actions_event_log_list', read_only=True, sensitive=True),
     ),
 )
 class EventLogListView(APIView):
@@ -458,6 +481,8 @@ class EventLogListView(APIView):
         tags=['actions'],
         operation_id='api_v1_actions_event_log_retrieve',
         responses={200: EventLogDetailSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_event_log_retrieve'),
+        **mcp_tool(operation_id='api_v1_actions_event_log_retrieve', read_only=True, sensitive=True),
     ),
 )
 class EventLogDetailView(APIView):
@@ -489,6 +514,8 @@ class EventLogDetailView(APIView):
         operation_id='api_v1_actions_event_log_types_list',
         parameters=[COMPANY_QUERY],
         responses={200: EventLogTypesSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_event_log_types_list'),
+        **mcp_tool(operation_id='api_v1_actions_event_log_types_list', read_only=True),
     ),
 )
 class EventLogTypesView(APIView):
@@ -507,6 +534,8 @@ class EventLogTypesView(APIView):
         operation_id='api_v1_actions_event_log_retention_retrieve',
         parameters=[COMPANY_QUERY],
         responses={200: EventLogRetentionSerializer, **_API_ERRORS},
+        **mcp_openapi_fields('api_v1_actions_event_log_retention_retrieve'),
+        **mcp_tool(operation_id='api_v1_actions_event_log_retention_retrieve', read_only=True),
     ),
 )
 class EventLogRetentionView(APIView):

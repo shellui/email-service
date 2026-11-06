@@ -147,8 +147,8 @@ ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
 CSRF_TRUSTED_ORIGINS = _env_csv(
     'CSRF_TRUSTED_ORIGINS',
     (
-        'http://localhost:8003',
-        'http://127.0.0.1:8003',
+        'http://localhost:8004',
+        'http://127.0.0.1:8004',
         'http://localhost:4000',
         'http://127.0.0.1:4000',
         'http://localhost:5174',
@@ -193,7 +193,7 @@ INSTALLED_APPS = [
 ]
 
 REST_FRAMEWORK = {
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_SCHEMA_CLASS': 'apps.authapi.mcp_schema.McpAutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'apps.authapi.service_auth.ShelluiAuthentication',
     ],
@@ -230,8 +230,10 @@ SPECTACULAR_SETTINGS = {
         {'name': 'catalog', 'description': 'Service events, suggested subjects, and default designs.'},
         {'name': 'library', 'description': 'Built-in and company email designs.'},
         {'name': 'templates', 'description': 'Event copies and their versions.'},
+        {'name': 'broadcasts', 'description': 'One-shot audience campaigns.'},
         {'name': 'rules', 'description': 'Per-company email rules.'},
         {'name': 'provider', 'description': 'Company sending provider credentials.'},
+        {'name': 'auth-link-hosts', 'description': 'Allowed hosts for magic link URLs in templates.'},
         {'name': 'stats', 'description': 'Per-company delivery statistics.'},
         {'name': 'suppressions', 'description': 'Address suppressions.'},
         {'name': 'lanes', 'description': 'Priority lane pause switches.'},
@@ -241,12 +243,15 @@ SPECTACULAR_SETTINGS = {
         {'name': 'newsletters', 'description': 'Newsletter lists, subscribers, and the public sign-up endpoint.'},
         {'name': 'platform-metrics', 'description': 'Prometheus metrics.'},
         {'name': 'health', 'description': 'Service health checks.'},
+        {'name': 'mcp-tools', 'description': 'Operations exposed to Shellui MCP agents.'},
     ],
+    'POSTPROCESSING_HOOKS': ['apps.authapi.spectacular_hooks.postprocess_mcp_tool_tags'],
     'ENUM_NAME_OVERRIDES': {
         'AudienceModeEnum': ['filter', 'pick', 'newsletter'],
         'SubscriberAddModeEnum': ['confirm', 'consented'],
         'ScheduledJobRunStatusEnum': ['running', 'succeeded', 'failed'],
     },
+    'PREPROCESSING_HOOKS': ['apps.authapi.spectacular_hooks.preprocessing_exclude_internal_endpoints'],
 }
 
 MIDDLEWARE = [
@@ -363,6 +368,32 @@ STORAGES = {
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
+# ---------------------------------------------------------------------------
+# Identity / JWKS authentication
+#
+# Prefer a local JWKS document in production (no runtime HTTP to identity):
+#   IDENTITY_JWKS_FILE=/app/data/jwks.json
+#   IDENTITY_JWKS={"keys":[...]}
+# Or fetch at runtime (cached, short HTTP timeout):
+#   IDENTITY_JWKS_URL=https://id.shellui.com/.well-known/jwks.json
+#   IDENTITY_SERVICE_URL=https://id.shellui.com
+# Local/dev can still fall back to:
+#   http://localhost:8001/.well-known/jwks.json
+# ---------------------------------------------------------------------------
+
+
+def _identity_jwks_env_configured() -> bool:
+    for name in (
+        'IDENTITY_JWKS_FILE',
+        'IDENTITY_JWKS',
+        'IDENTITY_JWKS_URL',
+        'IDENTITY_SERVICE_URL',
+    ):
+        if os.getenv(name, '').strip():
+            return True
+    return False
+
+
 def _parse_jwks_document(raw: str, *, source: str) -> dict:
     try:
         document = json.loads(raw)
@@ -391,27 +422,35 @@ def _load_static_jwks() -> tuple[dict | None, str | None, str | None]:
     return None, None, None
 
 
-def _resolve_identity_jwks_url() -> str:
+def _resolve_identity_jwks_url(*, allow_localhost_fallback: bool) -> str | None:
     explicit = os.getenv('IDENTITY_JWKS_URL', '').strip()
     if explicit:
         return explicit.rstrip('/')
     base = os.getenv('IDENTITY_SERVICE_URL', '').strip().rstrip('/')
     if base:
         return f'{base}/.well-known/jwks.json'
-    return 'http://localhost:8000/.well-known/jwks.json'
+    if allow_localhost_fallback:
+        return 'http://localhost:8001/.well-known/jwks.json'
+    return None
 
 
 IDENTITY_JWKS_DOCUMENT, IDENTITY_JWKS_SOURCE, IDENTITY_JWKS_FILE = _load_static_jwks()
 IDENTITY_SERVICE_URL = os.getenv('IDENTITY_SERVICE_URL', '').strip().rstrip('/') or (
-    'http://localhost:8000' if DEBUG else None
+    'http://localhost:8001' if DEBUG else None
 )
 if IDENTITY_JWKS_DOCUMENT is not None:
     IDENTITY_JWKS_URL = os.getenv('IDENTITY_JWKS_URL', '').strip().rstrip('/') or None
 else:
-    IDENTITY_JWKS_URL = _resolve_identity_jwks_url()
-    if not IDENTITY_JWKS_URL.startswith(('http://', 'https://')):
+    IDENTITY_JWKS_URL = _resolve_identity_jwks_url(allow_localhost_fallback=DEBUG)
+    if IDENTITY_JWKS_URL is not None and not IDENTITY_JWKS_URL.startswith(('http://', 'https://')):
         raise ImproperlyConfigured(
-            f'IDENTITY_JWKS_URL must be an absolute http(s) URL. Got: {IDENTITY_JWKS_URL!r}'
+            f'IDENTITY_JWKS_URL must be an absolute http(s) URL. Got: {IDENTITY_JWKS_URL!r}\n'
+            'Prefer a local document in production:\n'
+            '  IDENTITY_JWKS_FILE=/app/data/jwks.json\n'
+            '  IDENTITY_JWKS={"keys":[...]}\n'
+            'Or a fetch URL:\n'
+            '  IDENTITY_JWKS_URL=https://id.shellui.com/.well-known/jwks.json\n'
+            '  IDENTITY_SERVICE_URL=https://id.shellui.com'
         )
 IDENTITY_ISSUER = os.getenv('IDENTITY_ISSUER', '').strip() or None
 IDENTITY_AUDIENCE = os.getenv('IDENTITY_AUDIENCE', '').strip() or None
@@ -433,6 +472,26 @@ if JWT_HS256_FALLBACK_SECRET and not DEBUG and not ALLOW_JWT_HS256_FALLBACK:
         'or set ALLOW_JWT_HS256_FALLBACK=true only if you fully understand the risk.'
     )
 JWT_ALGORITHMS = _env_csv('JWT_ALGORITHMS', ('RS256',))
+
+_jwt_private_pem = os.getenv('JWT_PRIVATE_KEY', '').strip().replace('\\n', '\n')
+JWT_KEY_ID = os.getenv('JWT_KEY_ID', '').strip()
+JWT_ACTIVE_KEY_ID = JWT_KEY_ID
+JWT_ISSUER = IDENTITY_ISSUER or ''
+JWT_AUDIENCE = IDENTITY_AUDIENCE or ''
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ISSUER': JWT_ISSUER,
+    'AUDIENCE': JWT_AUDIENCE,
+}
+if _jwt_private_pem:
+    SIMPLE_JWT['ALGORITHM'] = 'RS256'
+    SIMPLE_JWT['SIGNING_KEY'] = _jwt_private_pem
+
+MCP_RATE_LIMITS = {
+    'mcp_agent': {'limit': 120, 'window': 60},
+}
 
 # Allow-all is a local convenience. Production (DEBUG=false) stays off unless set explicitly.
 CORS_ALLOW_ALL_ORIGINS = _env_bool('CORS_ALLOW_ALL_ORIGINS', DEBUG)
@@ -642,10 +701,10 @@ if not DEBUG:
         _production_config_errors.append('EMAIL_VARIABLES_KEY is required when DEBUG=false.')
     if not os.getenv('EMAIL_HASH_PEPPER', '').strip():
         _production_config_errors.append('EMAIL_HASH_PEPPER is required when DEBUG=false.')
-    if IDENTITY_JWKS_DOCUMENT is None:
+    if IDENTITY_JWKS_DOCUMENT is None and not _identity_jwks_env_configured():
         _production_config_errors.append(
-            'IDENTITY_JWKS or IDENTITY_JWKS_FILE is required when DEBUG=false. '
-            'Pin the identity public keys. A runtime fetch of IDENTITY_JWKS_URL is not enough.'
+            'IDENTITY_JWKS, IDENTITY_JWKS_FILE, IDENTITY_JWKS_URL, or IDENTITY_SERVICE_URL '
+            'is required when DEBUG=false. Pin the JWKS or set a fetch URL.'
         )
     if _production_config_errors:
         raise ImproperlyConfigured('\n'.join(_production_config_errors))
@@ -742,3 +801,14 @@ COMPANY_DELETION_BLOB_HOOK = ''
 
 # A failing log call must never print its arguments (headers, tokens) to stderr.
 logging.raiseExceptions = False
+
+# RS256 key this service signs internal MCP assertions to Identity with (config/service_signing.py).
+# Identity trusts it from EMAIL_SERVICE_ISSUER and reads the public key at /.well-known/jwks.json.
+from config.service_signing import read_signing_pem  # noqa: E402
+
+MCP_SIGNING_KEY_PEM = read_signing_pem(
+    value=os.getenv('EMAIL_SERVICE_SIGNING_KEY', ''),
+    file_path=os.getenv('EMAIL_SERVICE_SIGNING_KEY_FILE', '').strip(),
+    base_dir=BASE_DIR,
+)
+MCP_SIGNING_ISSUER = os.getenv('EMAIL_SERVICE_ISSUER', '').strip().rstrip('/')

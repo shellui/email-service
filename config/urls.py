@@ -14,10 +14,20 @@ from apps.actions.scheduled_job_views import (
 )
 from apps.email.public_pages import confirm_page, unsubscribe_page
 
+from apps.authapi.mcp_views import OAuthProtectedResourceMetadataView, mcp_endpoint
+
 from . import views
+from .service_signing import jwks_view
 
 urlpatterns = [
     path('', views.root, name='root'),
+    path('.well-known/jwks.json', jwks_view, name='jwks'),
+    path(
+        '.well-known/oauth-protected-resource',
+        OAuthProtectedResourceMetadataView.as_view(),
+        name='mcp-oauth-protected-resource',
+    ),
+    path('mcp', mcp_endpoint, name='mcp'),
     path('api/v1/', include('apps.email.urls')),
     # Detail before ``<job>/runs`` so ``runs/<id>`` is not parsed as a job name.
     path('api/v1/scheduled-jobs', ScheduledJobsView.as_view(), name='scheduled-jobs'),

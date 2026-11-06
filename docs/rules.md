@@ -14,6 +14,8 @@ Auth-lane events are the exception. Login depends on them, and magic link is the
 
 The HTTP contract is also in [integration.md](integration.md). Catalog events are in [events.md](events.md). Designs are in [library.md](library.md) and copies in [templates.md](templates.md).
 
+List, read, create, update, and delete on `/api/v1/rules` are exposed to Shellui MCP agents. See [Shellui MCP](mcp.md).
+
 ## Fields
 
 | Field | Meaning |

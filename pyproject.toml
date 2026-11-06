@@ -1,12 +1,13 @@
 [project]
 name = "email-service"
-version = "0.7.1"
+version = "0.8.0"
 description = "Email templates and delivery for Shellui services"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "django==6.0.8",
     "djangorestframework==3.18.2",
+    "djangorestframework-simplejwt==5.5.1",
     "drf-spectacular==0.29.0",
     "drf-spectacular-sidecar==2026.10.1",
     "django-cors-headers==4.9.0",
@@ -22,6 +23,7 @@ dependencies = [
     "prometheus-client==0.21.1",
     "redis==8.1.0",
     "celery==5.6.3",
+    "shellui-django[mcp]==0.5.0",
 ]
 
 [dependency-groups]
