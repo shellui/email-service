@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 🛠 Improvements
+
+- MCP: stricter Identity approval consume (only literal JSON `true` for `consumed`), optional global delegation claims on agent JWTs checked against the signed revocation list, safe `activity` metadata and trusted `company_name` on call log forwards, and approval assertion kwargs wired for django-commons PR 14 when the installed `shellui-django` supports them.
+
 ## [0.8.0] - 2026-11-01
 
 ### 🛠 Improvements

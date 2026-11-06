@@ -11,6 +11,7 @@ import jwt
 from django.test import Client, TestCase, override_settings
 
 from apps.authapi.mcp_identity import reset_revocation_cache_for_tests
+from apps.email.models import CompanyProfile
 from apps.authapi.mcp_openapi import MCP_EXPLICIT_REGISTRY, MCP_FORBIDDEN_OPERATION_IDS
 from apps.authapi.tests.rs256_helpers import generate_test_rsa_jwks, sign_test_revocation_list_assertion
 from shellui_django.mcp.internal import (
@@ -60,6 +61,10 @@ def _agent_token(
     company_id: int = 42,
     agent_id: str | None = None,
     audience: str | None = None,
+    global_company_id: str | None = None,
+    company_binding_version: int | None = None,
+    grant_version: int | None = None,
+    mcp_destructive: bool = False,
 ) -> tuple[str, str]:
     agent_id = agent_id or str(uuid.uuid4())
     claims = {
@@ -69,11 +74,17 @@ def _agent_token(
         'scope': 'email',
         'mcp_access': access,
         'mcp_read': read_level,
-        'mcp_destructive': False,
+        'mcp_destructive': mcp_destructive,
         'exp': int(time.time()) + 600,
         'iss': ISSUER,
         'aud': audience if audience is not None else MCP_RESOURCE,
     }
+    if grant_version is not None:
+        claims['grant_version'] = grant_version
+    if global_company_id is not None:
+        claims['global_company_id'] = global_company_id
+    if company_binding_version is not None:
+        claims['company_binding_version'] = company_binding_version
     return jwt.encode(claims, SIGNING, algorithm='HS256'), agent_id
 
 
@@ -517,6 +528,244 @@ class McpEndpointTests(TestCase):
             },
         )
         self.assertEqual(response.status_code, 503)
+
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_approval_consume_200_without_literal_true_refuses_write(self, mock_post):
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        def post_side_effect(url, **kwargs):
+            if url.endswith('mcp-approval-state'):
+                ok = MagicMock()
+                ok.status_code = 200
+                ok.raise_for_status = MagicMock()
+                ok.json = MagicMock(return_value={'status': 'approved', 'id': 'appr-false'})
+                return ok
+            bad = MagicMock()
+            bad.status_code = 200
+            bad.raise_for_status = MagicMock()
+            bad.json = MagicMock(return_value={'consumed': False})
+            return bad
+
+        mock_post.side_effect = post_side_effect
+        reset_mcp_server_cache()
+        token, _agent_id = _agent_token(access='ask')
+        response = _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {
+                'name': 'api_v1_rules_create',
+                'arguments': {
+                    'path': '/api/v1/rules',
+                    'method': 'POST',
+                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['error'], 'identity_unavailable')
+
+    def test_revocation_global_grant_stale_forbidden(self):
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        self.mock_revocation_get.return_value = _revocation_ok_response(
+            agents=[
+                {
+                    'agent_id': agent_id,
+                    'global_company_id': gcid,
+                    'company_binding_version': 0,
+                    'grant_version': 1,
+                }
+            ],
+        )
+        reset_mcp_server_cache()
+        reset_revocation_cache_for_tests()
+        token, _ = _agent_token(
+            agent_id=agent_id,
+            company_id=42,
+            global_company_id=gcid,
+            company_binding_version=0,
+            grant_version=2,
+        )
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()['error'], 'forbidden')
+
+    def test_revocation_personal_row_global_token_forbidden(self):
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        self.mock_revocation_get.return_value = _revocation_ok_response(
+            agents=[{'agent_id': agent_id, 'company_id': 42}],
+        )
+        reset_mcp_server_cache()
+        reset_revocation_cache_for_tests()
+        token, _ = _agent_token(
+            agent_id=agent_id,
+            company_id=42,
+            global_company_id=gcid,
+            company_binding_version=0,
+            grant_version=0,
+        )
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 403)
+
+    def test_revocation_global_row_missing_token_claims_forbidden(self):
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        self.mock_revocation_get.return_value = _revocation_ok_response(
+            agents=[
+                {
+                    'agent_id': agent_id,
+                    'global_company_id': gcid,
+                    'company_binding_version': 1,
+                    'grant_version': 0,
+                }
+            ],
+        )
+        reset_mcp_server_cache()
+        reset_revocation_cache_for_tests()
+        token, _ = _agent_token(agent_id=agent_id, company_id=42)
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 403)
+
+    def test_global_claims_require_complete_pair_in_token(self):
+        agent_id = str(uuid.uuid4())
+        claims = {
+            'sub': f'agent:{agent_id}',
+            'agent_id': agent_id,
+            'company_id': 42,
+            'scope': 'email',
+            'mcp_access': 'read_only',
+            'mcp_read': 'safe',
+            'mcp_destructive': False,
+            'exp': int(time.time()) + 600,
+            'iss': ISSUER,
+            'aud': MCP_RESOURCE,
+            'global_company_id': str(uuid.uuid4()),
+        }
+        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        response = _rpc(self.client, bad, 'tools/list')
+        self.assertEqual(response.status_code, 401)
+
+    @patch('apps.authapi.mcp_identity.resolve_approval_state', return_value=None)
+    @patch('apps.authapi.mcp_identity.create_approval_request', return_value=None)
+    def test_destructive_full_mode_still_requires_approval(self, _create, _state):
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+        from apps.email.models import EmailRule, EmailTemplate
+
+        reset_mcp_server_cache()
+        company_id = 42
+        template = EmailTemplate.objects.create(
+            company_id=company_id,
+            template_key=f'company.{company_id}.mcp_del_rule',
+            name='Copy',
+            event_type='email.newsletter.requested',
+            kind=EmailTemplate.KIND_EVENT,
+            language='en',
+            set='barebone',
+        )
+        rule = EmailRule.objects.create(
+            company_id=company_id,
+            service='email',
+            event_type='email.newsletter.requested',
+            enabled=True,
+            language='en',
+            template=template,
+            recipient_mode='static',
+            static_recipients=['owner@example.com'],
+            built_in=False,
+        )
+        token, _agent_id = _agent_token(access='full', company_id=company_id, mcp_destructive=False)
+        response = _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {
+                'name': 'api_v1_rules_destroy',
+                'arguments': {
+                    'path': '/api/v1/rules/{rule_id}',
+                    'path_params': {'rule_id': str(rule.pk)},
+                    'method': 'DELETE',
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        result = response.json()['result']
+        self.assertTrue(result.get('isError'))
+        self.assertIn('Destructive', result['content'][0]['text'])
+
+    @patch('apps.email.views.ensure_builtin_rules')
+    @patch('apps.authapi.mcp_identity.forward_call_log')
+    def test_call_log_includes_safe_activity_metadata(self, mock_forward, _no_builtin):
+        token, _agent_id = _agent_token(company_id=42)
+        response = _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {
+                'name': 'api_v1_rules_list',
+                'arguments': {
+                    'path': '/api/v1/rules',
+                    'method': 'GET',
+                },
+            },
+            req_id=50,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(mock_forward.called)
+        entry = mock_forward.call_args[0][0]
+        act = entry.get('activity') or {}
+        self.assertEqual(act.get('resource_path'), '/api/v1/rules')
+        self.assertEqual(act.get('access_kind'), 'read')
+        self.assertEqual(act.get('outcome'), 'ok')
+        self.assertNotIn('arguments', act)
+
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_forward_call_log_adds_company_name_from_profile(self, mock_post):
+        CompanyProfile.objects.create(company_id=42, name='Audit Co MCP')
+        mock_post.return_value = MagicMock(status_code=200, raise_for_status=MagicMock())
+        from apps.authapi.mcp_identity import forward_call_log
+
+        forward_call_log(
+            {
+                'company_id': 42,
+                'agent_id': str(uuid.uuid4()),
+                'service': 'email',
+                'tool': 'api_v1_rules_list',
+                'method': 'GET',
+                'path': '/api/v1/rules',
+                'status': 200,
+                'arguments': {},
+                'activity': {'resource_path': '/api/v1/rules', 'access_kind': 'read', 'outcome': 'ok', 'duration_ms': 1},
+            }
+        )
+        body = mock_post.call_args.kwargs['json']
+        self.assertEqual(body.get('company_name'), 'Audit Co MCP')
+
+    def test_grant_version_zero_forwarded_to_approval_assertion_when_supported(self):
+        import inspect
+
+        from apps.authapi.mcp_identity import _approval_assertion_kwargs
+        from shellui_django.mcp.internal import build_mcp_approval_assertion
+
+        if 'grant_version' not in inspect.signature(build_mcp_approval_assertion).parameters:
+            self.skipTest('shellui-django build_mcp_approval_assertion has no grant_version yet.')
+        payload = {
+            'company_id': 42,
+            'agent_id': str(uuid.uuid4()),
+            'service': 'email',
+            'action': 'api_v1_rules_create',
+            'arguments_hash': 'abc',
+            'grant_version': 0,
+        }
+        kwargs = _approval_assertion_kwargs(payload)
+        self.assertEqual(kwargs.get('grant_version'), 0)
 
     def test_registry_covers_every_mcp_tool(self):
         from apps.authapi.mcp_views import _schema

@@ -27,6 +27,16 @@ Required claims:
 | `mcp_read` | `safe` or `sensitive` |
 | `mcp_destructive` | Skip extra approval for destructive tools when true |
 
+Optional claims for globally delegated agents (see identity PR 135 and django-commons PR 14). All must be present together when `global_company_id` is set:
+
+| Claim | Purpose |
+| --- | --- |
+| `global_company_id` | Shell-wide company id as a UUID string (not the regional numeric `company_id`) |
+| `company_binding_version` | Non-negative int binding revision for that global id (including `0`) |
+| `grant_version` | Non-negative int grant revision required when `global_company_id` is set |
+
+Personal regional agents omit these three claims. Tokens with only one of `global_company_id` or `company_binding_version` are rejected. Numeric tenant scope stays on `company_id` only.
+
 ## Access modes
 
 | `mcp_access` | Behavior |
@@ -47,7 +57,26 @@ email-service reuses existing Identity URL settings (no new required env vars):
 
 Internal calls use short-lived JWT assertions from the shared `shellui_django.mcp` helpers (`aud` `shellui-mcp-call-log` or `shellui-mcp-approval`). Outbound signing uses `JWT_PRIVATE_KEY` (RS256, same key as identity-service in production). Revocation poll responses are verified with Identity JWKS via `parse_trusted_revocation_poll_response`.
 
-Per-agent rate limits use Redis when `REDIS_URL` is set (same as API rate limits).
+Approval assertions include `grant_version`, `global_company_id`, and `company_binding_version` when the installed `shellui-django` exposes those kwargs (django-commons PR 14) and the agent JWT carries the same claims. Identity must treat canonical `0` grant and binding versions as valid. Before django-commons merges, email-service still forwards authority in approval payloads for tests and stays compatible with the current 0.4.0 helper signature.
+
+After a successful HTTP write in `ask` mode, Identity `mcp-approval-consume` must return JSON with `consumed` set to the boolean `true`. A `2xx` response with any other value is treated as failure (no silent success).
+
+## Workflows agents drive (audit-oriented)
+
+These map MCP tools to what Identity records when call logs include the optional `activity` object email-service sends:
+
+| Agent goal | Tool (`operation_id`) | HTTP | `activity.resource_path` (template) | `activity.access_kind` |
+| --- | --- | --- | --- | --- |
+| List template copies | `api_v1_templates_list` | GET | `/api/v1/templates` | read |
+| List email rules | `api_v1_rules_list` | GET | `/api/v1/rules` | read |
+| List Shellui Actions webhook rules | `api_v1_actions_rules_list` | GET | `/api/v1/actions/rules` | read |
+| Read default event catalog | `api_v1_catalog_retrieve` | GET | `/api/v1/catalog` | read |
+| Create an email rule (and template copy) | `api_v1_rules_create` | POST | `/api/v1/rules` | write |
+| Send a design test | `api_v1_templates_send_test` | POST | `/api/v1/templates/{template_id}/send-test` | write |
+
+`activity` also includes `operation_title` from the OpenAPI summary when present, `outcome` (`ok`, `denied`, `not_found`, `rejected`, `conflict`, `error`), optional `error_code` from a fixed set (`forbidden`, `not_found`, `validation_failed`, `conflict`, `server_error`, `request_failed`), and `duration_ms`. It never includes raw tool arguments, response bodies, provider text, or URLs passed through from an agent.
+
+Trusted `company_name` on forwarded call logs comes from this service's `CompanyProfile` row for the regional `company_id` when one exists.
 
 ## Where the schema lives
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import time
 from typing import Any
@@ -74,23 +75,52 @@ def _require_service_assertions() -> None:
         raise McpIdentityUnavailable('Identity issuer is not configured.')
 
 
-def verify_agent_company_binding(agent_id: str, company_id: int) -> None:
-    """When Identity publishes ``agents[].company_id``, it must match the access token."""
+def verify_agent_company_binding(
+    agent_id: str,
+    company_id: int,
+    *,
+    claims: dict[str, Any] | None = None,
+) -> None:
+    """When Identity publishes ``agents[]`` rows, regional and global authority must match the token (fail closed)."""
     if not _revocation_snapshot['trusted']:
         raise McpIdentityUnavailable('Revocation list is unavailable.')
     agent_id = str(agent_id or '')
+    claims = claims or {}
+    token_global = claims.get('global_company_id')
+    token_binding = claims.get('company_binding_version')
+    token_grant = claims.get('grant_version')
+    token_has_global = token_global is not None
+    matched = False
     for row in _revocation_snapshot.get('agents') or []:
         if not isinstance(row, dict):
             continue
         row_id = str(row.get('agent_id') or row.get('id') or '')
         if row_id != agent_id:
             continue
+        matched = True
+        g = row.get('global_company_id', None)
+        b = row.get('company_binding_version', None)
+        row_has_global = g is not None and b is not None
+        if row_has_global:
+            if not token_has_global or token_grant is None or token_binding is None:
+                raise McpAgentCompanyMismatch('Agent global authority binding mismatch.')
+            if str(token_global or '') != str(g):
+                raise McpAgentCompanyMismatch('Agent global authority binding mismatch.')
+            if int(token_binding) != int(b):
+                raise McpAgentCompanyMismatch('Agent global authority binding mismatch.')
+            gv_row = row.get('grant_version')
+            if gv_row is None or int(token_grant) != int(gv_row):
+                raise McpAgentCompanyMismatch('Agent global authority binding mismatch.')
+        else:
+            if token_has_global:
+                raise McpAgentCompanyMismatch('Agent global authority binding mismatch.')
         raw_company = row.get('company_id')
-        if raw_company in (None, ''):
-            return
-        if int(raw_company) != int(company_id):
-            raise McpAgentCompanyMismatch('Agent company binding mismatch.')
+        if raw_company not in (None, ''):
+            if int(raw_company) != int(company_id):
+                raise McpAgentCompanyMismatch('Agent company binding mismatch.')
         return
+    if token_has_global and not matched:
+        raise McpAgentCompanyMismatch('Agent global authority binding mismatch.')
 
 
 def _revocation_assertion_headers() -> dict[str, str]:
@@ -167,17 +197,30 @@ def _refresh_revocations() -> None:
     _revocation_snapshot['trusted'] = True
 
 
-def _approval_assertion(payload: dict[str, Any]) -> str:
+def _approval_assertion_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keyword args for ``build_mcp_approval_assertion`` aligned with identity #135 / django-commons #14."""
     origin = identity_origin()
-    return build_mcp_approval_assertion(
-        company_id=int(payload['company_id']),
-        agent_id=str(payload['agent_id']),
-        service=str(payload.get('service') or 'email'),
-        action=str(payload.get('action') or ''),
-        arguments_hash=str(payload.get('arguments_hash') or ''),
-        audience_url=origin,
+    kwargs: dict[str, Any] = {
+        'company_id': int(payload['company_id']),
+        'agent_id': str(payload['agent_id']),
+        'service': str(payload.get('service') or 'email'),
+        'action': str(payload.get('action') or ''),
+        'arguments_hash': str(payload.get('arguments_hash') or ''),
+        'audience_url': origin,
         **signing_kwargs(),
-    )
+    }
+    sig = inspect.signature(build_mcp_approval_assertion)
+    if 'grant_version' in sig.parameters and 'grant_version' in payload:
+        kwargs['grant_version'] = int(payload['grant_version'])
+    if 'global_company_id' in sig.parameters and payload.get('global_company_id') is not None:
+        kwargs['global_company_id'] = str(payload['global_company_id'])
+    if 'company_binding_version' in sig.parameters and payload.get('company_binding_version') is not None:
+        kwargs['company_binding_version'] = int(payload['company_binding_version'])
+    return kwargs
+
+
+def _approval_assertion(payload: dict[str, Any]) -> str:
+    return build_mcp_approval_assertion(**_approval_assertion_kwargs(payload))
 
 
 def resolve_approval_state(payload: dict[str, Any]) -> str | None:
@@ -233,7 +276,13 @@ def consume_approval(approval_id: str, *, payload: dict[str, Any] | None = None)
         if response.status_code == 404:
             raise McpIdentityUnavailable('Approval consume endpoint missing.')
         response.raise_for_status()
-        return bool(response.json().get('consumed'))
+        try:
+            body = response.json()
+        except ValueError:
+            raise McpIdentityUnavailable('Approval consume response invalid.')
+        if body.get('consumed') is not True:
+            raise McpIdentityUnavailable('Approval was not consumed.')
+        return True
     except McpIdentityUnavailable:
         raise
     except (requests.RequestException, OSError) as exc:
@@ -247,16 +296,7 @@ def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
     base = identity_api_base()
     if not origin or not base:
         raise McpIdentityUnavailable('Identity service URL is not configured.')
-    args_hash = str(payload.get('arguments_hash') or '')
-    assertion = build_mcp_approval_assertion(
-        company_id=int(payload['company_id']),
-        agent_id=str(payload['agent_id']),
-        service=str(payload.get('service') or 'email'),
-        action=str(payload.get('action') or ''),
-        arguments_hash=args_hash,
-        audience_url=origin,
-        **signing_kwargs(),
-    )
+    assertion = build_mcp_approval_assertion(**_approval_assertion_kwargs(payload))
     body = {
         'arguments': payload.get('arguments') or {},
     }
@@ -291,7 +331,7 @@ def forward_call_log(entry: dict[str, Any]) -> None:
         return
     assertion = build_mcp_call_log_assertion(audience_url=origin, **signing_kwargs())
     url = f'{base}/api/v1/mcp/internal/mcp-call-logs'
-    body = {
+    body: dict[str, Any] = {
         'agent_id': entry.get('agent_id'),
         'company_id': entry.get('company_id'),
         'service': entry.get('service'),
@@ -301,6 +341,26 @@ def forward_call_log(entry: dict[str, Any]) -> None:
         'status': entry.get('status'),
         'arguments': entry.get('arguments') or {},
     }
+    activity = entry.get('activity')
+    if isinstance(activity, dict):
+        body['activity'] = activity
+    gv = entry.get('grant_version')
+    if gv is not None:
+        body['grant_version'] = int(gv)
+    if entry.get('global_company_id') is not None:
+        body['global_company_id'] = str(entry['global_company_id'])
+    if entry.get('company_binding_version') is not None:
+        body['company_binding_version'] = int(entry['company_binding_version'])
+    cid = entry.get('company_id')
+    if cid is not None:
+        try:
+            from apps.email.models import CompanyProfile
+
+            profile = CompanyProfile.objects.filter(company_id=int(cid)).only('name').first()
+            if profile and (profile.name or '').strip():
+                body['company_name'] = str(profile.name).strip()
+        except (TypeError, ValueError, OSError):
+            pass
     try:
         response = requests.post(
             url,

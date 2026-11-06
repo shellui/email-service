@@ -9,8 +9,8 @@ from drf_spectacular.generators import SchemaGenerator
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.views import APIView
-from shellui_django.mcp.server import McpServer
 
+from apps.authapi.email_mcp_server import EmailMcpServer
 from apps.authapi.mcp_agent import authenticate_agent_request
 from apps.authapi.mcp_identity import (
     McpAgentCompanyMismatch,
@@ -21,7 +21,7 @@ from apps.authapi.mcp_identity import (
 )
 from apps.authapi.spectacular_hooks import mcp_schema_for_server
 
-_server: McpServer | None = None
+_server: EmailMcpServer | None = None
 
 
 def _schema() -> dict:
@@ -60,10 +60,10 @@ def _forward_call(entry: dict) -> None:
     forward_call_log(entry)
 
 
-def _get_server() -> McpServer:
+def _get_server() -> EmailMcpServer:
     global _server
     if _server is None:
-        _server = McpServer(
+        _server = EmailMcpServer(
             schema_provider=_schema,
             urlconf=settings.ROOT_URLCONF,
             service_name='email',
@@ -124,7 +124,7 @@ def mcp_endpoint(request: HttpRequest):
     if claims is not None:
         try:
             ensure_revocation_snapshot()
-            verify_agent_company_binding(str(claims.get('agent_id') or ''), int(claims['company_id']))
+            verify_agent_company_binding(str(claims.get('agent_id') or ''), int(claims['company_id']), claims=claims)
         except McpIdentityUnavailable:
             return JsonResponse({'error': 'identity_unavailable'}, status=503)
         except McpAgentCompanyMismatch:

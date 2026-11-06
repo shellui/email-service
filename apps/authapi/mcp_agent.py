@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
 import jwt
@@ -197,6 +198,50 @@ def agent_claims_from_token(raw_token: str, *, request=None) -> dict[str, Any]:
         raise exceptions.AuthenticationFailed('Agent is not allowed to use email.')
     if _staff_agent_refused(claims):
         raise exceptions.AuthenticationFailed('Staff accounts cannot use MCP agents.')
+    # Regional numeric company_id plus optional global delegation claims (identity #135).
+    if 'grant_version' in claims:
+        gv_raw = claims.get('grant_version')
+        if gv_raw is None:
+            claims.pop('grant_version', None)
+        else:
+            if isinstance(gv_raw, bool):
+                raise exceptions.AuthenticationFailed('Agent token has invalid grant_version.')
+            try:
+                gv = int(gv_raw)
+            except (TypeError, ValueError) as exc:
+                raise exceptions.AuthenticationFailed('Agent token has invalid grant_version.') from exc
+            if gv < 0:
+                raise exceptions.AuthenticationFailed('Agent token has invalid grant_version.')
+            claims['grant_version'] = gv
+    if 'global_company_id' in claims:
+        g_raw = claims.get('global_company_id')
+        if g_raw is None:
+            claims.pop('global_company_id', None)
+        else:
+            try:
+                claims['global_company_id'] = str(uuid.UUID(str(g_raw)))
+            except (ValueError, TypeError) as exc:
+                raise exceptions.AuthenticationFailed('Agent token has invalid global_company_id.') from exc
+    if 'company_binding_version' in claims:
+        cbv_raw = claims.get('company_binding_version')
+        if cbv_raw is None:
+            claims.pop('company_binding_version', None)
+        else:
+            if isinstance(cbv_raw, bool):
+                raise exceptions.AuthenticationFailed('Agent token has invalid company_binding_version.')
+            try:
+                cbv = int(cbv_raw)
+            except (TypeError, ValueError) as exc:
+                raise exceptions.AuthenticationFailed('Agent token has invalid company_binding_version.') from exc
+            if cbv < 0:
+                raise exceptions.AuthenticationFailed('Agent token has invalid company_binding_version.')
+            claims['company_binding_version'] = cbv
+    has_global = claims.get('global_company_id') is not None
+    has_binding = claims.get('company_binding_version') is not None
+    if has_global != has_binding:
+        raise exceptions.AuthenticationFailed('Agent token global authority claims are incomplete.')
+    if has_global and 'grant_version' not in claims:
+        raise exceptions.AuthenticationFailed('Agent token global authority claims are incomplete.')
     return dict(claims)
 
 
