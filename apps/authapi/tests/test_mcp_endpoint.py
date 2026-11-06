@@ -1997,7 +1997,7 @@ class McpEndpointTests(TestCase):
         )
         body = mock_post.call_args.kwargs['json']
         self.assertEqual(body.get('outcome'), 'denied')
-        self.assertEqual(body.get('error_code'), 'authority_mismatch')
+        self.assertEqual(body.get('error_code'), 'denied')
 
     def test_approval_assertion_personal_optional_grant_version_zero(self):
         import jwt

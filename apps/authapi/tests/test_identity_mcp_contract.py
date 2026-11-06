@@ -76,11 +76,13 @@ class IdentityCallLogContractTests(SimpleTestCase):
         self.assertEqual(body['outcome'], 'allowed')
         self.assertEqual(body['access_kind'], 'read')
         self.assertIn('approval_id', body)
+        self.assertEqual(body['error_code'], 'forbidden')
+        self.assertNotIn('operation_title', body)
 
     @override_settings(**MCP_SETTINGS)
     @patch('apps.authapi.mcp_identity.requests.post')
     def test_forward_call_log_tool_destructive_keeps_destructive_when_entry_access_kind_write(self, mock_post):
-        """Ingest must not map destructive tools to ``write`` (``tool_destructive`` wins)."""
+        """Allowed or session_used destructive rows use ``access_kind`` destructive (Identity #135)."""
         mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
         forward_call_log(
             {
@@ -105,3 +107,123 @@ class IdentityCallLogContractTests(SimpleTestCase):
         self.assertNotIn('company_name', body)
         self.assertNotIn('arguments_hash', body)
         self.assertEqual(body.get('grant_version'), 0)
+
+    @override_settings(**MCP_SETTINGS)
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_forward_call_log_destructive_allowed_with_approval_id(self, mock_post):
+        appr = str(uuid.uuid4())
+        mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
+        forward_call_log(
+            {
+                'company_id': 42,
+                'agent_id': str(uuid.uuid4()),
+                'grant_version': 0,
+                'service': 'email',
+                'tool': 'api_v1_rules_destroy',
+                'access_kind': 'destructive',
+                'tool_destructive': True,
+                'outcome': 'allowed',
+                'duration_ms': 5,
+                'http_status': 204,
+                'approval_request_id': appr,
+            }
+        )
+        body = mock_post.call_args.kwargs['json']
+        self.assertEqual(body['access_kind'], 'destructive')
+        self.assertEqual(body['outcome'], 'allowed')
+        self.assertEqual(body['approval_id'], appr)
+        self.assertNotIn('error_code', body)
+
+    @override_settings(**MCP_SETTINGS)
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_forward_call_log_destructive_failed_maps_write_and_error_code(self, mock_post):
+        """Identity #135: destructive + non-allowed outcome uses ``write``; local codes map to allowlist."""
+        appr = str(uuid.uuid4())
+        mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
+        forward_call_log(
+            {
+                'company_id': 42,
+                'agent_id': str(uuid.uuid4()),
+                'grant_version': 0,
+                'service': 'email',
+                'tool': 'api_v1_rules_destroy',
+                'access_kind': 'destructive',
+                'tool_destructive': True,
+                'outcome': 'failed',
+                'duration_ms': 2,
+                'http_status': 400,
+                'error_code': 'validation_failed',
+                'approval_request_id': appr,
+            }
+        )
+        body = mock_post.call_args.kwargs['json']
+        self.assertEqual(body['access_kind'], 'write')
+        self.assertEqual(body['outcome'], 'failed')
+        self.assertEqual(body['error_code'], 'bad_request')
+        self.assertEqual(body['approval_id'], appr)
+
+    @override_settings(**MCP_SETTINGS)
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_forward_call_log_pending_approval_omits_error_code(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
+        forward_call_log(
+            {
+                'company_id': 42,
+                'agent_id': str(uuid.uuid4()),
+                'grant_version': 0,
+                'service': 'email',
+                'tool': 'api_v1_rules_create',
+                'access_kind': 'write',
+                'tool_destructive': False,
+                'outcome': 'waiting_approval',
+                'duration_ms': 1,
+                'http_status': 200,
+                'error_code': 'approval_pending',
+                'approval_request_id': str(uuid.uuid4()),
+            }
+        )
+        body = mock_post.call_args.kwargs['json']
+        self.assertEqual(body['outcome'], 'waiting_approval')
+        self.assertNotIn('error_code', body)
+
+    @override_settings(**MCP_SETTINGS)
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_forward_call_log_maps_approval_expired_to_identity_expired(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
+        forward_call_log(
+            {
+                'company_id': 42,
+                'agent_id': str(uuid.uuid4()),
+                'grant_version': 0,
+                'service': 'email',
+                'tool': 'api_v1_rules_create',
+                'access_kind': 'write',
+                'tool_destructive': False,
+                'outcome': 'denied',
+                'duration_ms': 1,
+                'http_status': 200,
+                'error_code': 'approval_expired',
+            }
+        )
+        body = mock_post.call_args.kwargs['json']
+        self.assertEqual(body['error_code'], 'expired')
+
+    @override_settings(**MCP_SETTINGS)
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_forward_call_log_normalizes_pending_approval_outcome(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
+        forward_call_log(
+            {
+                'company_id': 42,
+                'agent_id': str(uuid.uuid4()),
+                'grant_version': 0,
+                'service': 'email',
+                'tool': 'api_v1_rules_list',
+                'access_kind': 'read',
+                'outcome': 'pending_approval',
+                'duration_ms': 1,
+                'http_status': 200,
+            }
+        )
+        body = mock_post.call_args.kwargs['json']
+        self.assertEqual(body['outcome'], 'waiting_approval')

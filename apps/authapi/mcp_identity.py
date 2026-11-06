@@ -22,6 +22,7 @@ from shellui_django.mcp.internal import (
 
 from config.service_signing import build_mcp_delegated_authority_assertion, signing_kwargs
 
+from apps.authapi.identity_call_log_codes import sanitize_call_log_error_code_for_identity
 from apps.authapi.mcp_claims import AgentClaimsValidationError, strict_json_nonneg_int
 
 logger = logging.getLogger(__name__)
@@ -809,15 +810,65 @@ def consume_approval(approval_id: str, *, payload: dict[str, Any] | None = None)
         raise McpIdentityUnavailable('approval_consume_failed') from exc
 
 
-def _call_log_access_kind_for_ingest(entry: dict[str, Any]) -> str:
-    """Identity ingest ``access_kind``; destructive OpenAPI tools never downgrade to ``write``."""
+# Identity ``canonical_outcome_ingest`` (``call_log_outcome.py``, d7fe351 ``pending_approval`` alias).
+_IDENTITY_OUTCOME_ALIASES: dict[str, str] = {'pending_approval': 'waiting_approval'}
+
+# Identity ``McpInternalCallLogView`` (d7fe351): destructive ``access_kind`` only when outcome is allowed or session_used.
+_IDENTITY_DESTRUCTIVE_OK_OUTCOMES = frozenset({'allowed', 'session_used'})
+
+
+def _canonical_outcome_for_identity_ingest(raw: str) -> str:
+    s = (raw or '').strip().lower()
+    return _IDENTITY_OUTCOME_ALIASES.get(s, s)
+
+
+def _call_log_access_kind_for_ingest(entry: dict[str, Any], *, outcome_norm: str) -> str:
+    """Map local audit fields to Identity ``access_kind`` (see ``McpInternalCallLogView``)."""
     raw = str(entry.get('access_kind') or '').strip().lower()
     td = entry.get('tool_destructive')
     if td is True:
-        return 'destructive'
-    if raw in ('read', 'write', 'destructive'):
-        return raw
-    return 'unknown'
+        ak = 'destructive'
+    elif raw in ('read', 'write', 'destructive'):
+        ak = raw
+    else:
+        ak = 'unknown'
+    # Until Identity #136 widens destructive ingest, non-success destructive rows use ``write`` (approval linkage still on ``approval_id``).
+    if ak == 'destructive' and outcome_norm not in _IDENTITY_DESTRUCTIVE_OK_OUTCOMES:
+        return 'write'
+    return ak
+
+
+def _map_email_error_code_to_identity(local_code: str | None, *, outcome_norm: str) -> str | None:
+    """Map email local audit codes to Identity allowlist (``mcp_audit_codes.ALLOWED_ERROR_CODES``)."""
+    if not local_code:
+        return None
+    lc = str(local_code).strip()
+    if outcome_norm == 'waiting_approval' and lc in {'approval_pending', 'approval_denied'}:
+        return None
+    mapping: dict[str, str] = {
+        'forbidden': 'forbidden',
+        'not_found': 'not_found',
+        'validation_failed': 'bad_request',
+        'conflict': 'conflict',
+        'server_error': 'server_error',
+        'request_failed': 'unknown',
+        'identity_unavailable': 'identity_unreachable',
+        'tool_error': 'downstream_error',
+        'read_only_blocked': 'forbidden',
+        'approval_pending': 'waiting_approval',
+        'approval_denied': 'denied',
+        'approval_expired': 'expired',
+        'rate_limited': 'rate_limited',
+        'authority_ambiguous': 'unknown',
+        'authority_mismatch': 'denied',
+        'authority_row_missing': 'unknown',
+        'authority_binding_missing': 'conflict',
+        'out_of_sync': 'out_of_sync',
+    }
+    mapped = mapping.get(lc)
+    if mapped is None:
+        return sanitize_call_log_error_code_for_identity(lc)
+    return sanitize_call_log_error_code_for_identity(mapped) or sanitize_call_log_error_code_for_identity('unknown')
 
 
 def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -924,7 +975,9 @@ def forward_call_log(entry: dict[str, Any]) -> None:
         dur_val = strict_json_nonneg_int(dur_raw, field='duration_ms')
     except AgentClaimsValidationError:
         return
-    ak = _call_log_access_kind_for_ingest(entry)
+    outcome_raw = str(entry.get('outcome') or '').strip().lower()
+    outcome_norm = _canonical_outcome_for_identity_ingest(outcome_raw)
+    ak = _call_log_access_kind_for_ingest(entry, outcome_norm=outcome_norm)
     try:
         hs = strict_json_nonneg_int(stat, field='http_status') if stat is not None else 0
     except AgentClaimsValidationError:
@@ -939,7 +992,7 @@ def forward_call_log(entry: dict[str, Any]) -> None:
         'status': hs,
         'duration_ms': dur_val,
         'result': '',
-        'outcome': str(entry.get('outcome') or '').strip().lower(),
+        'outcome': outcome_norm,
         'access_kind': ak,
     }
     gv_entry = entry.get('grant_version')
@@ -961,8 +1014,9 @@ def forward_call_log(entry: dict[str, Any]) -> None:
             body['company_binding_version'] = strict_json_nonneg_int(cbv_entry, field='company_binding_version')
         except AgentClaimsValidationError:
             return
-    if entry.get('error_code'):
-        body['error_code'] = str(entry['error_code'])
+    ec_ingest = _map_email_error_code_to_identity(entry.get('error_code'), outcome_norm=outcome_norm)
+    if ec_ingest:
+        body['error_code'] = ec_ingest
     appr = entry.get('approval_request_id')
     if appr:
         try:
