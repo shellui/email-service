@@ -81,9 +81,6 @@ def _flat_audit_entry(
         raise ValueError('outcome')
     if error_code is not None and error_code not in _ERROR_CODES:
         error_code = 'request_failed'
-    summary = ''
-    if operation:
-        summary = str(operation.get('summary') or operation.get('operationId') or '').strip()
     access_kind = 'read' if method.upper() in _BODYLESS_METHODS else 'write'
     entry: dict[str, Any] = {
         'agent_id': agent_claims.get('agent_id'),
@@ -96,8 +93,6 @@ def _flat_audit_entry(
         'outcome': outcome,
         'duration_ms': max(0, int(duration_ms)),
     }
-    if summary:
-        entry['operation_title'] = summary
     if http_status is not None:
         entry['http_status'] = int(http_status)
     if error_code:

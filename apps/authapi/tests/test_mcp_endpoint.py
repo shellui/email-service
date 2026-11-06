@@ -148,12 +148,11 @@ def _revocation_ok_response(*, agents=None):
 
 
 def _live_delegated_authority_response(*, row: dict) -> MagicMock:
-    """Minimal live row for POST mcp-delegated-agent-authority (matches strict parse)."""
-    body = {'agent': row}
+    """Identity live delegated authority: flat JSON object (no ``agent`` wrapper)."""
     response = MagicMock()
     response.status_code = 200
     response.raise_for_status = MagicMock()
-    response.json = MagicMock(return_value=body)
+    response.json = MagicMock(return_value=row)
     return response
 
 
@@ -161,14 +160,19 @@ def _delegated_live_row_from_snapshot_row(match: dict, *, agent_id: str) -> dict
     gcid = match.get('global_company_id')
     if not gcid:
         raise ValueError('expected global row')
+    aid = str(agent_id)
     return {
-        'agent_id': agent_id,
+        'active': True,
+        'authorized': True,
+        'revoked': False,
+        'paused': False,
+        'id': aid,
+        'agent_id': aid,
+        'global_agent_id': aid,
         'company_id': int(match['company_id']),
         'global_company_id': str(gcid),
         'company_binding_version': int(match['company_binding_version']),
         'grant_version': int(match['grant_version']),
-        'revoked': False,
-        'paused': False,
     }
 
 
@@ -212,6 +216,17 @@ def make_identity_post_side_effect(agents_fn):
                 raise AssertionError('wrong target on delegated authority assertion')
             body = kwargs.get('json') or {}
             aid = str(body.get('agent_id') or '')
+            cc = body.get('company_id')
+            ggc = body.get('global_company_id')
+            cbv = body.get('company_binding_version')
+            gv = body.get('grant_version')
+            if not isinstance(body, dict):
+                raise AssertionError('delegated authority json must be an object')
+            allowed_keys = {'agent_id', 'company_id', 'global_company_id', 'company_binding_version', 'grant_version'}
+            if set(body.keys()) - allowed_keys:
+                raise AssertionError('delegated authority POST must not echo unknown keys')
+            if cc is None or ggc is None or cbv is None or gv is None:
+                raise AssertionError('delegated authority POST must include full binding json')
             rows = agents_fn()
             match = next(
                 (r for r in rows if isinstance(r, dict) and str(r.get('agent_id') or r.get('id') or '') == aid),
@@ -224,6 +239,15 @@ def make_identity_post_side_effect(agents_fn):
             try:
                 row = _delegated_live_row_from_snapshot_row(match, agent_id=aid)
             except ValueError:
+                nf = MagicMock()
+                nf.status_code = 404
+                return nf
+            if (
+                int(cc) != int(match['company_id'])
+                or str(ggc) != str(match['global_company_id'])
+                or int(cbv) != int(match['company_binding_version'])
+                or int(gv) != int(match['grant_version'])
+            ):
                 nf = MagicMock()
                 nf.status_code = 404
                 return nf
@@ -818,18 +842,22 @@ class McpEndpointTests(TestCase):
             s = str(url)
             if 'mcp-delegated-agent-authority' in s:
                 row = {
+                    'active': True,
+                    'authorized': True,
+                    'revoked': False,
+                    'paused': False,
+                    'id': agent_id,
                     'agent_id': agent_id,
+                    'global_agent_id': agent_id,
                     'company_id': 42,
                     'global_company_id': gcid,
                     'company_binding_version': 0,
                     'grant_version': 99,
-                    'revoked': False,
-                    'paused': False,
                 }
                 r = MagicMock()
                 r.status_code = 200
                 r.raise_for_status = MagicMock()
-                r.json = MagicMock(return_value={'agent': row})
+                r.json = MagicMock(return_value=row)
                 return r
             return delegated_handler(url, **kwargs)
 
@@ -846,6 +874,233 @@ class McpEndpointTests(TestCase):
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()['error'], 'forbidden')
+        self._set_revocation_agents(None)
+
+    def test_delegated_authority_endpoint_404_identity_unavailable(self):
+        """Misconfigured or missing route on Identity is not conflated with ``authority_row_missing``."""
+
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        agents = [
+            {
+                'agent_id': agent_id,
+                'company_id': 42,
+                'global_company_id': gcid,
+                'company_binding_version': 0,
+                'grant_version': 0,
+            }
+        ]
+        self._set_revocation_agents(agents)
+
+        def post_404(url, **kwargs):
+            s = str(url)
+            if 'mcp-delegated-agent-authority' in s:
+                nf = MagicMock()
+                nf.status_code = 404
+                return nf
+            if any(
+                part in s
+                for part in (
+                    'mcp-call-logs',
+                    'mcp-approval-state',
+                    'mcp-approval-consume',
+                    'mcp-approval-requests',
+                )
+            ):
+                ok = MagicMock()
+                ok.status_code = 200
+                ok.raise_for_status = MagicMock()
+                ok.json = MagicMock(return_value={})
+                return ok
+            raise AssertionError(f'unexpected POST: {url}')
+
+        self.mock_identity_post.side_effect = post_404
+        reset_mcp_server_cache()
+        reset_revocation_cache_for_tests()
+        token, _ = _agent_token(
+            agent_id=agent_id,
+            company_id=42,
+            global_company_id=gcid,
+            company_binding_version=0,
+            grant_version=0,
+        )
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json().get('error'), 'identity_unavailable')
+        self._set_revocation_agents(None)
+
+    def test_live_delegated_authority_nested_agent_wrapper_rejected(self):
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        agents = [
+            {
+                'agent_id': agent_id,
+                'company_id': 42,
+                'global_company_id': gcid,
+                'company_binding_version': 0,
+                'grant_version': 0,
+            }
+        ]
+        self._set_revocation_agents(agents)
+
+        base_delegated = make_identity_post_side_effect(lambda: agents)
+
+        def post_nested(url, **kwargs):
+            s = str(url)
+            if 'mcp-delegated-agent-authority' in s:
+                inner = _delegated_live_row_from_snapshot_row(agents[0], agent_id=agent_id)
+                r = MagicMock()
+                r.status_code = 200
+                r.raise_for_status = MagicMock()
+                r.json = MagicMock(return_value={'agent': inner})
+                return r
+            return base_delegated(url, **kwargs)
+
+        self.mock_identity_post.side_effect = post_nested
+        reset_mcp_server_cache()
+        reset_revocation_cache_for_tests()
+        token, _ = _agent_token(
+            agent_id=agent_id,
+            company_id=42,
+            global_company_id=gcid,
+            company_binding_version=0,
+            grant_version=0,
+        )
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 403)
+        self._set_revocation_agents(None)
+
+    def test_live_delegated_inactive_flags_forbidden(self):
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        agents = [
+            {
+                'agent_id': agent_id,
+                'company_id': 42,
+                'global_company_id': gcid,
+                'company_binding_version': 0,
+                'grant_version': 0,
+            }
+        ]
+        self._set_revocation_agents(agents)
+        base_delegated = make_identity_post_side_effect(lambda: agents)
+
+        def post_inactive(url, **kwargs):
+            s = str(url)
+            if 'mcp-delegated-agent-authority' in s:
+                row = _delegated_live_row_from_snapshot_row(agents[0], agent_id=agent_id)
+                row['active'] = False
+                r = MagicMock()
+                r.status_code = 200
+                r.raise_for_status = MagicMock()
+                r.json = MagicMock(return_value=row)
+                return r
+            return base_delegated(url, **kwargs)
+
+        self.mock_identity_post.side_effect = post_inactive
+        reset_mcp_server_cache()
+        reset_revocation_cache_for_tests()
+        token, _ = _agent_token(
+            agent_id=agent_id,
+            company_id=42,
+            global_company_id=gcid,
+            company_binding_version=0,
+            grant_version=0,
+        )
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 403)
+        self._set_revocation_agents(None)
+
+    def test_live_delegated_bool_flags_must_be_json_booleans(self):
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        agents = [
+            {
+                'agent_id': agent_id,
+                'company_id': 42,
+                'global_company_id': gcid,
+                'company_binding_version': 0,
+                'grant_version': 0,
+            }
+        ]
+        self._set_revocation_agents(agents)
+        base_delegated = make_identity_post_side_effect(lambda: agents)
+
+        def post_strings(url, **kwargs):
+            s = str(url)
+            if 'mcp-delegated-agent-authority' in s:
+                row = _delegated_live_row_from_snapshot_row(agents[0], agent_id=agent_id)
+                row['active'] = 'true'
+                r = MagicMock()
+                r.status_code = 200
+                r.raise_for_status = MagicMock()
+                r.json = MagicMock(return_value=row)
+                return r
+            return base_delegated(url, **kwargs)
+
+        self.mock_identity_post.side_effect = post_strings
+        reset_mcp_server_cache()
+        reset_revocation_cache_for_tests()
+        token, _ = _agent_token(
+            agent_id=agent_id,
+            company_id=42,
+            global_company_id=gcid,
+            company_binding_version=0,
+            grant_version=0,
+        )
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 403)
+        self._set_revocation_agents(None)
+
+    def test_live_delegated_global_agent_id_must_match_token(self):
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+
+        agent_id = str(uuid.uuid4())
+        gcid = str(uuid.uuid4())
+        agents = [
+            {
+                'agent_id': agent_id,
+                'company_id': 42,
+                'global_company_id': gcid,
+                'company_binding_version': 0,
+                'grant_version': 0,
+            }
+        ]
+        self._set_revocation_agents(agents)
+        base_delegated = make_identity_post_side_effect(lambda: agents)
+
+        def post_bad_global(url, **kwargs):
+            s = str(url)
+            if 'mcp-delegated-agent-authority' in s:
+                row = _delegated_live_row_from_snapshot_row(agents[0], agent_id=agent_id)
+                row['global_agent_id'] = str(uuid.uuid4())
+                r = MagicMock()
+                r.status_code = 200
+                r.raise_for_status = MagicMock()
+                r.json = MagicMock(return_value=row)
+                return r
+            return base_delegated(url, **kwargs)
+
+        self.mock_identity_post.side_effect = post_bad_global
+        reset_mcp_server_cache()
+        reset_revocation_cache_for_tests()
+        token, _ = _agent_token(
+            agent_id=agent_id,
+            company_id=42,
+            global_company_id=gcid,
+            company_binding_version=0,
+            grant_version=0,
+        )
+        response = _rpc(self.client, token, 'tools/list')
+        self.assertEqual(response.status_code, 403)
         self._set_revocation_agents(None)
 
     def test_revocation_global_grant_stale_forbidden(self):
@@ -1196,7 +1451,7 @@ class McpEndpointTests(TestCase):
         self.assertNotIn('arguments', body)
         self.assertEqual(body.get('resource_path'), '/api/v1/rules')
         self.assertEqual(body.get('method'), 'GET')
-        self.assertEqual(body.get('http_method'), 'GET')
+        self.assertNotIn('http_method', body)
 
     def test_approval_assertion_personal_optional_grant_version_zero(self):
         import jwt

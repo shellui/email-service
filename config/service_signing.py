@@ -22,9 +22,10 @@ from django.core.exceptions import ImproperlyConfigured
 from django.http import JsonResponse
 from jwt.algorithms import RSAAlgorithm
 
-# Identity internal MCP: live delegated-agent row (POST body carries agent_id only; aud differs from revocation).
-MCP_DELEGATED_AUTHORITY_AUDIENCE = 'shellui-mcp-delegated-authority'
-MCP_DELEGATED_AUTHORITY_SCOPE = 'mcp.delegated_authority.read'
+# Identity internal MCP: live delegated-agent row (POST; aud differs from revocation).
+# Canonical issuer is ``IDENTITY_ISSUER`` (``identity_origin()``); ``target`` on the assertion matches it.
+MCP_DELEGATED_AUTHORITY_AUDIENCE = 'shellui-mcp-agent-authority'
+MCP_DELEGATED_AUTHORITY_SCOPE = 'mcp.agent.authority.verify'
 
 MIN_RSA_KEY_SIZE = 2048
 
@@ -72,7 +73,12 @@ def signing_kwargs() -> dict[str, str]:
 
 
 def build_mcp_delegated_authority_assertion(*, audience_url: str, lifetime_seconds: int = 60) -> str:
-    """RS256 service JWT for Identity ``POST …/mcp-delegated-agent-authority`` (live delegated row lookup)."""
+    """RS256 service JWT for Identity ``POST …/mcp-delegated-agent-authority`` (live delegated row lookup).
+
+    Uses ``aud`` ``shellui-mcp-agent-authority`` and scope ``mcp.agent.authority.verify`` with ``target`` =
+    Identity canonical issuer URL (same pattern as other MCP internal assertions; there is no separate
+    ``build_mcp_agent_authority_assertion`` export in the pinned ``shellui-django`` yet).
+    """
     sk = signing_kwargs()
     pem = sk['private_key_pem']
     kid = sk['kid']
