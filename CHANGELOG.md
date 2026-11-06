@@ -23,6 +23,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- MCP: after Identity `mcp-approval-consume` returns `consumed: true` for the same agent, company, tool, and arguments hash, that call runs once. The tool body is posted to the underlying view as JSON. The call log is `allowed` or `failed` and includes that approval id. A later call does not run or consume again. Ask mode no longer consumes the approval and then returns "Write requires approval."
+
 ### 🛠 Improvements
 
 - MCP: Identity approval consume accepts only JSON boolean `true` for `consumed`; HTTP `409` already consumed maps to the same path as approval state ``expired`` (until Identity PR #136 finalizes consume semantics).

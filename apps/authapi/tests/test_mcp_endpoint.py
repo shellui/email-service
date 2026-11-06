@@ -84,6 +84,7 @@ def _agent_token(
     global_agent_id: str | None = None,
     mcp_authority: str | None = None,
     mcp_destructive: bool = False,
+    email: str | None = None,
 ) -> tuple[str, str]:
     agent_id = agent_id or _snapshot_agent_id()
     claims = {
@@ -113,6 +114,8 @@ def _agent_token(
         claims['mcp_authority'] = 'delegated'
     else:
         claims['mcp_authority'] = 'personal'
+    if email:
+        claims['email'] = email
     return jwt.encode(claims, SIGNING, algorithm='HS256'), agent_id
 
 
@@ -1006,6 +1009,187 @@ class McpEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()['error'], 'identity_unavailable')
+        mock_post.side_effect = self._default_identity_post_chain()
+
+    @override_settings(EMAIL_FALLBACK_PROVIDER='fake', EMAIL_ALLOW_FAKE_PROVIDER=True)
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_approved_provider_test_send_runs_once_after_consume(self, mock_post):
+        """Consumed approval runs that provider test send once, then a duplicate does nothing."""
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+        from apps.providers.registry import fake_provider
+
+        approval_id = str(uuid.uuid4())
+        owner_email = 'owner@acme.test'
+        provider = fake_provider()
+        provider.sent.clear()
+        provider.fail_code = ''
+        approved_key: dict[str, tuple[str, str] | None] = {'value': None}
+        consume_count = {'n': 0}
+        call_logs: list[dict] = []
+        delegated = self._default_identity_post_chain()
+
+        def post_side_effect(url, **kwargs):
+            s = str(url)
+            if 'mcp-approval-state' in s:
+                token = str((kwargs.get('headers') or {}).get('Authorization') or '')
+                payload = jwt.decode(token.removeprefix('Bearer '), options={'verify_signature': False})
+                key = (str(payload.get('action') or ''), str(payload.get('arguments_hash') or ''))
+                ok = MagicMock()
+                ok.raise_for_status = MagicMock()
+                if approved_key['value'] is None and key[0] == 'api_v1_provider_test_send':
+                    approved_key['value'] = key
+                    ok.status_code = 200
+                    ok.json = MagicMock(return_value={'status': 'approved', 'id': approval_id})
+                    return ok
+                if key == approved_key['value']:
+                    ok.status_code = 200
+                    ok.json = MagicMock(return_value={'status': 'expired'})
+                    return ok
+                ok.status_code = 404
+                return ok
+            if 'mcp-approval-consume' in s:
+                consume_count['n'] += 1
+                self.assertEqual(kwargs.get('json'), {'approval_id': approval_id})
+                token = str((kwargs.get('headers') or {}).get('Authorization') or '')
+                payload = jwt.decode(token.removeprefix('Bearer '), options={'verify_signature': False})
+                self.assertEqual(payload.get('action'), 'api_v1_provider_test_send')
+                self.assertEqual(payload.get('service'), 'email')
+                self.assertTrue(payload.get('arguments_hash'))
+                ok = MagicMock()
+                ok.status_code = 200
+                ok.raise_for_status = MagicMock()
+                ok.json = MagicMock(return_value={'consumed': True})
+                return ok
+            if 'mcp-call-logs' in s:
+                call_logs.append(dict(kwargs.get('json') or {}))
+                ok = MagicMock()
+                ok.status_code = 201
+                ok.raise_for_status = MagicMock()
+                ok.json = MagicMock(return_value={'id': 1})
+                return ok
+            if 'mcp-approval-requests' in s:
+                ok = MagicMock()
+                ok.status_code = 200
+                ok.raise_for_status = MagicMock()
+                ok.json = MagicMock(return_value={'id': str(uuid.uuid4())})
+                return ok
+            return delegated(url, **kwargs)
+
+        mock_post.side_effect = post_side_effect
+        reset_mcp_server_cache()
+        token, _agent_id = _agent_token(access='ask', email=owner_email)
+        arguments = {
+            'path': '/api/v1/provider/test-send',
+            'method': 'POST',
+            'body': {'to': owner_email},
+        }
+        first = _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {'name': 'api_v1_provider_test_send', 'arguments': arguments},
+        )
+        self.assertEqual(first.status_code, 200, first.content)
+        first_result = first.json().get('result') or {}
+        self.assertFalse(first_result.get('isError'), first_result)
+        self.assertNotIn('Write requires approval.', json.dumps(first_result))
+        self.assertEqual(len(provider.sent), 1)
+        sent = provider.sent[0]
+        self.assertEqual(sent.to_email, owner_email)
+        self.assertEqual(sent.subject, '[Shellui] Test message')
+        self.assertIn('test message from Shellui', sent.text)
+        self.assertEqual(consume_count['n'], 1)
+        self.assertEqual(len(call_logs), 1)
+        logged = call_logs[0]
+        self.assertEqual(logged.get('outcome'), 'allowed')
+        self.assertEqual(logged.get('approval_id'), approval_id)
+        self.assertEqual(logged.get('tool'), 'api_v1_provider_test_send')
+        self.assertEqual(logged.get('access_kind'), 'write')
+        self.assertEqual(logged.get('result'), '')
+        self.assertNotIn('arguments', logged)
+        self.assertNotIn('arguments_redacted', logged)
+        self.assertNotIn('client_ip', logged)
+        self.assertNotIn(owner_email, json.dumps(logged))
+
+        second = _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {'name': 'api_v1_provider_test_send', 'arguments': arguments},
+        )
+        second_text = (second.json().get('result') or {}).get('content', [{}])[0].get('text', '')
+        self.assertIn('Approval already used.', second_text)
+        self.assertEqual(len(provider.sent), 1)
+        self.assertEqual(consume_count['n'], 1)
+        self.assertEqual(call_logs[-1].get('outcome'), 'denied')
+        self.assertEqual(call_logs[-1].get('error_code'), 'expired')
+        self.assertNotIn('approval_id', call_logs[-1])
+        self.assertNotIn('arguments', call_logs[-1])
+        self.assertNotIn('client_ip', call_logs[-1])
+        self.assertNotIn(owner_email, json.dumps(call_logs[-1]))
+
+        other = _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {
+                'name': 'api_v1_provider_test_send',
+                'arguments': {
+                    'path': '/api/v1/provider/test-send',
+                    'method': 'POST',
+                    'body': {'to': 'other@acme.test'},
+                },
+            },
+        )
+        other_text = (other.json().get('result') or {}).get('content', [{}])[0].get('text', '')
+        self.assertIn('Approval required.', other_text)
+        self.assertEqual(len(provider.sent), 1)
+        self.assertEqual(consume_count['n'], 1)
+        provider.sent.clear()
+        mock_post.side_effect = self._default_identity_post_chain()
+
+    @override_settings(EMAIL_FALLBACK_PROVIDER='fake', EMAIL_ALLOW_FAKE_PROVIDER=True)
+    @patch('apps.authapi.mcp_identity.requests.post')
+    def test_provider_test_send_does_not_run_when_consume_fails(self, mock_post):
+        from apps.authapi.mcp_views import reset_mcp_server_cache
+        from apps.providers.registry import fake_provider
+
+        provider = fake_provider()
+        provider.sent.clear()
+        provider.fail_code = ''
+        delegated = self._default_identity_post_chain()
+
+        def post_side_effect(url, **kwargs):
+            s = str(url)
+            if 'mcp-approval-state' in s:
+                ok = MagicMock()
+                ok.status_code = 200
+                ok.raise_for_status = MagicMock()
+                ok.json = MagicMock(return_value={'status': 'approved', 'id': str(uuid.uuid4())})
+                return ok
+            if 'mcp-approval-consume' in s:
+                raise ConnectionError('refused')
+            return delegated(url, **kwargs)
+
+        mock_post.side_effect = post_side_effect
+        reset_mcp_server_cache()
+        token, _agent_id = _agent_token(access='ask', email='owner@acme.test')
+        response = _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {
+                'name': 'api_v1_provider_test_send',
+                'arguments': {
+                    'path': '/api/v1/provider/test-send',
+                    'method': 'POST',
+                    'body': {'to': 'owner@acme.test'},
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['error'], 'identity_unavailable')
+        self.assertEqual(provider.sent, [])
         mock_post.side_effect = self._default_identity_post_chain()
 
     def test_delegated_live_authority_grant_mismatch_denial_row_forbidden(self):

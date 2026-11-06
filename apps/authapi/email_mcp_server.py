@@ -275,8 +275,9 @@ class EmailMcpServer(McpServer):
                 agent_claims['company_binding_version'], field='company_binding_version'
             )
 
+        granted = False
+        consumed_approval_id: str | None = None
         if decision.needs_approval:
-            granted = False
             approval_req_id: str | None = None
             identity_state_failed = False
             state: str | None = None
@@ -338,6 +339,7 @@ class EmailMcpServer(McpServer):
                             return JsonResponse({'error': 'identity_unavailable'}, status=503)
                         if consumed:
                             granted = True
+                            consumed_approval_id = str(approval_id)
                         else:
                             # See ``consume_approval``: HTTP ``409`` already consumed matches ``state`` ``executed``.
                             if self.on_call:
@@ -593,7 +595,9 @@ class EmailMcpServer(McpServer):
                         {'content': [{'type': 'text', 'text': decision.reason or 'Forbidden'}], 'isError': True},
                     )
                 )
-        if not decision.allowed:
+        # decide_write keeps allowed false when the call needs approval.
+        # A consume that returned true is the grant for this same call.
+        if not granted and not decision.allowed:
             if self.on_call:
                 self.on_call(
                     _flat_audit_entry(
@@ -625,7 +629,9 @@ class EmailMcpServer(McpServer):
         }
         if method not in _BODYLESS_METHODS:
             body = arguments.get('body')
-            inner_kwargs['data'] = body if body is not None else {}
+            payload = {} if body is None else body
+            inner_kwargs['data'] = json.dumps(payload, default=_json_default).encode('utf-8')
+            inner_kwargs['content_type'] = 'application/json'
         drf_request = self._factory.generic(method, resolved_path, **inner_kwargs)
         self._attach_request_principal(drf_request, request, agent_claims)
         from django.urls import resolve
@@ -684,6 +690,7 @@ class EmailMcpServer(McpServer):
                     error_code=ec,
                     arguments_hash=args_hash,
                     request_id=req_trace,
+                    approval_request_id=consumed_approval_id,
                     tool_destructive=destructive,
                 )
             )
