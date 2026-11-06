@@ -105,17 +105,24 @@ def _strict_snapshot_int(raw: Any, *, field: str) -> int:
     return raw
 
 
-def _parse_live_delegated_authority_body(body: Any, *, agent_id: str) -> dict[str, Any]:
+def _parse_live_delegated_authority_body(
+    body: Any,
+    *,
+    agent_id: str,
+    company_id: int,
+    global_company_id: str,
+    company_binding_version: int,
+    grant_version: int,
+) -> dict[str, Any]:
     """
-    Strict JSON body from Identity ``POST …/mcp-delegated-agent-authority`` (flat object, no ``agent`` wrapper).
+    Strict JSON body from Identity ``POST …/mcp-agent-delegated-authority``.
 
-    Trust only ``active``, ``authorized``, ``revoked``, and ``paused`` as JSON booleans with the values
-    ``true`` / ``true`` / ``false`` / ``false``. Every other field uses strict JSON types; mismatches deny
-    with a stable code (no echo of foreign payloads).
+    Flat object only (no ``agent`` wrapper). Extra keys such as ``capabilities`` are ignored.
+    Required boolean claims on success: ``authorized`` true, ``revoked`` false, ``paused`` false (JSON
+    booleans only). ``active`` is optional; when present it must be a JSON boolean and true or the row is denied.
     """
     if not isinstance(body, dict):
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
-    # No alternate envelope: a nested ``agent`` object is not accepted.
     if 'agent' in body:
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
 
@@ -125,31 +132,61 @@ def _parse_live_delegated_authority_body(body: Any, *, agent_id: str) -> dict[st
     except (ValueError, TypeError) as exc:
         raise McpAgentCompanyMismatch('authority_snapshot_invalid') from exc
 
-    def _strict_bool(raw: Any) -> bool:
+    def _strict_bool_present(raw: Any, *, field: str) -> bool:
         if raw is True or raw is False:
             return raw
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
 
-    active = _strict_bool(body.get('active'))
-    authorized = _strict_bool(body.get('authorized'))
-    revoked = _strict_bool(body.get('revoked'))
-    paused = _strict_bool(body.get('paused'))
-    if not active or not authorized or revoked or paused:
+    if 'active' in body:
+        if not _strict_bool_present(body.get('active'), field='active'):
+            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+
+    for req_bool in ('authorized', 'revoked', 'paused'):
+        if req_bool not in body:
+            raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    if not _strict_bool_present(body.get('authorized'), field='authorized'):
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    if _strict_bool_present(body.get('revoked'), field='revoked'):
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    if _strict_bool_present(body.get('paused'), field='paused'):
         raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
 
-    row_id = str(body.get('id') or '').strip()
-    row_agent_id = str(body.get('agent_id') or '').strip()
-    global_agent_id = str(body.get('global_agent_id') or '').strip()
-    if not row_id or not row_agent_id or not global_agent_id:
+    reg_keys = ('regional_id', 'agent_id', 'id')
+    found_regional = False
+    for key in reg_keys:
+        raw = body.get(key)
+        if raw in (None, ''):
+            continue
+        found_regional = True
+        sid = str(raw).strip()
+        try:
+            uuid.UUID(sid)
+        except (ValueError, TypeError) as exc:
+            raise McpAgentCompanyMismatch('authority_snapshot_invalid') from exc
+        if sid != aid:
+            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    if not found_regional:
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
-    if row_id != aid or row_agent_id != aid or global_agent_id != aid:
-        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+
+    gaid_raw = body.get('global_agent_id')
+    if gaid_raw is None:
+        gaid_raw = body.get('global_agentid')
+    if gaid_raw not in (None, ''):
+        gid = str(gaid_raw).strip()
+        try:
+            uuid.UUID(gid)
+        except (ValueError, TypeError) as exc:
+            raise McpAgentCompanyMismatch('authority_snapshot_invalid') from exc
+        if gid != aid:
+            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
 
     cid_raw = body.get('company_id')
     if type(cid_raw) is not int or isinstance(cid_raw, bool):
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
-    if cid_raw < 1:
+    if cid_raw < 0:
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    if int(cid_raw) != int(company_id):
+        raise McpAgentCompanyMismatch('regional_company_mismatch')
 
     g_raw = body.get('global_company_id')
     try:
@@ -158,6 +195,8 @@ def _parse_live_delegated_authority_body(body: Any, *, agent_id: str) -> dict[st
         raise McpAgentCompanyMismatch('authority_snapshot_invalid') from exc
     if ug.int == 0:
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    if str(ug) != str(global_company_id):
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
 
     cbv_raw = body.get('company_binding_version')
     gv_raw = body.get('grant_version')
@@ -169,21 +208,17 @@ def _parse_live_delegated_authority_body(body: Any, *, agent_id: str) -> dict[st
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
     if gv_raw < 0:
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
-
-    # Reject ambiguous or legacy Authority flags if present (must be absent or false).
-    for flag in ('grant_disabled', 'binding_stale'):
-        v = body.get(flag)
-        if v is True:
-            raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
-        if v is not None and v is not False:
-            raise McpAgentCompanyMismatch('authority_snapshot_invalid')
+    if int(cbv_raw) != int(company_binding_version):
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    if int(gv_raw) != int(grant_version):
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
 
     return {
-        'agent_id': row_agent_id,
-        'company_id': cid_raw,
+        'agent_id': aid,
+        'company_id': int(cid_raw),
         'global_company_id': str(ug),
-        'company_binding_version': cbv_raw,
-        'grant_version': gv_raw,
+        'company_binding_version': int(cbv_raw),
+        'grant_version': int(gv_raw),
     }
 
 
@@ -214,7 +249,7 @@ def _delegated_authority_request_json(
         raise McpAgentCompanyMismatch('authority_snapshot_invalid') from exc
     if g.int == 0:
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
-    if type(company_id) is not int or isinstance(company_id, bool) or company_id < 1:
+    if type(company_id) is not int or isinstance(company_id, bool) or company_id < 0:
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
     if type(company_binding_version) is not int or isinstance(company_binding_version, bool):
         raise McpAgentCompanyMismatch('authority_snapshot_invalid')
@@ -242,14 +277,15 @@ def _fetch_live_delegated_authority(
     """
     Current delegated-agent row from Identity (not only the signed revocation snapshot).
 
-    Uses a dedicated service JWT (``aud`` ``shellui-mcp-agent-authority``, scope ``mcp.agent.authority.verify``).
-    Fails closed on transport or malformed JSON.
+    Uses a dedicated service JWT (``aud`` ``shellui-mcp-agent-delegated-authority``,
+    scope ``mcp.agent.delegated.authority.read``, ``target`` = Identity canonical issuer URL).
+    Fails closed on transport, malformed JSON, or assertion rejection (``401``).
     """
     _require_service_assertions()
     base = identity_api_base()
     if not base:
         raise McpIdentityUnavailable('identity_service_url_not_configured')
-    url = f'{base}/api/v1/mcp/internal/mcp-delegated-agent-authority'
+    url = f'{base}/api/v1/mcp/internal/mcp-agent-delegated-authority'
     body = _delegated_authority_request_json(
         str(agent_id),
         int(company_id),
@@ -268,18 +304,28 @@ def _fetch_live_delegated_authority(
         logger.warning('MCP delegated authority fetch failed (%s).', type(exc).__name__)
         raise McpIdentityUnavailable('delegated_authority_fetch_failed') from exc
     if response.status_code == 404:
-        raise McpIdentityUnavailable('delegated_authority_endpoint_missing')
+        raise McpAgentCompanyMismatch('authority_binding_missing')
+    if response.status_code == 401:
+        logger.warning('MCP delegated authority rejected service assertion (401).')
+        raise McpIdentityUnavailable('delegated_authority_assertion_rejected')
+    if response.status_code == 403:
+        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
     if response.status_code >= 500:
         raise McpIdentityUnavailable('delegated_authority_fetch_failed')
-    if response.status_code == 401:
-        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
     if response.status_code != 200:
-        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+        raise McpIdentityUnavailable('delegated_authority_fetch_failed')
     try:
         payload = response.json()
     except ValueError as exc:
         raise McpIdentityUnavailable('delegated_authority_response_invalid') from exc
-    return _parse_live_delegated_authority_body(payload, agent_id=str(agent_id))
+    return _parse_live_delegated_authority_body(
+        payload,
+        agent_id=str(agent_id),
+        company_id=int(company_id),
+        global_company_id=str(claims['global_company_id']),
+        company_binding_version=int(claims['company_binding_version']),
+        grant_version=int(claims['grant_version']),
+    )
 
 
 def _claims_require_live_delegated(claims: dict[str, Any]) -> bool:
@@ -298,17 +344,7 @@ def verify_live_delegated_authority_against_token(agent_id: str, company_id: int
     """
     if not _claims_require_live_delegated(claims):
         return
-    live = _fetch_live_delegated_authority(str(agent_id), int(company_id), claims=claims)
-    if str(live['agent_id']) != str(claims.get('agent_id') or agent_id):
-        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
-    if int(live['company_id']) != int(company_id):
-        raise McpAgentCompanyMismatch('regional_company_mismatch')
-    if str(live['global_company_id']) != str(claims.get('global_company_id')):
-        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
-    if int(live['company_binding_version']) != int(claims['company_binding_version']):
-        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
-    if int(live['grant_version']) != int(claims['grant_version']):
-        raise McpAgentCompanyMismatch('authority_snapshot_mismatch')
+    _fetch_live_delegated_authority(str(agent_id), int(company_id), claims=claims)
 
 
 def verify_agent_company_binding(

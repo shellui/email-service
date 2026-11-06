@@ -42,6 +42,7 @@ _ERROR_CODES = frozenset(
         'authority_ambiguous',
         'authority_mismatch',
         'authority_row_missing',
+        'authority_binding_missing',
     }
 )
 

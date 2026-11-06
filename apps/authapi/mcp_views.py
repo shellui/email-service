@@ -131,6 +131,8 @@ def mcp_endpoint(request: HttpRequest):
             code = str(exc.args[0]) if exc.args else 'forbidden'
             if code == 'authority_row_missing':
                 return JsonResponse({'error_code': 'authority_row_missing'}, status=403)
+            if code == 'authority_binding_missing':
+                return JsonResponse({'error_code': 'authority_binding_missing'}, status=403)
             return JsonResponse({'error': 'forbidden'}, status=403)
         except (KeyError, TypeError, ValueError):
             return JsonResponse({'error': 'forbidden'}, status=403)

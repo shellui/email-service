@@ -24,8 +24,8 @@ from jwt.algorithms import RSAAlgorithm
 
 # Identity internal MCP: live delegated-agent row (POST; aud differs from revocation).
 # Canonical issuer is ``IDENTITY_ISSUER`` (``identity_origin()``); ``target`` on the assertion matches it.
-MCP_DELEGATED_AUTHORITY_AUDIENCE = 'shellui-mcp-agent-authority'
-MCP_DELEGATED_AUTHORITY_SCOPE = 'mcp.agent.authority.verify'
+MCP_DELEGATED_AUTHORITY_AUDIENCE = 'shellui-mcp-agent-delegated-authority'
+MCP_DELEGATED_AUTHORITY_SCOPE = 'mcp.agent.delegated.authority.read'
 
 MIN_RSA_KEY_SIZE = 2048
 
@@ -73,11 +73,11 @@ def signing_kwargs() -> dict[str, str]:
 
 
 def build_mcp_delegated_authority_assertion(*, audience_url: str, lifetime_seconds: int = 60) -> str:
-    """RS256 service JWT for Identity ``POST …/mcp-delegated-agent-authority`` (live delegated row lookup).
+    """RS256 service JWT for Identity ``POST …/mcp-agent-delegated-authority`` (live delegated row lookup).
 
-    Uses ``aud`` ``shellui-mcp-agent-authority`` and scope ``mcp.agent.authority.verify`` with ``target`` =
-    Identity canonical issuer URL (same pattern as other MCP internal assertions; there is no separate
-    ``build_mcp_agent_authority_assertion`` export in the pinned ``shellui-django`` yet).
+    Uses ``aud`` ``shellui-mcp-agent-delegated-authority`` and scope ``mcp.agent.delegated.authority.read`` with
+    ``target`` = Identity canonical issuer URL (same pattern as other MCP internal assertions). There is no
+    separate ``build_mcp_agent_authority_assertion`` export in the pinned ``shellui-django`` yet.
     """
     sk = signing_kwargs()
     pem = sk['private_key_pem']
