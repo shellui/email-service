@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from apps.authapi.mcp_tool_names import MCP_TOOL_NAMES
+
 # Paths that must not appear in the published OpenAPI document.
 MCP_EXCLUDED_PATH_PREFIXES: tuple[str, ...] = (
     '/api/v1/internal/',
@@ -139,7 +141,11 @@ def mcp_tool(
     """Register an MCP tool and return ``extend_schema`` kwargs (only explicit decoration exposes a tool)."""
     if operation_id in MCP_FORBIDDEN_OPERATION_IDS:
         raise ValueError(f'mcp_tool cannot tag forbidden operation: {operation_id}')
+    published = MCP_TOOL_NAMES.get(operation_id)
+    if not published:
+        raise ValueError(f'mcp_tool missing published name for {operation_id}')
     payload = _mcp_payload(read_only=read_only, destructive=destructive, sensitive=sensitive)
+    payload['tool_name'] = published
     existing = MCP_EXPLICIT_REGISTRY.get(operation_id)
     if existing is not None and existing != payload:
         raise ValueError(f'mcp_tool called twice with different flags for {operation_id}')

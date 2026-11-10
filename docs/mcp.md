@@ -88,16 +88,16 @@ After a successful HTTP write in `ask` mode, Identity `mcp-approval-consume` mus
 
 ## Workflows agents drive (audit-oriented)
 
-These map MCP tools to fields on each **local** audit row before `POST /mcp` forwarding (OpenAPI path **template** for the REST surface behind the tool). Path templates must not include query strings or raw URL labels; registry **`tool`** names come from OpenAPI `operationId` (for example `api_v1_templates_render_preview`).
+These map MCP tools to fields on each **local** audit row before `POST /mcp` forwarding (OpenAPI path **template** for the REST surface behind the tool). Path templates must not include query strings or raw URL labels. Published tool names are the gateway names in `x-mcp.tool_name` (for example `email_render_preview_templates`). OpenAPI `operationId` values stay `api_v1_*`.
 
 | Agent goal | Tool (`operation_id`) | HTTP | `resource_path` (template) | `access_kind` |
 | --- | --- | --- | --- | --- |
-| List template copies | `api_v1_templates_list` | GET | `/api/v1/templates` | read |
-| List email rules | `api_v1_rules_list` | GET | `/api/v1/rules` | read |
-| List Shellui Actions webhook rules | `api_v1_actions_rules_list` | GET | `/api/v1/actions/rules` | read |
-| Read default event catalog | `api_v1_catalog_retrieve` | GET | `/api/v1/catalog` | read |
-| Create an email rule (and template copy) | `api_v1_rules_create` | POST | `/api/v1/rules` | write |
-| Send a design test | `api_v1_templates_send_test` | POST | `/api/v1/templates/{template_id}/send-test` | write |
+| List template copies | `email_list_templates` | GET | `/api/v1/templates` | read |
+| List email rules | `email_list_rules` | GET | `/api/v1/rules` | read |
+| List Shellui Actions webhook rules | `email_list_action_rules` | GET | `/api/v1/actions/rules` | read |
+| Read default event catalog | `email_get_catalog` | GET | `/api/v1/catalog` | read |
+| Create an email rule (and template copy) | `email_create_rules` | POST | `/api/v1/rules` | write |
+| Send a design test | `email_send_test_templates` | POST | `/api/v1/templates/{template_id}/send-test` | write |
 
 Local rows (for this service’s `on_call` hook) include **`tool`**, **`resource_path`**, the REST **`method`**, **`access_kind`** (`destructive` when the OpenAPI operation is destructive), boolean **`tool_destructive`** (forwarded ingest **`access_kind`** follows this flag for truthful destructive labeling), categorical **`outcome`**, **`duration_ms`**, optional `error_code`, optional **`http_status`** after the DRF view runs (this becomes Identity’s **`status`** on forwarded rows), optional **`approval_request_id`** when applicable, a full copy of normalized claims under **`verified_agent_claims`** (used for delegated live checks before `forward_call_log` posts), echo fields for audits (`mcp_access`, `mcp_read`, `mcp_destructive`, `scope`, `global_agent_id` when delegated), and optional delegation fields used only for the live delegated check (`grant_version`, `global_company_id`, `company_binding_version`). Rows do **not** include raw tool arguments, response bodies, or OpenAPI summaries as titles. **`arguments_hash`** is used only for Identity **approval** assertions, not for call-log POST bodies. Event-triggered email **rules** are normal MCP-tagged API calls; **provider** credentials (Resend, SES, SMTP passwords) stay in company settings and are never MCP tools. Built-in **themes** and template **variables** are the typed fields documented in [Templates and translations](templates.md); pass **`variables`** as a JSON object for `render-preview` and related tools.
 
@@ -203,11 +203,11 @@ These routes are omitted from the published schema or never carry `x-mcp`:
 
 `POST /api/v1/templates/{template_id}/render-preview` accepts optional `number`, `document`, `subject`, `preheader`, `theme`, and `variables`. When `document` is omitted, the newest draft is used, then the active published version. Use **`variables`** as a JSON object of strings (and other JSON types the template expects). Optional **`theme`** is a string such as `barebone` or `shellui` (see [Templates and translations](templates.md) for valid theme names in this repo).
 
-Example MCP tool `api_v1_templates_render_preview` call (OpenAPI path template in `path`, ids in `path_params`, tool body under `body`):
+Example MCP tool `email_render_preview_templates` call (OpenAPI path template in `path`, ids in `path_params`, tool body under `body`):
 
 ```json
 {
-  "name": "api_v1_templates_render_preview",
+  "name": "email_render_preview_templates",
   "arguments": {
     "path": "/api/v1/templates/{template_id}/render-preview",
     "path_params": {"template_id": "1"},
@@ -223,7 +223,7 @@ Example MCP tool `api_v1_templates_render_preview` call (OpenAPI path template i
 }
 ```
 
-This only renders HTML and plain text in the response. It does not send email. Tools that send or schedule real delivery (for example `api_v1_templates_send_test`) are destructive or external: in `ask` mode they require a **fresh** human approval in Identity per call even when `mcp_access` is `full`.
+This only renders HTML and plain text in the response. It does not send email. Tools that send or schedule real delivery (for example `email_send_test_templates`) are destructive or external: in `ask` mode they require a **fresh** human approval in Identity per call even when `mcp_access` is `full`.
 
 The response includes `subject`, `html`, `text`, and `missing_variables` for any `{{ token }}` that stayed empty after substitution.
 
@@ -231,7 +231,7 @@ Provider configuration (Resend, SES, SMTP, and similar) is per company or local 
 
 ## Example JSON-RPC
 
-Use exact tool names from `tools/list` (for example `api_v1_rules_list`), not shortened aliases.
+Use exact tool names from `tools/list` (for example `email_list_rules`), not OpenAPI `operationId` values.
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
@@ -243,7 +243,7 @@ Use exact tool names from `tools/list` (for example `api_v1_rules_list`), not sh
   "id": 2,
   "method": "tools/call",
   "params": {
-    "name": "api_v1_rules_list",
+    "name": "email_list_rules",
     "arguments": {"path": "/api/v1/rules", "method": "GET"}
   }
 }
@@ -253,7 +253,7 @@ Paths with placeholders (for example `/api/v1/templates/{template_id}/render-pre
 
 ```json
 {
-  "name": "api_v1_templates_render_preview",
+  "name": "email_render_preview_templates",
   "arguments": {
     "path": "/api/v1/templates/{template_id}/render-preview",
     "path_params": {"template_id": "12"},

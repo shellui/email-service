@@ -12,7 +12,7 @@ from pathlib import Path
 
 from django.test import TestCase, override_settings
 
-from apps.authapi.mcp_openapi import MCP_REQUIRED_OPERATION_IDS
+from apps.authapi.mcp_openapi import MCP_REQUIRED_OPERATION_IDS, MCP_TOOL_NAMES
 from apps.authapi.tests.test_mcp_endpoint import MCP_SETTINGS, _agent_token, _rpc
 from apps.authapi.tests.test_mcp_tool_calls import McpToolHappyPathTests, SPECS
 from shellui_django.mcp.openapi_tools import tools_from_schema
@@ -97,7 +97,7 @@ class McpToolContractTests(TestCase):
         self.assertEqual(listed_public, pinned['tools'])
         access = {tool['name']: _access_row(tool) for tool in schema_tools}
         self.assertEqual(access, pinned['access'])
-        self.assertEqual(set(access), set(MCP_REQUIRED_OPERATION_IDS))
+        self.assertEqual(set(access), set(MCP_TOOL_NAMES.values()))
         for name, row in access.items():
             schema = next(tool['inputSchema'] for tool in listed_public if tool['name'] == name)
             self.assertEqual(schema['required'], pinned['tools'][next(
@@ -105,6 +105,21 @@ class McpToolContractTests(TestCase):
             )]['inputSchema']['required'])
             body_required = (schema['properties'].get('body') or {}).get('required') or []
             self.assertEqual(body_required, row['body_required'])
+
+    def test_published_names_match_gateway_email_prefix(self):
+        from apps.authapi.mcp_views import _schema
+
+        self.assertEqual(set(MCP_TOOL_NAMES), set(MCP_REQUIRED_OPERATION_IDS))
+        published = set(MCP_TOOL_NAMES.values())
+        self.assertEqual(len(published), len(MCP_TOOL_NAMES))
+        for name in published:
+            self.assertTrue(name.startswith('email_'), name)
+            self.assertFalse(name.startswith('api_v1_'), name)
+        listed = {tool['name'] for tool in tools_from_schema(_schema())}
+        self.assertEqual(listed, published)
+        for name in listed:
+            self.assertTrue(name.startswith('email_'), name)
+            self.assertFalse(name.startswith('api_v1_'), name)
 
     def test_every_tool_has_a_happy_path_call_test(self):
         happy = {spec['tool'] for spec in SPECS}

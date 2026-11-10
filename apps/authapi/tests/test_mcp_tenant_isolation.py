@@ -186,7 +186,7 @@ class McpTenantIsolationTests(TestCase):
         msg_id = self.msg_b.public_id
         self._deny(
             self._call(
-                'api_v1_messages_retrieve',
+                'email_get_messages',
                 {
                     'path': '/api/v1/messages/{message_id}',
                     'path_params': {'message_id': msg_id},
@@ -200,7 +200,7 @@ class McpTenantIsolationTests(TestCase):
     def test_template_from_company_b_denied(self):
         self._deny(
             self._call(
-                'api_v1_templates_retrieve',
+                'email_get_templates',
                 {
                     'path': '/api/v1/templates/{template_id}',
                     'path_params': {'template_id': str(self.template_b.pk)},
@@ -214,7 +214,7 @@ class McpTenantIsolationTests(TestCase):
     def test_rule_from_company_b_denied(self):
         self._deny(
             self._call(
-                'api_v1_rules_retrieve',
+                'email_get_rules',
                 {
                     'path': '/api/v1/rules/{rule_id}',
                     'path_params': {'rule_id': str(self.rule_b.pk)},
@@ -228,7 +228,7 @@ class McpTenantIsolationTests(TestCase):
     def test_broadcast_from_company_b_denied(self):
         self._deny(
             self._call(
-                'api_v1_broadcasts_retrieve',
+                'email_get_broadcasts',
                 {
                     'path': '/api/v1/broadcasts/{broadcast_id}',
                     'path_params': {'broadcast_id': str(self.broadcast_b.pk)},
@@ -242,7 +242,7 @@ class McpTenantIsolationTests(TestCase):
     def test_newsletter_from_company_b_denied(self):
         self._deny(
             self._call(
-                'api_v1_newsletters_retrieve',
+                'email_get_newsletters',
                 {
                     'path': '/api/v1/newsletters/{newsletter_id}',
                     'path_params': {'newsletter_id': str(self.newsletter_b.pk)},
@@ -256,7 +256,7 @@ class McpTenantIsolationTests(TestCase):
     def test_suppression_list_with_company_b_query_denied(self):
         self._deny(
             self._call(
-                'api_v1_suppressions_list',
+                'email_list_suppressions',
                 {
                     'path': '/api/v1/suppressions',
                     'method': 'GET',
@@ -270,7 +270,7 @@ class McpTenantIsolationTests(TestCase):
     def test_library_from_company_b_denied(self):
         self._deny(
             self._call(
-                'api_v1_library_retrieve',
+                'email_get_library',
                 {
                     'path': '/api/v1/library/{library_id}',
                     'path_params': {'library_id': str(self.library_b.pk)},
@@ -284,7 +284,7 @@ class McpTenantIsolationTests(TestCase):
     def test_company_b_query_on_rules_list_denied(self):
         self._deny(
             self._call(
-                'api_v1_rules_list',
+                'email_list_rules',
                 {
                     'path': '/api/v1/rules',
                     'method': 'GET',

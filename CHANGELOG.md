@@ -25,8 +25,12 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🐛 Bug Fixes
 
-- MCP: `api_v1_newsletters_subscribers_export` returns the CSV body (`content_type` `text/csv` and `csv`). Read-safe mode still masks addresses inside that text.
-- MCP: `api_v1_newsletters_create` requires `name`, matching `create_list`. Library create copy states that `name` or `source_id` is required. Webhook create and rotate copy states that MCP results mask `secret`.
+- MCP: `email_export_newsletter_subscribers` returns the CSV body (`content_type` `text/csv` and `csv`). Read-safe mode still masks addresses inside that text.
+- MCP: `email_create_newsletters` requires `name`, matching `create_list`. Library create copy states that `name` or `source_id` is required. Webhook create and rotate copy states that MCP results mask `secret`.
+
+### 🚨 Changed
+
+- MCP `tools/list` names match the ai-service gateway (`email_list_rules`, `email_create_newsletters`, and the other 63). `x-mcp.tool_name` is that name. OpenAPI `operationId` values stay `api_v1_*`.
 - MCP: after Identity `mcp-approval-consume` returns `consumed: true` for the same agent, company, tool, and arguments hash, that call runs once. The tool body is posted to the underlying view as JSON. The call log is `allowed` or `failed` and includes that approval id. A later call does not run or consume again. Ask mode no longer consumes the approval and then returns "Write requires approval."
 
 ### 🛠 Improvements
