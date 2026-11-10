@@ -169,11 +169,11 @@ See [Email rules](rules.md).
 | --- | --- | --- |
 | GET | `/actions/events` | Event types you can subscribe to. |
 | GET | `/actions/rules` | List webhook rules. |
-| POST | `/actions/rules` | Create a rule (`secret` returned once). |
+| POST | `/actions/rules` | Create a rule. The HTTP body includes `secret` once. MCP results mask it. |
 | GET | `/actions/rules/{id}` | Read one rule (masked secret). |
 | PATCH | `/actions/rules/{id}` | Update URL, name, or enabled state. |
 | DELETE | `/actions/rules/{id}` | Delete a rule. |
-| POST | `/actions/rules/{id}/rotate-secret` | Rotate signing secret (plaintext once). |
+| POST | `/actions/rules/{id}/rotate-secret` | Rotate the signing secret. The HTTP body includes it once. MCP results mask it. |
 | POST | `/actions/rules/{id}/send-test` | Queue a sample delivery. |
 | GET | `/actions/deliveries` | Recent webhook deliveries. |
 | GET | `/actions/deliveries/{delivery_id}` | One delivery with attempts. |

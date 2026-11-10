@@ -112,7 +112,8 @@ MCP_REQUIRED_SECRET_SCHEMA_PROPERTIES: frozenset[tuple[str, str]] = frozenset(
         ('ProviderWrite', 'webhook_secret'),
         ('ActionRule', 'secret'),
         ('ActionRuleCreate', 'secret'),
-        ('NewsletterWrite', 'turnstile_secret'),
+        ('NewsletterCreate', 'turnstile_secret'),
+        ('PatchedNewsletterWrite', 'turnstile_secret'),
     }
 )
 

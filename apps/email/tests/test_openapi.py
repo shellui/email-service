@@ -112,7 +112,8 @@ class OpenApiSchemaTests(SimpleTestCase):
                 [
                     'ActionRule.secret',
                     'ActionRuleCreate.secret',
-                    'NewsletterWrite.turnstile_secret',
+                    'NewsletterCreate.turnstile_secret',
+                    'PatchedNewsletterWrite.turnstile_secret',
                     'ProviderCredentials.api_key',
                     'ProviderCredentials.password',
                     'ProviderCredentials.secret_access_key',

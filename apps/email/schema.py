@@ -727,6 +727,22 @@ class NewsletterWriteSerializer(serializers.Serializer):
     )
 
 
+class NewsletterCreateSerializer(serializers.Serializer):
+    """Create requires ``name``. Updates use ``NewsletterWriteSerializer``, where it stays optional."""
+
+    name = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True)
+    default_language = serializers.CharField(required=False)
+    allowed_origins = serializers.ListField(child=serializers.CharField(), required=False)
+    confirmed_redirect_url = serializers.CharField(required=False, allow_blank=True)
+    turnstile_site_key = serializers.CharField(required=False, allow_blank=True)
+    turnstile_secret = McpSecretCharField(
+        required=False,
+        allow_blank=True,
+        help_text='Write only. Empty clears it.',
+    )
+
+
 class NewsletterSubscriberSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     email = McpSensitiveCharField(help_text='Masked once the address is cleared after unsubscribing.')
