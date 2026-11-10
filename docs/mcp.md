@@ -6,6 +6,8 @@ description: Shellui MCP Streamable HTTP endpoint and company-owner tools in ema
 
 # Shellui MCP
 
+MCP is in Beta. Tool names and behavior may still change.
+
 Shellui MCP lets AI agents call selected company-owner APIs through a Streamable HTTP endpoint on email-service. Identity-service is the OAuth authorization server. Agents authenticate with a company-scoped agent JWT from Identity.
 
 email-service publishes `POST /mcp` (JSON-RPC: `initialize`, `tools/list`, `tools/call`) and `GET /.well-known/oauth-protected-resource` (resource `/mcp`, authorization server = Identity `IDENTITY_ISSUER`). Only OpenAPI operations registered with `mcp_tool(operation_id=..., read_only=..., ...)` become tools. The schema adds the `mcp-tools` tag at publish time from that registry.
@@ -82,7 +84,8 @@ After a successful HTTP write in `ask` mode, Identity `mcp-approval-consume` mus
 
 ## Regional MCP URL vs delegated SaaS flow
 
-- **Regional, personal, or delegated profile for this product:** the resource indicator is `{EMAIL_PUBLIC_URL}/mcp`, for example `http://<regional-email-host>/mcp` in local or regional deployments. Agents send `Authorization: Bearer` with that exact `aud` after Identity mints the token for email-service. The catalog of tools is whatever `tools/list` returns from this deployment; derive tool names and JSON-RPC shapes from `GET /api/schema/` (or `tools/list`), not from hand-maintained prefix lists in other repos.
+- **Regional, personal, or delegated profile for this product:** the resource indicator is `{EMAIL_PUBLIC_URL}/mcp`, for example `http://<regional-email-host>/mcp` in local or regional deployments. Agents send `Authorization: Bearer` with that exact `aud` after Identity mints the token for email-service. Take tool names from `tools/list` (`x-mcp.tool_name`, `email_<verb>_<noun>`), not the raw OpenAPI `operationId` (`api_v1_*` on `GET /api/schema/`). Do not copy a hand-maintained prefix list from another repo.
+- Company AI clients usually connect through the ai-service gateway (`/c/<company_id>/mcp`), whose `tools/list` defaults to a short discovery list (`ai_search_tools`, `ai_describe_tool`, `ai_call_tool`). A direct service `POST /mcp` still returns this service's full catalog.
 - **SaaS delegated workflow:** a global Shell profile is exchanged for a **regional** email MCP token through the main Shellui flow (for example ai-service after OAuth exchange). Do not present a shortcut where a global-only token calls `{origin}/mcp` on email-service without Identity re-minting the regional resource token. Link-level documentation for the exchange path lives in the main Shellui repository on `develop` (for example `docs/` paths referenced by your integration handbook), not in this service’s release website branch.
 - **Identity token endpoint:** MCP clients obtain agent tokens from Identity’s OAuth surface (for example `POST` `{IDENTITY_ISSUER}/oauth/mcp/token` with the correct `resource` for email); the exact host depends on whether the client targets the regional IdP or the global issuer your environment documents. Pair that with this service’s `GET /.well-known/oauth-protected-resource` for `resource` and `authorization_servers`.
 
