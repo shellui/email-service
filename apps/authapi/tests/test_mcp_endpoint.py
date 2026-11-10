@@ -49,7 +49,7 @@ def _default_revocation_agents() -> list[dict]:
 
 
 def _rule_create_body() -> dict:
-    """OpenAPI body for ``api_v1_rules_create`` (``EmailRuleWriteSerializer``).
+    """OpenAPI body for ``email_create_rules`` (``EmailRuleWriteSerializer``).
 
     Unknown fields are rejected before the approval gate.
     """
@@ -393,7 +393,7 @@ class McpEndpointTests(TestCase):
         for forbidden in MCP_FORBIDDEN_OPERATION_IDS:
             self.assertNotIn(forbidden, names)
         self.assertNotIn('api_v1_send_create', names)
-        self.assertIn('api_v1_rules_list', names)
+        self.assertIn('email_list_rules', names)
 
     def test_tools_list_requires_agent_token(self):
         response = self.client.post('/mcp', data='{}', content_type='application/json')
@@ -457,7 +457,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_list',
+                'name': 'email_list_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'GET',
@@ -556,7 +556,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_provider_retrieve',
+                'name': 'email_get_provider',
                 'arguments': {
                     'path': '/api/v1/provider',
                     'method': 'GET',
@@ -589,7 +589,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_templates_retrieve',
+                'name': 'email_get_templates',
                 'arguments': {
                     'path': '/api/v1/templates/{template_id}',
                     'path_params': {'template_id': str(template.pk)},
@@ -611,7 +611,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_templates_retrieve',
+                'name': 'email_get_templates',
                 'arguments': {
                     'path': '/api/v1/templates/999999',
                     'method': 'GET',
@@ -641,7 +641,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_actions_rules_list',
+                'name': 'email_list_action_rules',
                 'arguments': {
                     'path': '/api/v1/actions/rules',
                     'method': 'GET',
@@ -661,7 +661,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_create',
+                'name': 'email_create_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
@@ -686,7 +686,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_create',
+                'name': 'email_create_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
@@ -740,7 +740,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_create',
+                'name': 'email_create_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
@@ -803,7 +803,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_create',
+                'name': 'email_create_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
@@ -836,7 +836,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_create',
+                'name': 'email_create_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
@@ -880,7 +880,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_create',
+                'name': 'email_create_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
@@ -926,7 +926,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_create',
+                'name': 'email_create_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
@@ -967,7 +967,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_create',
+                'name': 'email_create_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
@@ -1011,7 +1011,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_create',
+                'name': 'email_create_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
@@ -1048,7 +1048,7 @@ class McpEndpointTests(TestCase):
                 key = (str(payload.get('action') or ''), str(payload.get('arguments_hash') or ''))
                 ok = MagicMock()
                 ok.raise_for_status = MagicMock()
-                if approved_key['value'] is None and key[0] == 'api_v1_provider_test_send':
+                if approved_key['value'] is None and key[0] == 'email_test_send_provider':
                     approved_key['value'] = key
                     ok.status_code = 200
                     ok.json = MagicMock(return_value={'status': 'approved', 'id': approval_id})
@@ -1064,7 +1064,7 @@ class McpEndpointTests(TestCase):
                 self.assertEqual(kwargs.get('json'), {'approval_id': approval_id})
                 token = str((kwargs.get('headers') or {}).get('Authorization') or '')
                 payload = jwt.decode(token.removeprefix('Bearer '), options={'verify_signature': False})
-                self.assertEqual(payload.get('action'), 'api_v1_provider_test_send')
+                self.assertEqual(payload.get('action'), 'email_test_send_provider')
                 self.assertEqual(payload.get('service'), 'email')
                 self.assertTrue(payload.get('arguments_hash'))
                 ok = MagicMock()
@@ -1099,7 +1099,7 @@ class McpEndpointTests(TestCase):
             self.client,
             token,
             'tools/call',
-            {'name': 'api_v1_provider_test_send', 'arguments': arguments},
+            {'name': 'email_test_send_provider', 'arguments': arguments},
         )
         self.assertEqual(first.status_code, 200, first.content)
         first_result = first.json().get('result') or {}
@@ -1115,7 +1115,7 @@ class McpEndpointTests(TestCase):
         logged = call_logs[0]
         self.assertEqual(logged.get('outcome'), 'allowed')
         self.assertEqual(logged.get('approval_id'), approval_id)
-        self.assertEqual(logged.get('tool'), 'api_v1_provider_test_send')
+        self.assertEqual(logged.get('tool'), 'email_test_send_provider')
         self.assertEqual(logged.get('access_kind'), 'write')
         self.assertEqual(logged.get('result'), '')
         self.assertNotIn('arguments', logged)
@@ -1127,7 +1127,7 @@ class McpEndpointTests(TestCase):
             self.client,
             token,
             'tools/call',
-            {'name': 'api_v1_provider_test_send', 'arguments': arguments},
+            {'name': 'email_test_send_provider', 'arguments': arguments},
         )
         second_text = (second.json().get('result') or {}).get('content', [{}])[0].get('text', '')
         self.assertIn('Approval already used.', second_text)
@@ -1145,7 +1145,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_provider_test_send',
+                'name': 'email_test_send_provider',
                 'arguments': {
                     'path': '/api/v1/provider/test-send',
                     'method': 'POST',
@@ -1191,7 +1191,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_provider_test_send',
+                'name': 'email_test_send_provider',
                 'arguments': {
                     'path': '/api/v1/provider/test-send',
                     'method': 'POST',
@@ -1972,7 +1972,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_create',
+                'name': 'email_create_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
@@ -1996,7 +1996,7 @@ class McpEndpointTests(TestCase):
                 'company_id': 42,
                 'agent_id': str(uuid.uuid4()),
                 'service': 'email',
-                'action': 'api_v1_rules_create',
+                'action': 'email_create_rules',
                 'arguments_hash': 'abc',
                 'grant_version': 0,
             }
@@ -2038,7 +2038,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_destroy',
+                'name': 'email_delete_rules',
                 'arguments': {
                     'path': '/api/v1/rules/{rule_id}',
                     'path_params': {'rule_id': str(rule.pk)},
@@ -2060,7 +2060,7 @@ class McpEndpointTests(TestCase):
             token,
             'tools/call',
             {
-                'name': 'api_v1_rules_list',
+                'name': 'email_list_rules',
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'GET',
@@ -2088,7 +2088,7 @@ class McpEndpointTests(TestCase):
                 'agent_id': str(uuid.uuid4()),
                 'grant_version': 0,
                 'service': 'email',
-                'tool': 'api_v1_rules_list',
+                'tool': 'email_list_rules',
                 'method': 'GET',
                 'resource_path': '/api/v1/rules',
                 'access_kind': 'read',
@@ -2137,7 +2137,7 @@ class McpEndpointTests(TestCase):
                     'global_agent_id': gaid,
                 },
                 'service': 'email',
-                'tool': 'api_v1_rules_list',
+                'tool': 'email_list_rules',
                 'method': 'GET',
                 'resource_path': '/api/v1/rules',
                 'access_kind': 'read',
@@ -2183,7 +2183,7 @@ class McpEndpointTests(TestCase):
                     'global_agent_id': gaid,
                 },
                 'service': 'email',
-                'tool': 'api_v1_rules_list',
+                'tool': 'email_list_rules',
                 'method': 'GET',
                 'resource_path': '/api/v1/rules',
                 'access_kind': 'read',
@@ -2204,7 +2204,7 @@ class McpEndpointTests(TestCase):
             'company_id': 42,
             'agent_id': str(uuid.uuid4()),
             'service': 'email',
-            'action': 'api_v1_rules_create',
+            'action': 'email_create_rules',
             'arguments_hash': 'abc',
             'grant_version': 0,
         }
@@ -2224,7 +2224,7 @@ class McpEndpointTests(TestCase):
             'company_id': 42,
             'agent_id': str(uuid.uuid4()),
             'service': 'email',
-            'action': 'api_v1_rules_create',
+            'action': 'email_create_rules',
             'arguments_hash': 'abc',
             'global_company_id': gcid,
             'company_binding_version': 0,
@@ -2253,13 +2253,9 @@ class McpEndpointTests(TestCase):
             )
 
     def test_registry_covers_every_mcp_tool(self):
+        from apps.authapi.mcp_openapi import MCP_TOOL_NAMES
         from apps.authapi.mcp_views import _schema
 
         tools = tools_from_schema(_schema())
-        tool_ops = set()
-        for tool in tools:
-            meta = tool.get('_meta') or {}
-            op_id = meta.get('operationId')
-            if op_id:
-                tool_ops.add(op_id)
-        self.assertEqual(tool_ops, set(MCP_EXPLICIT_REGISTRY))
+        self.assertEqual({tool['name'] for tool in tools}, set(MCP_TOOL_NAMES.values()))
+        self.assertEqual(set(MCP_EXPLICIT_REGISTRY), set(MCP_TOOL_NAMES))

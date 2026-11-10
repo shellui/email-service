@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 from django.conf import settings
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -21,15 +23,23 @@ from apps.authapi.mcp_identity import (
     identity_origin,
     verify_agent_company_binding,
 )
+from apps.authapi.mcp_tool_names import publish_mcp_tool_names
 from apps.authapi.spectacular_hooks import mcp_schema_for_server
 
 _server: EmailMcpServer | None = None
 
 
 def _schema() -> dict:
+    """OpenAPI used by ``POST /mcp``. Tool names are the gateway ``email_*`` names.
+
+    The public schema keeps ``operationId`` (``api_v1_*``). This copy rewrites those
+    ids from ``x-mcp.tool_name`` because shellui-django 0.5.1 names tools from
+    ``operationId`` only.
+    """
     generator = SchemaGenerator()
-    schema = generator.get_schema(request=None, public=True)
-    return mcp_schema_for_server(schema)
+    schema = copy.deepcopy(generator.get_schema(request=None, public=True))
+    schema = mcp_schema_for_server(schema)
+    return publish_mcp_tool_names(schema)
 
 
 def _revocation_check(agent_id: str, _company_id: int | None) -> bool:
