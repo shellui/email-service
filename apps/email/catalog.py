@@ -17,6 +17,7 @@ from typing import Any
 LANE_AUTH = 'auth'
 LANE_TRANSACTIONAL = 'transactional'
 LANE_BULK = 'bulk'
+LANES = (LANE_AUTH, LANE_TRANSACTIONAL, LANE_BULK)
 
 LANGUAGES = ('en', 'fr')
 
@@ -691,6 +692,25 @@ _BY_KEY = {row['key']: row for row in all_definitions()}
 
 def get_definition(template_key: str) -> dict[str, Any] | None:
     return _BY_KEY.get(template_key)
+
+
+def catalog_event_types() -> tuple[str, ...]:
+    """Every catalog event id, including auth-lane events."""
+    return tuple(row['event_type'] for row in all_definitions() if row.get('event_type'))
+
+
+def rule_event_types() -> tuple[str, ...]:
+    """Event ids a company may attach to a new email rule. Auth-lane events are refused."""
+    return tuple(
+        row['event_type']
+        for row in all_definitions()
+        if row.get('event_type') and row.get('lane_class') != LANE_AUTH
+    )
+
+
+def catalog_services() -> tuple[str, ...]:
+    """Owner service ids from the catalog, in stable order."""
+    return tuple(sorted({row['owner_service'] for row in all_definitions() if row.get('owner_service')}))
 
 
 def definition_map() -> dict[str, dict[str, Any]]:

@@ -6,21 +6,8 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse
 
 from apps.authapi.mcp_openapi import MCP_REQUIRED_OPERATION_IDS
-from apps.email.openapi_mcp_registry import MCP_SPECS
+from apps.email.openapi_mcp_registry import MCP_DESCRIPTIONS
 from apps.email.schema import ErrorSerializer
-
-PERMISSIONS_BLOCK = (
-    'Permissions: Shellui company owner for the target `company_id`, or Shellui staff. '
-    'Send `Authorization: Bearer <jwt>` from identity-service. Service API keys (`esk_`) cannot call this route.'
-)
-
-# Backward-compatible alias used in older description strings.
-AUTH_ADMIN = PERMISSIONS_BLOCK
-
-COMPANY_QUERY_HELP = (
-    'Target company. Owners omit this when their JWT already carries `company_id`. '
-    'Staff may set it to administer another company.'
-)
 
 MESSAGE_ID_PATH = OpenApiParameter(
     name='message_id',
@@ -42,45 +29,6 @@ NEWSLETTER_ID_PATH = OpenApiParameter(
     location=OpenApiParameter.PATH,
     description='Newsletter list id.',
 )
-
-RULE_ID_PATH = OpenApiParameter(
-    name='id',
-    type=OpenApiTypes.INT,
-    location=OpenApiParameter.PATH,
-    description='Email rule id.',
-)
-
-ACTION_RULE_ID_PATH = OpenApiParameter(
-    name='id',
-    type=OpenApiTypes.INT,
-    location=OpenApiParameter.PATH,
-    description='Shellui Actions webhook rule id.',
-)
-
-DELIVERY_ID_PATH = OpenApiParameter(
-    name='delivery_id',
-    type=OpenApiTypes.UUID,
-    location=OpenApiParameter.PATH,
-    description='Webhook delivery id (UUID string).',
-)
-
-
-def admin_description(
-    *,
-    lead: str,
-    side_effects: str,
-    sends_email: bool = False,
-    destructive: bool = False,
-    notes: str = '',
-) -> str:
-    """Standard MCP-facing operation description."""
-    parts = [lead.strip(), PERMISSIONS_BLOCK]
-    parts.append(f'Side effects: {side_effects.strip()}')
-    parts.append(f'Sends email: {"Yes" if sends_email else "No"}.')
-    parts.append(f'Destructive: {"Yes" if destructive else "No"}.')
-    if notes.strip():
-        parts.append(notes.strip())
-    return '\n\n'.join(parts)
 
 
 def _error_response(description: str) -> OpenApiResponse:
@@ -112,43 +60,35 @@ ADMIN_API_ERRORS = {
 
 
 def mcp_openapi_fields(operation_id: str) -> dict[str, str]:
-    """Summary and description for an MCP allowlisted operation."""
-    spec = MCP_SPECS.get(operation_id)
-    if spec is None:
+    """Summary and description for an MCP allowlisted operation.
+
+    Both fields carry the same one or two sentences. shellui-django 0.5.1 copies
+    ``summary`` into the MCP tool description, and the ai-service gateway may read
+    either field.
+    """
+    text = MCP_DESCRIPTIONS.get(operation_id)
+    if not text:
         raise KeyError(f'missing MCP OpenAPI registry entry for {operation_id}')
-    return {
-        'summary': spec.summary,
-        'description': admin_description(
-            lead=spec.lead,
-            side_effects=spec.side_effects,
-            sends_email=spec.sends_email,
-            destructive=spec.destructive,
-            notes=spec.notes,
-        ),
-    }
+    return {'summary': text, 'description': text}
 
 
-if set(MCP_SPECS) != MCP_REQUIRED_OPERATION_IDS:
-    missing = MCP_REQUIRED_OPERATION_IDS - set(MCP_SPECS)
-    extra = set(MCP_SPECS) - MCP_REQUIRED_OPERATION_IDS
-    raise AssertionError(f'MCP_SPECS drift: missing={sorted(missing)} extra={sorted(extra)}')
+if set(MCP_DESCRIPTIONS) != MCP_REQUIRED_OPERATION_IDS:
+    missing = MCP_REQUIRED_OPERATION_IDS - set(MCP_DESCRIPTIONS)
+    extra = set(MCP_DESCRIPTIONS) - MCP_REQUIRED_OPERATION_IDS
+    raise AssertionError(f'MCP_DESCRIPTIONS drift: missing={sorted(missing)} extra={sorted(extra)}')
 
 
-def _fields(op_id: str) -> dict[str, str]:
-    return mcp_openapi_fields(op_id)
+TEMPLATE_LIST_SUMMARY = MCP_DESCRIPTIONS['api_v1_templates_list']
+TEMPLATE_LIST_DESCRIPTION = MCP_DESCRIPTIONS['api_v1_templates_list']
 
+TEMPLATE_RENDER_PREVIEW_SUMMARY = MCP_DESCRIPTIONS['api_v1_templates_render_preview']
+TEMPLATE_RENDER_PREVIEW_DESCRIPTION = MCP_DESCRIPTIONS['api_v1_templates_render_preview']
 
-TEMPLATE_LIST_SUMMARY = MCP_SPECS['api_v1_templates_list'].summary
-TEMPLATE_LIST_DESCRIPTION = mcp_openapi_fields('api_v1_templates_list')['description']
+RULE_LIST_SUMMARY = MCP_DESCRIPTIONS['api_v1_rules_list']
+RULE_LIST_DESCRIPTION = MCP_DESCRIPTIONS['api_v1_rules_list']
 
-TEMPLATE_RENDER_PREVIEW_SUMMARY = MCP_SPECS['api_v1_templates_render_preview'].summary
-TEMPLATE_RENDER_PREVIEW_DESCRIPTION = mcp_openapi_fields('api_v1_templates_render_preview')['description']
-
-RULE_LIST_SUMMARY = MCP_SPECS['api_v1_rules_list'].summary
-RULE_LIST_DESCRIPTION = mcp_openapi_fields('api_v1_rules_list')['description']
-
-ACTIONS_RULES_LIST_SUMMARY = MCP_SPECS['api_v1_actions_rules_list'].summary
-ACTIONS_RULES_LIST_DESCRIPTION = mcp_openapi_fields('api_v1_actions_rules_list')['description']
+ACTIONS_RULES_LIST_SUMMARY = MCP_DESCRIPTIONS['api_v1_actions_rules_list']
+ACTIONS_RULES_LIST_DESCRIPTION = MCP_DESCRIPTIONS['api_v1_actions_rules_list']
 
 EXAMPLE_TEMPLATE_LIST = OpenApiExample(
     'Two event copies',

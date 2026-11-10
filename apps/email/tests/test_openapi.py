@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tempfile
 
 from django.core.management import call_command
@@ -16,6 +17,12 @@ from apps.authapi.mcp_openapi import (
     validate_mcp_schema,
     validate_mcp_secret_fields,
 )
+
+
+def _sentence_count(text: str) -> int:
+    """Periods inside `code` spans are not sentence breaks."""
+    plain = re.sub(r'`[^`]*`', '', text)
+    return len(re.findall(r'[.!?]', plain))
 
 
 class OpenApiSchemaTests(SimpleTestCase):
@@ -43,14 +50,14 @@ class OpenApiSchemaTests(SimpleTestCase):
             '/api/v1/templates/{template_id}',
             '/api/v1/templates/{template_id}/render-preview',
             '/api/v1/templates/{template_id}/versions',
-            '/api/v1/templates/{template_id}/versions/{number}',
+            '/api/v1/templates/{template_id}/versions/{version_number}',
             '/api/v1/rules',
             '/api/v1/actions/deliveries',
             '/api/v1/actions/deliveries/{delivery_id}',
             '/api/v1/actions/event-log',
-            '/api/v1/actions/event-log/{id}',
+            '/api/v1/actions/event-log/{event_id}',
             '/api/v1/actions/rules',
-            '/api/v1/actions/rules/{id}',
+            '/api/v1/actions/rules/{rule_id}',
         ):
             self.assertIn(path, paths)
             operation = next(
@@ -100,8 +107,10 @@ class OpenApiSchemaTests(SimpleTestCase):
             response_codes = {int(code) for code in operation.get('responses', {}) if str(code).isdigit()}
             self.assertTrue(required_errors <= response_codes, (op_id, response_codes))
             description = operation['description']
-            for needle in ('Side effects:', 'Sends email:', 'Destructive:', 'Permissions:'):
-                self.assertIn(needle, description, op_id)
+            self.assertEqual(description, operation['summary'], op_id)
+            self.assertNotIn('—', description, op_id)
+            self.assertNotIn('–', description, op_id)
+            self.assertLessEqual(_sentence_count(description), 2, op_id)
 
     def test_required_secret_fields_list_is_documented(self):
         """Guardrail: every listed secret field must stay marked in OpenAPI."""

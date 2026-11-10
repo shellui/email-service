@@ -35,7 +35,12 @@ from apps.email.views import error_response
 _API_ERRORS = ADMIN_API_ERRORS
 
 STATUS_QUERY = OpenApiParameter(
-    'status', OpenApiTypes.STR, OpenApiParameter.QUERY, required=False, enum=['pending', 'confirmed', 'unsubscribed']
+    'status',
+    OpenApiTypes.STR,
+    OpenApiParameter.QUERY,
+    required=False,
+    enum=['pending', 'confirmed', 'unsubscribed'],
+    description='Subscriber status. Omit to return every status.',
 )
 
 
@@ -190,7 +195,7 @@ class NewsletterDetailView(APIView):
         request=None,
         responses={200: NewsletterSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_newsletters_rotate_key'),
-        **mcp_tool(operation_id='api_v1_newsletters_rotate_key', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_newsletters_rotate_key', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class NewsletterRotateKeyView(APIView):
@@ -209,8 +214,8 @@ class NewsletterRotateKeyView(APIView):
         operation_id='api_v1_newsletters_subscribers_list',
         parameters=[
             STATUS_QUERY,
-            OpenApiParameter('email', OpenApiTypes.STR, OpenApiParameter.QUERY, required=False, description='Exact address.'),
-            OpenApiParameter('page', OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter('email', OpenApiTypes.STR, OpenApiParameter.QUERY, required=False, description='Exact subscriber address.'),
+            OpenApiParameter('page', OpenApiTypes.INT, OpenApiParameter.QUERY, required=False, description='Page number, starting at 1.'),
         ],
         responses={200: NewsletterSubscriberPageSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_newsletters_subscribers_list'),
@@ -222,7 +227,7 @@ class NewsletterRotateKeyView(APIView):
         request=NewsletterSubscriberCreateSerializer,
         responses={201: NewsletterSubscriberAddedSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_newsletters_subscribers_create'),
-        **mcp_tool(operation_id='api_v1_newsletters_subscribers_create', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_newsletters_subscribers_create', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class NewsletterSubscriberListView(APIView):
@@ -303,7 +308,7 @@ class NewsletterExportView(APIView):
         request=NewsletterImportRequestSerializer,
         responses={200: NewsletterImportSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_newsletters_subscribers_import'),
-        **mcp_tool(operation_id='api_v1_newsletters_subscribers_import', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_newsletters_subscribers_import', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class NewsletterImportView(APIView):

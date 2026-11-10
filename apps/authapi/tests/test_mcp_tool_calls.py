@@ -255,6 +255,25 @@ class McpToolHappyPathTests(TestCase):
         if check:
             check(self, text)
 
+    def test_flat_arguments_skip_transport_fields(self):
+        """Agents pass ids and filters directly. method and path are not arguments."""
+        listed = _rpc(self.client, self._token(access='read_only', destructive=False), 'tools/list')
+        tools = listed.json()['result']['tools']
+        rules = next(tool for tool in tools if tool['name'] == 'email_list_rules')
+        self.assertNotIn('method', rules['inputSchema']['properties'])
+        self.assertNotIn('path', rules['inputSchema']['properties'])
+        response = _rpc(
+            self.client,
+            self._token(access='full', destructive=False),
+            'tools/call',
+            {'name': 'email_update_rules', 'arguments': {'rule_id': self.rule.pk, 'language': 'fr'}},
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        self.assertNotIn('error', payload, payload)
+        self.assertFalse(payload['result'].get('isError'), payload['result'])
+        self.assertIn('"language": "fr"', payload['result']['content'][0]['text'])
+
 
 def _check_export(test, text):
     data = json.loads(text)
@@ -313,7 +332,7 @@ _RULE = lambda test: {'rule_id': str(test.rule.pk)}
 _TPL = lambda test: {'template_id': str(test.template_id)}
 _LIB = lambda test: {'library_id': str(test.library_id)}
 _BCAST = lambda test: {'broadcast_id': str(test.broadcast.pk)}
-_ACTION = lambda test: {'id': str(test.action_rule.pk)}
+_ACTION = lambda test: {'rule_id': str(test.action_rule.pk)}
 
 SPECS: list[dict] = [
     {'tool': 'email_get_catalog', 'method': 'GET', 'path': '/api/v1/catalog', 'needle': 'events'},
@@ -378,8 +397,8 @@ SPECS: list[dict] = [
     {
         'tool': 'email_get_template_versions',
         'method': 'GET',
-        'path': '/api/v1/templates/{template_id}/versions/{number}',
-        'path_params': lambda test: {'template_id': str(test.template_id), 'number': str(test.version_number)},
+        'path': '/api/v1/templates/{template_id}/versions/{version_number}',
+        'path_params': lambda test: {'template_id': str(test.template_id), 'version_number': str(test.version_number)},
         'needle': 'published',
     },
     {
@@ -395,8 +414,8 @@ SPECS: list[dict] = [
         'tool': 'email_publish_template_versions',
         'access': 'full',
         'method': 'POST',
-        'path': '/api/v1/templates/{template_id}/versions/{number}/publish',
-        'path_params': lambda test: {'template_id': str(test.template_id), 'number': str(test.draft_number)},
+        'path': '/api/v1/templates/{template_id}/versions/{version_number}/publish',
+        'path_params': lambda test: {'template_id': str(test.template_id), 'version_number': str(test.draft_number)},
         'needle': 'published',
     },
     {
@@ -410,6 +429,7 @@ SPECS: list[dict] = [
     {
         'tool': 'email_send_test_templates',
         'access': 'full',
+        'destructive': True,
         'method': 'POST',
         'path': '/api/v1/templates/{template_id}/send-test',
         'path_params': _TPL,
@@ -457,6 +477,7 @@ SPECS: list[dict] = [
     {
         'tool': 'email_replace_provider',
         'access': 'full',
+        'destructive': True,
         'method': 'PUT',
         'path': '/api/v1/provider',
         'body': {
@@ -471,6 +492,7 @@ SPECS: list[dict] = [
     {
         'tool': 'email_test_send_provider',
         'access': 'full',
+        'destructive': True,
         'method': 'POST',
         'path': '/api/v1/provider/test-send',
         'body': {'to': OWNER},
@@ -480,6 +502,7 @@ SPECS: list[dict] = [
     {
         'tool': 'email_replace_auth_link_hosts',
         'access': 'full',
+        'destructive': True,
         'method': 'PUT',
         'path': '/api/v1/auth-link-hosts',
         'body': {'hosts': ['app.acme.test']},
@@ -515,6 +538,7 @@ SPECS: list[dict] = [
     {
         'tool': 'email_cancel_messages',
         'access': 'full',
+        'destructive': True,
         'method': 'POST',
         'path': '/api/v1/messages/{message_id}/cancel',
         'path_params': lambda test: {'message_id': test.message.public_id},
@@ -556,6 +580,7 @@ SPECS: list[dict] = [
     {
         'tool': 'email_broadcasts_send',
         'access': 'full',
+        'destructive': True,
         'method': 'POST',
         'path': '/api/v1/broadcasts/{broadcast_id}/send',
         'path_params': _BCAST,
@@ -598,6 +623,7 @@ SPECS: list[dict] = [
     {
         'tool': 'email_rotate_newsletter_key',
         'access': 'full',
+        'destructive': True,
         'method': 'POST',
         'path': '/api/v1/newsletters/{newsletter_id}/rotate-key',
         'path_params': _NL,
@@ -613,6 +639,7 @@ SPECS: list[dict] = [
     {
         'tool': 'email_create_newsletters_subscribers',
         'access': 'full',
+        'destructive': True,
         'method': 'POST',
         'path': '/api/v1/newsletters/{newsletter_id}/subscribers',
         'path_params': _NL,
@@ -630,6 +657,7 @@ SPECS: list[dict] = [
     {
         'tool': 'email_import_newsletter_subscribers',
         'access': 'full',
+        'destructive': True,
         'method': 'POST',
         'path': '/api/v1/newsletters/{newsletter_id}/subscribers/import',
         'path_params': _NL,
@@ -662,7 +690,7 @@ SPECS: list[dict] = [
     {
         'tool': 'email_get_action_rules',
         'method': 'GET',
-        'path': '/api/v1/actions/rules/{id}',
+        'path': '/api/v1/actions/rules/{rule_id}',
         'path_params': _ACTION,
         'needle': 'Audit hook',
     },
@@ -684,7 +712,7 @@ SPECS: list[dict] = [
         'tool': 'email_update_action_rules',
         'access': 'full',
         'method': 'PATCH',
-        'path': '/api/v1/actions/rules/{id}',
+        'path': '/api/v1/actions/rules/{rule_id}',
         'path_params': _ACTION,
         'body': {'name': 'Renamed hook'},
         'needle': 'Renamed hook',
@@ -692,8 +720,9 @@ SPECS: list[dict] = [
     {
         'tool': 'email_rotate_rule_secret',
         'access': 'full',
+        'destructive': True,
         'method': 'POST',
-        'path': '/api/v1/actions/rules/{id}/rotate-secret',
+        'path': '/api/v1/actions/rules/{rule_id}/rotate-secret',
         'path_params': _ACTION,
         'needle': '[redacted]',
         'check': _check_rotate,
@@ -701,8 +730,9 @@ SPECS: list[dict] = [
     {
         'tool': 'email_send_test_rule',
         'access': 'full',
+        'destructive': True,
         'method': 'POST',
-        'path': '/api/v1/actions/rules/{id}/send-test',
+        'path': '/api/v1/actions/rules/{rule_id}/send-test',
         'path_params': _ACTION,
         'needle': 'queued',
     },
@@ -711,7 +741,7 @@ SPECS: list[dict] = [
         'access': 'full',
         'destructive': True,
         'method': 'DELETE',
-        'path': '/api/v1/actions/rules/{id}',
+        'path': '/api/v1/actions/rules/{rule_id}',
         'path_params': _ACTION,
         'needle': '"result": null',
     },
@@ -726,6 +756,7 @@ SPECS: list[dict] = [
     {
         'tool': 'email_requeue_action_deliveries',
         'access': 'full',
+        'destructive': True,
         'method': 'POST',
         'path': '/api/v1/actions/deliveries/{delivery_id}/requeue',
         'path_params': lambda test: {'delivery_id': str(test.delivery.pk)},
@@ -735,8 +766,8 @@ SPECS: list[dict] = [
     {
         'tool': 'email_get_action_event_log',
         'method': 'GET',
-        'path': '/api/v1/actions/event-log/{id}',
-        'path_params': lambda test: {'id': str(test.event_log.pk)},
+        'path': '/api/v1/actions/event-log/{event_id}',
+        'path_params': lambda test: {'event_id': str(test.event_log.pk)},
         'needle': 'mcp-audit',
     },
     {

@@ -100,7 +100,7 @@ These map MCP tools to fields on each **local** audit row before `POST /mcp` for
 | List Shellui Actions webhook rules | `email_list_action_rules` | GET | `/api/v1/actions/rules` | read |
 | Read default event catalog | `email_get_catalog` | GET | `/api/v1/catalog` | read |
 | Create an email rule (and template copy) | `email_create_rules` | POST | `/api/v1/rules` | write |
-| Send a design test | `email_send_test_templates` | POST | `/api/v1/templates/{template_id}/send-test` | write |
+| Send a design test | `email_send_test_templates` | POST | `/api/v1/templates/{template_id}/send-test` | destructive |
 
 Local rows (for this service’s `on_call` hook) include **`tool`**, **`resource_path`**, the REST **`method`**, **`access_kind`** (`destructive` when the OpenAPI operation is destructive), boolean **`tool_destructive`** (forwarded ingest **`access_kind`** follows this flag for truthful destructive labeling), categorical **`outcome`**, **`duration_ms`**, optional `error_code`, optional **`http_status`** after the DRF view runs (this becomes Identity’s **`status`** on forwarded rows), optional **`approval_request_id`** when applicable, a full copy of normalized claims under **`verified_agent_claims`** (used for delegated live checks before `forward_call_log` posts), echo fields for audits (`mcp_access`, `mcp_read`, `mcp_destructive`, `scope`, `global_agent_id` when delegated), and optional delegation fields used only for the live delegated check (`grant_version`, `global_company_id`, `company_binding_version`). Rows do **not** include raw tool arguments, response bodies, or OpenAPI summaries as titles. **`arguments_hash`** is used only for Identity **approval** assertions, not for call-log POST bodies. Event-triggered email **rules** are normal MCP-tagged API calls; **provider** credentials (Resend, SES, SMTP passwords) stay in company settings and are never MCP tools. Built-in **themes** and template **variables** are the typed fields documented in [Templates and translations](templates.md); pass **`variables`** as a JSON object for `render-preview` and related tools.
 
@@ -147,8 +147,8 @@ The tables list the HTTP API. Paths are under `/api/v1/`. Agents act as the comp
 | DELETE | `/templates/{template_id}` | Delete an unused copy. |
 | GET | `/templates/{template_id}/versions` | List versions (document JSON, translations, theme). |
 | POST | `/templates/{template_id}/versions` | Create a draft version. |
-| GET | `/templates/{template_id}/versions/{number}` | Read one version. |
-| POST | `/templates/{template_id}/versions/{number}/publish` | Publish a draft. |
+| GET | `/templates/{template_id}/versions/{version_number}` | Read one version. |
+| POST | `/templates/{template_id}/versions/{version_number}/publish` | Publish a draft. |
 | POST | `/templates/{template_id}/render-preview` | Render HTML and plain text with placeholders filled. Does not send mail. |
 | POST | `/templates/{template_id}/send-test` | Send one test message to the owner address. |
 
@@ -173,16 +173,16 @@ See [Email rules](rules.md).
 | GET | `/actions/events` | Event types you can subscribe to. |
 | GET | `/actions/rules` | List webhook rules. |
 | POST | `/actions/rules` | Create a rule. The HTTP body includes `secret` once. MCP results mask it. |
-| GET | `/actions/rules/{id}` | Read one rule (masked secret). |
-| PATCH | `/actions/rules/{id}` | Update URL, name, or enabled state. |
-| DELETE | `/actions/rules/{id}` | Delete a rule. |
-| POST | `/actions/rules/{id}/rotate-secret` | Rotate the signing secret. The HTTP body includes it once. MCP results mask it. |
-| POST | `/actions/rules/{id}/send-test` | Queue a sample delivery. |
+| GET | `/actions/rules/{rule_id}` | Read one rule (masked secret). |
+| PATCH | `/actions/rules/{rule_id}` | Update URL, name, or enabled state. |
+| DELETE | `/actions/rules/{rule_id}` | Delete a rule. |
+| POST | `/actions/rules/{rule_id}/rotate-secret` | Rotate the signing secret. The HTTP body includes it once. MCP results mask it. |
+| POST | `/actions/rules/{rule_id}/send-test` | Queue a sample delivery. |
 | GET | `/actions/deliveries` | Recent webhook deliveries. |
 | GET | `/actions/deliveries/{delivery_id}` | One delivery with attempts. |
 | POST | `/actions/deliveries/{delivery_id}/requeue` | Requeue a failed delivery. |
 | GET | `/actions/event-log` | Recent domain events (company scope). |
-| GET | `/actions/event-log/{id}` | One event log row. |
+| GET | `/actions/event-log/{event_id}` | One event log row. |
 
 See [Webhooks](actions.md).
 
@@ -206,21 +206,16 @@ These routes are omitted from the published schema or never carry `x-mcp`:
 
 `POST /api/v1/templates/{template_id}/render-preview` accepts optional `number`, `document`, `subject`, `preheader`, `theme`, and `variables`. When `document` is omitted, the newest draft is used, then the active published version. Use **`variables`** as a JSON object of strings (and other JSON types the template expects). Optional **`theme`** is a string such as `barebone` or `shellui` (see [Templates and translations](templates.md) for valid theme names in this repo).
 
-Example MCP tool `email_render_preview_templates` call (OpenAPI path template in `path`, ids in `path_params`, tool body under `body`):
+Example MCP tool `email_render_preview_templates` call. Arguments are the template id and the preview fields. Do not send `method`, `path`, or a raw URL:
 
 ```json
 {
   "name": "email_render_preview_templates",
   "arguments": {
-    "path": "/api/v1/templates/{template_id}/render-preview",
-    "path_params": {"template_id": "1"},
-    "method": "POST",
-    "body": {
-      "theme": "barebone",
-      "variables": {
-        "company_name": "Acme",
-        "action_url": "https://app.example.com/auth/callback?token=sample"
-      }
+    "template_id": 1,
+    "variables": {
+      "company_name": "Acme",
+      "action_url": "https://app.example.com/auth/callback?token=sample"
     }
   }
 }
@@ -247,21 +242,19 @@ Use exact tool names from `tools/list` (for example `email_list_rules`), not Ope
   "method": "tools/call",
   "params": {
     "name": "email_list_rules",
-    "arguments": {"path": "/api/v1/rules", "method": "GET"}
+    "arguments": {}
   }
 }
 ```
 
-Paths with placeholders (for example `/api/v1/templates/{template_id}/render-preview`) must use the OpenAPI template in `path` and pass values in `path_params`:
+Pass path ids and body fields as top-level arguments. `event_type`, `lane`, `status`, and the other closed sets are `enum` values on the tool schema:
 
 ```json
 {
   "name": "email_render_preview_templates",
   "arguments": {
-    "path": "/api/v1/templates/{template_id}/render-preview",
-    "path_params": {"template_id": "12"},
-    "method": "POST",
-    "body": {"variables": {"company_name": "Acme"}}
+    "template_id": 12,
+    "variables": {"company_name": "Acme"}
   }
 }
 ```

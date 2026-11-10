@@ -65,12 +65,12 @@ urlpatterns = [
     path('templates/<int:template_id>', TemplateDetailView.as_view(), name='email-template-detail'),
     path('templates/<int:template_id>/versions', TemplateVersionListView.as_view(), name='email-template-versions'),
     path(
-        'templates/<int:template_id>/versions/<int:number>',
+        'templates/<int:template_id>/versions/<int:version_number>',
         TemplateVersionDetailView.as_view(),
         name='email-template-version',
     ),
     path(
-        'templates/<int:template_id>/versions/<int:number>/publish',
+        'templates/<int:template_id>/versions/<int:version_number>/publish',
         TemplatePublishView.as_view(),
         name='email-template-publish',
     ),

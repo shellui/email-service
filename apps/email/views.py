@@ -53,7 +53,16 @@ from apps.email.openapi_admin import (
     mcp_openapi_fields,
 )
 from apps.email.schema import (
+    CATALOG_EVENT_QUERY,
     COMPANY_QUERY,
+    LANE_QUERY,
+    MESSAGE_LIMIT_QUERY,
+    MESSAGE_STATUS_QUERY,
+    SERVICE_QUERY,
+    STATS_FROM_QUERY,
+    STATS_TO_QUERY,
+    TEMPLATE_EVENT_QUERY,
+    TEMPLATE_KEY_QUERY,
     BatchRequestSerializer,
     BroadcastCreateSerializer,
     BroadcastListSerializer,
@@ -323,7 +332,7 @@ class MessageDetailView(APIView):
         request=None,
         responses={200: MessageCancelSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_messages_cancel'),
-        **mcp_tool(operation_id='api_v1_messages_cancel', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_messages_cancel', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class MessageCancelView(APIView):
@@ -346,33 +355,7 @@ class MessageCancelView(APIView):
     get=extend_schema(
         tags=['messages'],
         operation_id='api_v1_messages_list',
-        parameters=[
-            COMPANY_QUERY,
-            OpenApiParameter(
-                'status',
-                str,
-                OpenApiParameter.QUERY,
-                required=False,
-            ),
-            OpenApiParameter(
-                'lane',
-                str,
-                OpenApiParameter.QUERY,
-                required=False,
-            ),
-            OpenApiParameter(
-                'template_key',
-                str,
-                OpenApiParameter.QUERY,
-                required=False,
-            ),
-            OpenApiParameter(
-                'limit',
-                int,
-                OpenApiParameter.QUERY,
-                required=False,
-            ),
-        ],
+        parameters=[COMPANY_QUERY, MESSAGE_STATUS_QUERY, LANE_QUERY, TEMPLATE_KEY_QUERY, MESSAGE_LIMIT_QUERY],
         responses={200: MessageListSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_messages_list'),
         **mcp_tool(operation_id='api_v1_messages_list', read_only=True, sensitive=True),
@@ -577,15 +560,7 @@ def _require_editable(template: EmailTemplate) -> None:
     get=extend_schema(
         tags=['templates'],
         operation_id='api_v1_templates_list',
-        parameters=[
-            COMPANY_QUERY,
-            OpenApiParameter(
-                'event_type',
-                OpenApiTypes.STR,
-                OpenApiParameter.QUERY,
-                required=False,
-            ),
-        ],
+        parameters=[COMPANY_QUERY, TEMPLATE_EVENT_QUERY],
         responses={200: TemplateListSerializer, **_API_ERRORS},
         examples=[EXAMPLE_TEMPLATE_LIST],
         **mcp_openapi_fields('api_v1_templates_list'),
@@ -744,11 +719,11 @@ class TemplateVersionListView(APIView):
     ),
 )
 class TemplatePublishView(APIView):
-    def post(self, request, template_id, number):
+    def post(self, request, template_id, version_number):
         try:
             template, _user = _company_template(request, template_id)
             _require_editable(template)
-            version = TemplateVersion.objects.filter(template=template, number=number).first()
+            version = TemplateVersion.objects.filter(template=template, number=version_number).first()
             if version is None:
                 raise SendError(404, 'template_not_found')
             publish_version(template, version, authorization=request.META.get('HTTP_AUTHORIZATION', ''))
@@ -769,10 +744,10 @@ class TemplatePublishView(APIView):
     ),
 )
 class TemplateVersionDetailView(APIView):
-    def get(self, request, template_id, number):
+    def get(self, request, template_id, version_number):
         try:
             template, _user = _company_template(request, template_id)
-            version = TemplateVersion.objects.filter(template=template, number=number).first()
+            version = TemplateVersion.objects.filter(template=template, number=version_number).first()
             if version is None:
                 raise SendError(404, 'template_not_found')
         except SendError as exc:
@@ -880,7 +855,7 @@ class TemplateRenderPreviewView(APIView):
         request=TemplateTestSendRequestSerializer,
         responses={200: TestSendResponseSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_templates_send_test'),
-        **mcp_tool(operation_id='api_v1_templates_send_test', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_templates_send_test', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class TemplateTestSendView(APIView):
@@ -946,15 +921,7 @@ class TemplateTestSendView(APIView):
     get=extend_schema(
         tags=['rules'],
         operation_id='api_v1_rules_list',
-        parameters=[
-            COMPANY_QUERY,
-            OpenApiParameter(
-                'service',
-                OpenApiTypes.STR,
-                OpenApiParameter.QUERY,
-                required=False,
-            ),
-        ],
+        parameters=[COMPANY_QUERY, SERVICE_QUERY],
         responses={200: EmailRuleListSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_rules_list'),
         **mcp_tool(operation_id='api_v1_rules_list', read_only=True),
@@ -1133,7 +1100,7 @@ def _kept_text(request, key: str, existing: CompanyProvider | None, default: str
         request=ProviderWriteSerializer,
         responses={200: ProviderSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_provider_update'),
-        **mcp_tool(operation_id='api_v1_provider_update', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_provider_update', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class ProviderView(APIView):
@@ -1253,7 +1220,7 @@ class ProviderView(APIView):
         request=AuthLinkHostsWriteSerializer,
         responses={200: AuthLinkHostsSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_auth_link_hosts_update'),
-        **mcp_tool(operation_id='api_v1_auth_link_hosts_update', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_auth_link_hosts_update', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class AuthLinkHostsView(APIView):
@@ -1293,7 +1260,7 @@ class AuthLinkHostsView(APIView):
         request=ProviderTestSendRequestSerializer,
         responses={200: TestSendResponseSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_provider_test_send'),
-        **mcp_tool(operation_id='api_v1_provider_test_send', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_provider_test_send', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class ProviderTestSendView(APIView):
@@ -1316,13 +1283,7 @@ class ProviderTestSendView(APIView):
     get=extend_schema(
         tags=['stats'],
         operation_id='api_v1_stats_retrieve',
-        parameters=[
-            COMPANY_QUERY,
-            OpenApiParameter('from', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('to', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('lane', str, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter('event_type', str, OpenApiParameter.QUERY, required=False),
-        ],
+        parameters=[COMPANY_QUERY, STATS_FROM_QUERY, STATS_TO_QUERY, LANE_QUERY, CATALOG_EVENT_QUERY],
         responses={200: StatsSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_stats_retrieve'),
         **mcp_tool(operation_id='api_v1_stats_retrieve', read_only=True, sensitive=True),
@@ -1852,7 +1813,7 @@ class BroadcastPreviewView(APIView):
         request=None,
         responses={202: BroadcastSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_broadcasts_send'),
-        **mcp_tool(operation_id='api_v1_broadcasts_send', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_broadcasts_send', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class BroadcastSendView(APIView):

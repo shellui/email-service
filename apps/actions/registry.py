@@ -36,6 +36,11 @@ def all_event_types() -> list[DomainEventType]:
     return list(_EVENTS)
 
 
+def event_type_ids() -> tuple[str, ...]:
+    """Shellui Actions event ids a webhook rule can subscribe to."""
+    return tuple(event.id for event in _EVENTS)
+
+
 def is_registered_event(event_id: str) -> bool:
     return event_id in _BY_ID
 

@@ -246,6 +246,8 @@ SPECTACULAR_SETTINGS = {
         {'name': 'mcp-tools', 'description': 'Operations exposed to Shellui MCP agents.'},
     ],
     'POSTPROCESSING_HOOKS': ['apps.authapi.spectacular_hooks.postprocess_mcp_tool_tags'],
+    # Keep choice help_text as the parameter description. Do not append "* `value` - value".
+    'ENUM_GENERATE_CHOICE_DESCRIPTION': False,
     'ENUM_NAME_OVERRIDES': {
         'AudienceModeEnum': ['filter', 'pick', 'newsletter'],
         'SubscriberAddModeEnum': ['confirm', 'consented'],

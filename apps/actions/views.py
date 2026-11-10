@@ -217,8 +217,8 @@ class ActionRuleListCreateView(APIView):
     ),
 )
 class ActionRuleDetailView(APIView):
-    def get(self, request, pk):
-        rule = ActionRule.objects.filter(pk=pk).first()
+    def get(self, request, rule_id):
+        rule = ActionRule.objects.filter(pk=rule_id).first()
         if rule is None:
             return error_response(SendError(404, 'not_found'), request)
         try:
@@ -227,8 +227,8 @@ class ActionRuleDetailView(APIView):
             return error_response(exc, request)
         return Response(_rule_payload(rule))
 
-    def patch(self, request, pk):
-        rule = ActionRule.objects.filter(pk=pk).first()
+    def patch(self, request, rule_id):
+        rule = ActionRule.objects.filter(pk=rule_id).first()
         if rule is None:
             return error_response(SendError(404, 'not_found'), request)
         try:
@@ -255,8 +255,8 @@ class ActionRuleDetailView(APIView):
             return error_response(exc, request)
         return Response(_rule_payload(rule))
 
-    def delete(self, request, pk):
-        rule = ActionRule.objects.filter(pk=pk).first()
+    def delete(self, request, rule_id):
+        rule = ActionRule.objects.filter(pk=rule_id).first()
         if rule is None:
             return error_response(SendError(404, 'not_found'), request)
         try:
@@ -274,12 +274,12 @@ class ActionRuleDetailView(APIView):
         request=None,
         responses={200: ActionRuleSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_actions_rules_rotate_secret'),
-        **mcp_tool(operation_id='api_v1_actions_rules_rotate_secret', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_rules_rotate_secret', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class ActionRuleRotateSecretView(APIView):
-    def post(self, request, pk):
-        rule = ActionRule.objects.filter(pk=pk).first()
+    def post(self, request, rule_id):
+        rule = ActionRule.objects.filter(pk=rule_id).first()
         if rule is None:
             return error_response(SendError(404, 'not_found'), request)
         try:
@@ -300,12 +300,12 @@ class ActionRuleRotateSecretView(APIView):
         request=None,
         responses={200: ActionTestQueuedSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_actions_rules_send_test'),
-        **mcp_tool(operation_id='api_v1_actions_rules_send_test', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_rules_send_test', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class ActionRuleSendTestView(APIView):
-    def post(self, request, pk):
-        rule = ActionRule.objects.filter(pk=pk).first()
+    def post(self, request, rule_id):
+        rule = ActionRule.objects.filter(pk=rule_id).first()
         if rule is None:
             return error_response(SendError(404, 'not_found'), request)
         try:
@@ -389,7 +389,7 @@ class ActionDeliveryDetailView(APIView):
         request=None,
         responses={200: DeliverySerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_actions_deliveries_requeue'),
-        **mcp_tool(operation_id='api_v1_actions_deliveries_requeue', read_only=False, sensitive=True),
+        **mcp_tool(operation_id='api_v1_actions_deliveries_requeue', read_only=False, destructive=True, sensitive=True),
     ),
 )
 class ActionDeliveryRequeueView(APIView):
@@ -486,8 +486,8 @@ class EventLogListView(APIView):
     ),
 )
 class EventLogDetailView(APIView):
-    def get(self, request, pk):
-        row = EventLog.objects.filter(pk=pk).first()
+    def get(self, request, event_id):
+        row = EventLog.objects.filter(pk=event_id).first()
         if row is None:
             return error_response(SendError(404, 'not_found'), request)
         try:
