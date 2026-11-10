@@ -189,8 +189,8 @@ class McpToolContractTests(TestCase):
             self.assertNotIn('—', description, name)
             self.assertNotIn('–', description, name)
             self.assertIsNone(_BANNED_COPY.search(description), name)
-            self.assertNotIn('ShellUI', description, name)
-            self.assertNotIn('ShellUi', description, name)
+            for bad in ('Shell' + 'UI', 'Shell' + 'Ui', 'shell' + 'UI'):
+                self.assertNotIn(bad, description, name)
             plain = re.sub(r'`[^`]*`', '', description)
             self.assertLessEqual(len(re.findall(r'[.!?]', plain)), 2, description)
             for dotted, enum in openapi_enums.get(name, {}).items():
