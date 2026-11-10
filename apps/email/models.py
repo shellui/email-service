@@ -137,6 +137,7 @@ class EmailRule(models.Model):
 
     MODE_HINTS = 'hints'
     MODE_STATIC = 'static'
+    MODES = (MODE_HINTS, MODE_STATIC)
 
     company_id = models.PositiveIntegerField(db_index=True)
     service = models.CharField(max_length=64)
@@ -385,6 +386,20 @@ class Message(models.Model):
     STATUS_EXPIRED = 'expired'
     STATUS_SUPPRESSED = 'suppressed'
     STATUS_CANCELLED = 'cancelled'
+    STATUSES = (
+        STATUS_QUEUED,
+        STATUS_SENDING,
+        STATUS_RETRYING,
+        STATUS_SENT,
+        STATUS_DELIVERED,
+        STATUS_DELAYED,
+        STATUS_BOUNCED,
+        STATUS_COMPLAINED,
+        STATUS_FAILED,
+        STATUS_EXPIRED,
+        STATUS_SUPPRESSED,
+        STATUS_CANCELLED,
+    )
 
     TERMINAL = {
         STATUS_SENT,
@@ -457,6 +472,7 @@ class Suppression(models.Model):
     REASON_COMPLAINT = 'complaint'
     REASON_MANUAL = 'manual'
     REASON_PROVIDER = 'provider'
+    REASONS = (REASON_HARD_BOUNCE, REASON_COMPLAINT, REASON_MANUAL, REASON_PROVIDER)
 
     company_id = models.PositiveIntegerField(null=True, blank=True)
     email_hmac = models.CharField(max_length=64)

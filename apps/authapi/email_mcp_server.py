@@ -18,6 +18,7 @@ from shellui_django.mcp.server import McpServer
 from shellui_django.mcp.write_gate import decide_write, is_destructive_operation
 
 from apps.authapi.mcp_claims import AgentClaimsValidationError, normalize_mcp_agent_claims, strict_json_nonneg_int
+from apps.authapi.mcp_tool_schema import coerce_mcp_arguments, public_mcp_tools
 from apps.authapi.mcp_identity import (
     McpDelegatedApprovalRoutingError,
     McpIdentityUnavailable,
@@ -51,6 +52,14 @@ _ERROR_CODES = frozenset(
         'out_of_sync',
     }
 )
+
+def _is_tools_list(request: HttpRequest) -> bool:
+    try:
+        payload = json.loads((request.body or b'').decode('utf-8') or '{}')
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return payload.get('method') == 'tools/list'
+
 
 def _tool_result_payload(response: Any) -> Any:
     """View payload for an MCP tool result.
@@ -166,7 +175,17 @@ class EmailMcpServer(McpServer):
                 agent_claims = normalize_mcp_agent_claims(agent_claims)
             except AgentClaimsValidationError:
                 return JsonResponse({'error': 'forbidden'}, status=403)
-        return super().handle(request, agent_claims=agent_claims)
+        response = super().handle(request, agent_claims=agent_claims)
+        if not _is_tools_list(request) or response.status_code != 200:
+            return response
+        try:
+            body = json.loads(response.content.decode('utf-8') or '{}')
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return response
+        result = body.get('result')
+        if not isinstance(result, dict) or not isinstance(result.get('tools'), list):
+            return response
+        return JsonResponse(self._result(body.get('id'), {'tools': public_mcp_tools(self.schema_provider())}))
 
     def _tools_call(
         self,
@@ -185,6 +204,7 @@ class EmailMcpServer(McpServer):
         tool = next((t for t in tools if t['name'] == tool_name), None)
         if tool is None:
             return JsonResponse(self._error(req_id, -32602, 'Unknown tool'))
+        arguments = coerce_mcp_arguments(arguments, tool)
         with approval_state_extras_scope():
             return self._tools_call_inner(
                 request, req_id, params, agent_claims, tool_name, arguments, req_trace, schema, tool

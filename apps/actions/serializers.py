@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from apps.actions.registry import event_type_ids
 from apps.authapi.mcp_fields import McpSecretCharField, McpSensitiveCharField, McpSensitiveJSONField
 
 
@@ -43,8 +44,11 @@ class ActionRuleListSerializer(serializers.Serializer):
 
 class ActionRuleCreateSerializer(serializers.Serializer):
     name = serializers.CharField()
-    event_type = serializers.CharField()
-    url = serializers.CharField()
+    event_type = serializers.ChoiceField(
+        choices=event_type_ids(),
+        help_text='Shellui Actions event id this rule receives.',
+    )
+    url = serializers.CharField(help_text='Public HTTPS URL that receives the signed webhook.')
     description = serializers.CharField(required=False, allow_blank=True)
     enabled = serializers.BooleanField(required=False)
     secret = McpSecretCharField(required=False, allow_blank=True)

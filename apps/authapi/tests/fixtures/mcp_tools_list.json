@@ -2,3609 +2,2281 @@
   "tools": [
     {
       "name": "email_broadcasts_preview",
-      "description": "Preview broadcast audience size",
+      "description": "Counts sendable, unsubscribed, and suppressed recipients for broadcast `broadcast_id` without sending mail. Optional `audience` overrides the saved audience for this count.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/broadcasts/{broadcast_id}/preview"
+          "broadcast_id": {
+            "description": "Broadcast id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
-          },
-          "query": {
+          "audience": {
+            "description": "Defaults to the saved audience.",
             "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
             "properties": {
-              "audience": {
-                "description": "Defaults to the saved audience.",
-                "type": "object",
-                "properties": {
-                  "mode": {
-                    "description": "filter: members matching every filter. pick: chosen users and addresses. newsletter: confirmed subscribers of list_id.\n\n* `filter` - filter\n* `pick` - pick\n* `newsletter` - newsletter",
-                    "type": "string",
-                    "enum": [
-                      "filter",
-                      "pick",
-                      "newsletter"
-                    ]
-                  },
-                  "list_id": {
-                    "description": "Newsletter list, for mode newsletter.",
-                    "type": "integer"
-                  },
-                  "group_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    }
-                  },
-                  "roles": {
-                    "type": "array",
-                    "items": {
-                      "description": "* `owner` - owner\n* `staff` - staff\n* `member` - member",
-                      "type": "string",
-                      "enum": [
-                        "owner",
-                        "staff",
-                        "member"
-                      ]
-                    }
-                  },
-                  "access": {
-                    "description": "* `enabled` - enabled\n* `disabled` - disabled\n* `any` - any",
-                    "type": "string",
-                    "enum": [
-                      "enabled",
-                      "disabled",
-                      "any"
-                    ]
-                  },
-                  "joined_after": {
-                    "description": "ISO date.",
-                    "type": "string"
-                  },
-                  "joined_before": {
-                    "description": "ISO date, inclusive.",
-                    "type": "string"
-                  },
-                  "seen_after": {
-                    "description": "ISO date.",
-                    "type": "string"
-                  },
-                  "seen_before": {
-                    "description": "ISO date, inclusive. Never-seen users match.",
-                    "type": "string"
-                  },
-                  "user_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    }
-                  },
-                  "emails": {
-                    "description": "Addresses outside the directory. They get the main language.",
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "additionalProperties": false,
-                "required": [
-                  "mode"
+              "mode": {
+                "description": "filter: members matching every filter. pick: chosen users and addresses. newsletter: confirmed subscribers of list_id.",
+                "type": "string",
+                "enum": [
+                  "filter",
+                  "pick",
+                  "newsletter"
                 ]
-              }
-            }
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "broadcast_id": {
+              },
+              "list_id": {
+                "description": "Newsletter list, for mode newsletter.",
+                "type": "integer"
+              },
+              "group_ids": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "roles": {
+                "description": "Company roles to match.",
+                "type": "array",
+                "items": {
+                  "description": "Company role: owner, staff, or member.",
+                  "type": "string",
+                  "enum": [
+                    "owner",
+                    "staff",
+                    "member"
+                  ]
+                }
+              },
+              "access": {
+                "description": "Account access to match: enabled, disabled, or any.",
+                "type": "string",
+                "enum": [
+                  "enabled",
+                  "disabled",
+                  "any"
+                ]
+              },
+              "joined_after": {
+                "description": "ISO date.",
                 "type": "string"
+              },
+              "joined_before": {
+                "description": "ISO date, inclusive.",
+                "type": "string"
+              },
+              "seen_after": {
+                "description": "ISO date.",
+                "type": "string"
+              },
+              "seen_before": {
+                "description": "ISO date, inclusive. Never-seen users match.",
+                "type": "string"
+              },
+              "user_ids": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "emails": {
+                "description": "Addresses outside the directory. They get the main language.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
+            "additionalProperties": false,
             "required": [
-              "broadcast_id"
+              "mode"
             ]
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "broadcast_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_broadcasts_send",
-      "description": "Send a broadcast",
+      "description": "Queues delivery of broadcast `broadcast_id` to its audience through the company bulk sender, and returns the broadcast state. A broadcast that cannot be sent returns 409.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/broadcasts/{broadcast_id}/send"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "broadcast_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "broadcast_id"
-            ]
+          "broadcast_id": {
+            "description": "Broadcast id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "broadcast_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_cancel_messages",
-      "description": "Cancel a queued message",
+      "description": "Cancels queued or retrying message `message_id`, clears stored variables, and returns the id and status cancelled. A message that already left the queue returns 409 message_not_cancellable.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/messages/{message_id}/cancel"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "message_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "message_id"
-            ]
+          "message_id": {
+            "description": "Public message id (for example `msg_01h2x3y4z5`).",
+            "type": "string"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "message_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_create_action_rules",
-      "description": "Create a Shellui Actions webhook rule",
+      "description": "Creates a Shellui Actions webhook rule for `event_type`, `name`, and HTTPS `url`, and returns the rule with `secret` masked. Read the plaintext secret from the HTTP API, not from this tool.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/rules"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
+          "name": {
+            "type": "string"
+          },
+          "event_type": {
+            "description": "Shellui Actions event id this rule receives.",
             "type": "string",
             "enum": [
-              "POST"
+              "email.message.sent",
+              "email.message.delivered",
+              "email.message.delivery_delayed",
+              "email.message.bounced",
+              "email.message.complained",
+              "email.message.failed",
+              "email.message.expired",
+              "email.message.suppressed",
+              "email.unsubscribe.created",
+              "email.newsletter.requested",
+              "email.newsletter.confirmed",
+              "email.newsletter.unsubscribed"
             ]
           },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
+          "url": {
+            "description": "Public HTTPS URL that receives the signed webhook.",
+            "type": "string"
           },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "event_type": {
-                "type": "string"
-              },
-              "url": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "enabled": {
-                "type": "boolean"
-              },
-              "secret": {
-                "type": "string"
-              },
-              "newsletter_id": {
-                "description": "email.newsletter.* rules only: only events of this list. Null or 0 clears it.",
-                "type": [
-                  "integer",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "event_type",
-              "name",
-              "url"
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "string"
+          },
+          "newsletter_id": {
+            "description": "email.newsletter.* rules only: only events of this list. Null or 0 clears it.",
+            "type": [
+              "integer",
+              "null"
             ]
           }
         },
         "required": [
-          "path",
-          "method"
+          "event_type",
+          "name",
+          "url"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_create_broadcasts",
-      "description": "Create a broadcast draft",
+      "description": "Creates a broadcast draft named `name` from library `source_key`, with optional `language` and `audience`, and returns the draft including its id and template_id.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/broadcasts"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
+          "name": {
+            "type": "string"
+          },
+          "source_key": {
+            "description": "Library template to start from.",
+            "type": "string"
+          },
+          "language": {
+            "description": "Main language of the content, en or fr. Default en.",
             "type": "string",
             "enum": [
-              "POST"
+              "en",
+              "fr"
             ]
           },
-          "query": {
+          "audience": {
             "type": "object",
-            "additionalProperties": false,
             "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "source_key": {
-                "description": "Library template to start from.",
-                "type": "string"
-              },
-              "language": {
-                "description": "Main language of the content. Default en.",
-                "type": "string"
-              },
-              "audience": {
-                "type": "object",
-                "properties": {
-                  "mode": {
-                    "description": "filter: members matching every filter. pick: chosen users and addresses. newsletter: confirmed subscribers of list_id.\n\n* `filter` - filter\n* `pick` - pick\n* `newsletter` - newsletter",
-                    "type": "string",
-                    "enum": [
-                      "filter",
-                      "pick",
-                      "newsletter"
-                    ]
-                  },
-                  "list_id": {
-                    "description": "Newsletter list, for mode newsletter.",
-                    "type": "integer"
-                  },
-                  "group_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    }
-                  },
-                  "roles": {
-                    "type": "array",
-                    "items": {
-                      "description": "* `owner` - owner\n* `staff` - staff\n* `member` - member",
-                      "type": "string",
-                      "enum": [
-                        "owner",
-                        "staff",
-                        "member"
-                      ]
-                    }
-                  },
-                  "access": {
-                    "description": "* `enabled` - enabled\n* `disabled` - disabled\n* `any` - any",
-                    "type": "string",
-                    "enum": [
-                      "enabled",
-                      "disabled",
-                      "any"
-                    ]
-                  },
-                  "joined_after": {
-                    "description": "ISO date.",
-                    "type": "string"
-                  },
-                  "joined_before": {
-                    "description": "ISO date, inclusive.",
-                    "type": "string"
-                  },
-                  "seen_after": {
-                    "description": "ISO date.",
-                    "type": "string"
-                  },
-                  "seen_before": {
-                    "description": "ISO date, inclusive. Never-seen users match.",
-                    "type": "string"
-                  },
-                  "user_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    }
-                  },
-                  "emails": {
-                    "description": "Addresses outside the directory. They get the main language.",
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "additionalProperties": false,
-                "required": [
-                  "mode"
+              "mode": {
+                "description": "filter: members matching every filter. pick: chosen users and addresses. newsletter: confirmed subscribers of list_id.",
+                "type": "string",
+                "enum": [
+                  "filter",
+                  "pick",
+                  "newsletter"
                 ]
+              },
+              "list_id": {
+                "description": "Newsletter list, for mode newsletter.",
+                "type": "integer"
+              },
+              "group_ids": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "roles": {
+                "description": "Company roles to match.",
+                "type": "array",
+                "items": {
+                  "description": "Company role: owner, staff, or member.",
+                  "type": "string",
+                  "enum": [
+                    "owner",
+                    "staff",
+                    "member"
+                  ]
+                }
+              },
+              "access": {
+                "description": "Account access to match: enabled, disabled, or any.",
+                "type": "string",
+                "enum": [
+                  "enabled",
+                  "disabled",
+                  "any"
+                ]
+              },
+              "joined_after": {
+                "description": "ISO date.",
+                "type": "string"
+              },
+              "joined_before": {
+                "description": "ISO date, inclusive.",
+                "type": "string"
+              },
+              "seen_after": {
+                "description": "ISO date.",
+                "type": "string"
+              },
+              "seen_before": {
+                "description": "ISO date, inclusive. Never-seen users match.",
+                "type": "string"
+              },
+              "user_ids": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "emails": {
+                "description": "Addresses outside the directory. They get the main language.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
+            "additionalProperties": false,
             "required": [
-              "name",
-              "source_key"
+              "mode"
             ]
           }
         },
         "required": [
-          "path",
-          "method"
+          "name",
+          "source_key"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_create_library",
-      "description": "Create a company library design. Send name, or source_id to duplicate.",
+      "description": "Creates a company library design from `name`, or copies one when `source_id` is set. Returns the new design, including its id and rendered HTML.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/library"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
+          "name": {
+            "type": "string"
           },
-          "query": {
+          "source_id": {
+            "description": "Library template to duplicate. Create only.",
+            "type": "integer"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "preheader": {
+            "type": "string"
+          },
+          "document": {
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
+            "additionalProperties": true,
+            "description": "JSON value"
           },
-          "body": {
+          "theme": {
+            "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. A duplicate keeps its source's when omitted.",
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "source_id": {
-                "description": "Library template to duplicate. Create only.",
-                "type": "integer"
-              },
-              "subject": {
-                "type": "string"
-              },
-              "preheader": {
-                "type": "string"
-              },
-              "document": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "JSON value"
-              },
-              "theme": {
-                "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. A duplicate keeps its source's when omitted.",
-                "type": "object",
-                "additionalProperties": true
-              }
-            }
+            "additionalProperties": true
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_create_newsletters",
-      "description": "Create a newsletter list",
+      "description": "Creates a newsletter list named `name`, with its confirmation template and sign-up URL, and returns the list including its id and public_key.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/newsletters"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "default_language": {
+            "description": "en or fr. Default en.",
             "type": "string",
             "enum": [
-              "POST"
+              "en",
+              "fr"
             ]
           },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
+          "allowed_origins": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "default_language": {
-                "type": "string"
-              },
-              "allowed_origins": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "confirmed_redirect_url": {
-                "type": "string"
-              },
-              "turnstile_site_key": {
-                "type": "string"
-              },
-              "turnstile_secret": {
-                "description": "Write only. Empty clears it.",
-                "type": "string"
-              }
-            },
-            "required": [
-              "name"
-            ]
+          "confirmed_redirect_url": {
+            "type": "string"
+          },
+          "turnstile_site_key": {
+            "type": "string"
+          },
+          "turnstile_secret": {
+            "description": "Write only. Empty clears it.",
+            "type": "string"
           }
         },
         "required": [
-          "path",
-          "method"
+          "name"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_create_newsletters_subscribers",
-      "description": "Add a newsletter subscriber",
+      "description": "Adds `email` to newsletter `newsletter_id` and returns the outcome and subscriber. `mode` confirm sends a confirmation email, and consented records an existing opt-in without mail.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/newsletters/{newsletter_id}/subscribers"
+          "newsletter_id": {
+            "description": "Newsletter list id.",
+            "type": "integer"
           },
-          "method": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "language": {
+            "description": "en or fr. Omit to use the list default.",
             "type": "string",
             "enum": [
-              "POST"
+              "en",
+              "fr"
             ]
           },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "email": {
-                "type": "string",
-                "format": "email"
-              },
-              "first_name": {
-                "type": "string"
-              },
-              "language": {
-                "type": "string"
-              },
-              "mode": {
-                "description": "confirm (default) sends the confirmation email. consented adds the address as confirmed.\n\n* `confirm` - confirm\n* `consented` - consented",
-                "type": "string",
-                "enum": [
-                  "confirm",
-                  "consented"
-                ]
-              }
-            },
-            "required": [
-              "email"
-            ]
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "newsletter_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "newsletter_id"
+          "mode": {
+            "description": "confirm (default) sends the confirmation email. consented adds the address as confirmed.",
+            "type": "string",
+            "enum": [
+              "confirm",
+              "consented"
             ]
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "newsletter_id",
+          "email"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_create_rules",
-      "description": "Create an email rule and template copy",
+      "description": "Creates an email rule for `event_type`, a template copy from `content.library_id`, and the first published version. Returns the rule, including its id, recipients, and template_id.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/rules"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
+          "service": {
+            "description": "Owner service for event_type. Omit to use the catalog service. A mismatch returns event_unknown.",
             "type": "string",
             "enum": [
-              "POST"
+              "email",
+              "hosting",
+              "identity",
+              "storage"
             ]
           },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
+          "event_type": {
+            "description": "Catalog event id. Auth-lane events are rejected.",
+            "type": "string",
+            "enum": [
+              "hosting.app.created",
+              "hosting.app.deleted",
+              "hosting.deployment.created",
+              "hosting.deployment.failed",
+              "hosting.deployment.succeeded",
+              "identity.group.created",
+              "identity.group.deleted",
+              "identity.group.membership_changed",
+              "identity.group.updated",
+              "identity.scim.provisioning_conflict",
+              "identity.scim.token.created",
+              "identity.scim.token.revoked",
+              "identity.scim.user.deprovisioned",
+              "identity.scim.user.provisioned",
+              "identity.user.created",
+              "identity.user.deleted",
+              "identity.user.invitation_revoked",
+              "identity.user.updated",
+              "storage.bucket.created",
+              "storage.object.deleted",
+              "storage.object.uploaded",
+              "email.newsletter.requested",
+              "email.newsletter.confirmed",
+              "email.newsletter.unsubscribed"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "recipient_mode": {
+            "description": "hints uses addresses on the event. static uses static_recipients.",
+            "type": "string",
+            "enum": [
+              "hints",
+              "static"
+            ]
+          },
+          "static_recipients": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           },
-          "body": {
+          "language": {
+            "description": "en or fr. Omit to use the catalog default.",
+            "type": "string",
+            "enum": [
+              "en",
+              "fr"
+            ]
+          },
+          "newsletter_id": {
+            "description": "`email.newsletter.*` rules only: one newsletter list, or null for every list.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "content": {
+            "description": "Template the rule sends. `library_id` is required.",
             "type": "object",
-            "additionalProperties": false,
             "properties": {
-              "service": {
-                "type": "string"
+              "library_id": {
+                "description": "Library template the event copy starts from.",
+                "type": "integer"
               },
-              "event_type": {
-                "type": "string"
-              },
-              "enabled": {
-                "type": "boolean"
-              },
-              "recipient_mode": {
-                "type": "string"
-              },
-              "static_recipients": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "language": {
-                "type": "string"
-              },
-              "newsletter_id": {
-                "description": "`email.newsletter.*` rules only: one newsletter list, or null for every list.",
-                "type": [
-                  "integer",
-                  "null"
-                ]
-              },
-              "content": {
+              "theme": {
+                "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. Used when the library template has none.",
                 "type": "object",
-                "properties": {
-                  "library_id": {
-                    "description": "Library template the event copy starts from.",
-                    "type": "integer"
-                  },
-                  "theme": {
-                    "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. Used when the library template has none.",
-                    "type": "object",
-                    "additionalProperties": true
-                  }
-                },
-                "additionalProperties": false,
-                "required": [
-                  "library_id"
-                ]
+                "additionalProperties": true
               }
             },
+            "additionalProperties": false,
             "required": [
-              "content",
-              "event_type"
+              "library_id"
             ]
           }
         },
         "required": [
-          "path",
-          "method"
+          "content",
+          "event_type"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_create_suppressions",
-      "description": "Add a suppression",
+      "description": "Blocks future mail to `email` for the lanes in `lanes` (every lane when omitted) and returns the new suppression id and masked address. `reason` defaults to manual.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/suppressions"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "reason": {
+            "description": "Why the address is blocked. Default manual.",
             "type": "string",
             "enum": [
-              "POST"
+              "hard_bounce",
+              "complaint",
+              "manual",
+              "provider"
             ]
           },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
+          "lanes": {
+            "description": "Lanes to block. Omit or send an empty list to block every lane.",
+            "type": "array",
+            "items": {
+              "description": "One delivery lane: auth, transactional, or bulk.",
+              "type": "string",
+              "enum": [
+                "auth",
+                "transactional",
+                "bulk"
+              ]
             }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "email": {
-                "type": "string",
-                "format": "email"
-              },
-              "reason": {
-                "type": "string"
-              },
-              "lanes": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": [
-              "email"
-            ]
           }
         },
         "required": [
-          "path",
-          "method"
+          "email"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_create_template_versions",
-      "description": "Create a draft template version",
+      "description": "Creates a draft version of template `template_id` from the latest version, or from `library_id` when that is sent. Returns the new version number and state draft.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/templates/{template_id}/versions"
+          "template_id": {
+            "description": "Template copy id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
+          "subject": {
+            "type": "string"
           },
-          "query": {
+          "preheader": {
+            "type": "string"
+          },
+          "document": {
             "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+            "additionalProperties": true,
+            "description": "JSON value"
           },
-          "body": {
+          "translations": {
+            "description": "Other languages of the copy. Kept from the latest version when omitted; a start over keeps their subjects only.",
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "subject": {
-                "type": "string"
-              },
-              "preheader": {
-                "type": "string"
-              },
-              "document": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "JSON value"
-              },
-              "translations": {
-                "description": "Other languages of the copy. Kept from the latest version when omitted; a start over keeps their subjects only.",
-                "type": "object",
-                "additionalProperties": true
-              },
-              "theme": {
-                "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. Kept from the latest version when omitted. A start over takes the library template's, if it has one.",
-                "type": "object",
-                "additionalProperties": true
-              },
-              "library_id": {
-                "description": "Start over from this library template. Subject and preheader stay unless sent.",
-                "type": "integer"
-              }
-            }
+            "additionalProperties": true
           },
-          "path_params": {
+          "theme": {
+            "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. Kept from the latest version when omitted. A start over takes the library template's, if it has one.",
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "template_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "template_id"
-            ]
+            "additionalProperties": true
+          },
+          "library_id": {
+            "description": "Start over from this library template. Subject and preheader stay unless sent.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "template_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_delete_action_rules",
-      "description": "Delete a Shellui Actions webhook rule",
+      "description": "Deletes Shellui Actions webhook rule `rule_id` and returns an empty result. A delivery already in flight may still finish.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/rules/{id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "DELETE"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id"
-            ]
+          "rule_id": {
+            "description": "Shellui Actions webhook rule id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "rule_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_delete_broadcasts",
-      "description": "Delete a broadcast draft",
+      "description": "Deletes broadcast draft `broadcast_id` and its template copy, and returns an empty result. A broadcast that is sending or already sent returns 409 broadcast_not_deletable.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/broadcasts/{broadcast_id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "DELETE"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "broadcast_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "broadcast_id"
-            ]
+          "broadcast_id": {
+            "description": "Broadcast id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "broadcast_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_delete_library",
-      "description": "Delete a company library design",
+      "description": "Deletes the company library design `library_id` when no rule or copy uses it, and returns an empty result. A design still in use returns 409 template_in_use.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/library/{library_id}"
+          "library_id": {
+            "description": "Library design id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "DELETE"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "library_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "library_id"
-            ]
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "library_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_delete_newsletters",
-      "description": "Delete a newsletter list",
+      "description": "Deletes newsletter list `newsletter_id`, its subscribers, and its confirmation template, and returns an empty result.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/newsletters/{newsletter_id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "DELETE"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "newsletter_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "newsletter_id"
-            ]
+          "newsletter_id": {
+            "description": "Newsletter list id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "newsletter_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_delete_newsletters_subscribers",
-      "description": "Remove a newsletter subscriber",
+      "description": "Deletes subscriber `subscriber_id` from newsletter `newsletter_id` so the address can sign up again, and returns an empty result.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/newsletters/{newsletter_id}/subscribers/{subscriber_id}"
+          "newsletter_id": {
+            "description": "Newsletter list id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "DELETE"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "newsletter_id": {
-                "type": "string"
-              },
-              "subscriber_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "newsletter_id",
-              "subscriber_id"
-            ]
+          "subscriber_id": {
+            "description": "Newsletter subscriber id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "newsletter_id",
+          "subscriber_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_delete_rules",
-      "description": "Delete a custom email rule",
+      "description": "Deletes a company email rule `rule_id` and its template copy, and returns an empty result. Built-in auth rules cannot be deleted.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/rules/{rule_id}"
+          "rule_id": {
+            "description": "Email rule id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "DELETE"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "rule_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "rule_id"
-            ]
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "rule_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_delete_suppressions",
-      "description": "Remove a suppression",
+      "description": "Deletes suppression `suppression_id` so the address can receive mail again, and returns an empty result.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/suppressions/{suppression_id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "DELETE"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "suppression_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "suppression_id"
-            ]
+          "suppression_id": {
+            "description": "Suppression id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "suppression_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_delete_templates",
-      "description": "Delete an unused template copy",
+      "description": "Deletes template copy `template_id` when no rule or broadcast uses it, and returns an empty result. A copy still in use returns 409 template_in_use.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/templates/{template_id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "DELETE"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "template_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "template_id"
-            ]
+          "template_id": {
+            "description": "Internal template copy id from list or rule responses.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "template_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_export_newsletter_subscribers",
-      "description": "Export newsletter subscribers as CSV",
+      "description": "Returns subscribers of newsletter `newsletter_id` as CSV text in `csv`, with content_type text/csv. Optional `status` limits the export.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/newsletters/{newsletter_id}/subscribers.csv"
+          "newsletter_id": {
+            "description": "Newsletter list id.",
+            "type": "integer"
           },
-          "method": {
+          "status": {
+            "description": "Subscriber status. Omit to return every status.",
             "type": "string",
             "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "status": {
-                "type": "string",
-                "enum": [
-                  "confirmed",
-                  "pending",
-                  "unsubscribed"
-                ]
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "newsletter_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "newsletter_id"
+              "confirmed",
+              "pending",
+              "unsubscribed"
             ]
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "newsletter_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_action_deliveries",
-      "description": "Read one webhook delivery",
+      "description": "Returns Shellui Actions delivery `delivery_id`, including attempts, HTTP statuses, and the signed envelope.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
+          "delivery_id": {
+            "description": "Shellui Actions webhook delivery id.",
             "type": "string",
-            "const": "/api/v1/actions/deliveries/{delivery_id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "delivery_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "delivery_id"
-            ]
+            "format": "uuid"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "delivery_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_action_event_log",
-      "description": "Read one domain event log entry",
+      "description": "Returns one domain event log row `event_id`, including the full event payload.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/event-log/{id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id"
-            ]
+          "event_id": {
+            "description": "Domain event log id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "event_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_action_event_log_retention",
-      "description": "Read event log retention settings",
+      "description": "Returns how many days this company keeps domain event log rows.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/event-log/retention"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_action_rules",
-      "description": "Read one Shellui Actions webhook rule",
+      "description": "Returns Shellui Actions webhook rule `rule_id`, including URL and enabled state. The signing secret is masked.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/rules/{id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id"
-            ]
+          "rule_id": {
+            "description": "Shellui Actions webhook rule id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "rule_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_auth_link_hosts",
-      "description": "Read allowed auth link hosts",
+      "description": "Returns the company auth-link host allowlist plus platform and application hosts used to validate magic-link URLs in templates.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/auth-link-hosts"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_broadcasts",
-      "description": "Read one broadcast",
+      "description": "Returns broadcast `broadcast_id`, including audience, template, counts, state, and sender configuration.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/broadcasts/{broadcast_id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "broadcast_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "broadcast_id"
-            ]
+          "broadcast_id": {
+            "description": "Broadcast id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "broadcast_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_catalog",
-      "description": "List catalog events for template editors",
+      "description": "Returns the Shellui catalog events a company can edit, with variables, suggested subjects, and default designs. Built-in auth events that companies cannot edit are omitted.",
       "inputSchema": {
         "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/catalog"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          }
-        },
-        "required": [
-          "path",
-          "method"
-        ],
+        "properties": {},
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_library",
-      "description": "Read one library design",
+      "description": "Returns one library design for `library_id`, including the editor document, theme, variables, and rendered HTML.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/library/{library_id}"
+          "library_id": {
+            "description": "Library design id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "library_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "library_id"
-            ]
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "library_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_messages",
-      "description": "Read one outbound message",
+      "description": "Returns message `message_id`, including lane, provider, status timeline, and template key. The recipient address is not included.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/messages/{message_id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "message_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "message_id"
-            ]
+          "message_id": {
+            "description": "Public message id (for example `msg_01h2x3y4z5`).",
+            "type": "string"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "message_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_newsletters",
-      "description": "Read one newsletter list",
+      "description": "Returns newsletter list `newsletter_id`, including settings, Turnstile flags, subscriber counts, and sign-up URL.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/newsletters/{newsletter_id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "newsletter_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "newsletter_id"
-            ]
+          "newsletter_id": {
+            "description": "Newsletter list id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "newsletter_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_provider",
-      "description": "Read company mail provider settings",
+      "description": "Returns this company's mail provider, from addresses, and whether credentials are set. Secrets and passwords are not included.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/provider"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_rules",
-      "description": "Read one email rule",
+      "description": "Returns email rule `rule_id`, including recipients, enabled state, language, and template_id.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/rules/{rule_id}"
+          "rule_id": {
+            "description": "Email rule id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "rule_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "rule_id"
-            ]
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "rule_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_stats",
-      "description": "Read delivery statistics for a company",
+      "description": "Returns delivery counts for this company by day, lane, and event type. Optional `from` and `to` are ISO dates, and `lane` and `event_type` filter the window.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/stats"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
+          "event_type": {
+            "description": "Catalog event id.",
             "type": "string",
             "enum": [
-              "GET"
+              "email.newsletter.confirmed",
+              "email.newsletter.requested",
+              "email.newsletter.unsubscribed",
+              "hosting.app.created",
+              "hosting.app.deleted",
+              "hosting.deployment.created",
+              "hosting.deployment.failed",
+              "hosting.deployment.succeeded",
+              "identity.auth.magic_link.requested",
+              "identity.auth.magic_link.staff_blocked",
+              "identity.group.created",
+              "identity.group.deleted",
+              "identity.group.membership_changed",
+              "identity.group.updated",
+              "identity.scim.provisioning_conflict",
+              "identity.scim.token.created",
+              "identity.scim.token.revoked",
+              "identity.scim.user.deprovisioned",
+              "identity.scim.user.provisioned",
+              "identity.user.created",
+              "identity.user.deleted",
+              "identity.user.invitation_revoked",
+              "identity.user.invited",
+              "identity.user.updated",
+              "storage.bucket.created",
+              "storage.object.deleted",
+              "storage.object.uploaded"
             ]
           },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              },
-              "event_type": {
-                "type": "string"
-              },
-              "from": {
-                "type": "string"
-              },
-              "lane": {
-                "type": "string"
-              },
-              "to": {
-                "type": "string"
-              }
-            }
+          "from": {
+            "description": "Start of the window, as an ISO date (YYYY-MM-DD).",
+            "type": "string"
           },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "lane": {
+            "description": "Delivery lane: auth, transactional, or bulk.",
+            "type": "string",
+            "enum": [
+              "auth",
+              "bulk",
+              "transactional"
+            ]
+          },
+          "to": {
+            "description": "End of the window, inclusive, as an ISO date (YYYY-MM-DD).",
+            "type": "string"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_template_versions",
-      "description": "Read one template version",
+      "description": "Returns version `version_number` of template `template_id`, including document, translations, theme, and publish state.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/templates/{template_id}/versions/{number}"
+          "template_id": {
+            "description": "Template copy id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "template_id": {
-                "type": "string"
-              },
-              "number": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "template_id",
-              "number"
-            ]
+          "version_number": {
+            "description": "Template version number.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "template_id",
+          "version_number"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_get_templates",
-      "description": "Read one event or broadcast copy",
+      "description": "Returns metadata for template copy `template_id`, including template_key, kind, language, and active_version. Editor JSON is on the version tools.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/templates/{template_id}"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "template_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "template_id"
-            ]
+          "template_id": {
+            "description": "Internal template copy id from list or rule responses.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "template_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_import_newsletter_subscribers",
-      "description": "Import newsletter subscribers from CSV",
+      "description": "Imports subscribers into newsletter `newsletter_id` from CSV text in `csv`, and returns counts of added, existing, invalid, and skipped rows. `mode` confirm emails each new address, and consented marks them confirmed without mail.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/newsletters/{newsletter_id}/subscribers/import"
+          "newsletter_id": {
+            "description": "Newsletter list id.",
+            "type": "integer"
           },
-          "method": {
+          "csv": {
+            "description": "CSV text with an email column, and optional first_name and language.",
+            "type": "string"
+          },
+          "mode": {
+            "description": "confirm (default) emails each new address. consented marks them confirmed without mail.",
             "type": "string",
             "enum": [
-              "POST"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "csv": {
-                "description": "CSV text with an email column, and optional first_name and language.",
-                "type": "string"
-              },
-              "mode": {
-                "description": "* `confirm` - confirm\n* `consented` - consented",
-                "type": "string",
-                "enum": [
-                  "confirm",
-                  "consented"
-                ]
-              }
-            },
-            "required": [
-              "csv"
-            ]
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "newsletter_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "newsletter_id"
+              "confirm",
+              "consented"
             ]
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "newsletter_id",
+          "csv"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_list_action_deliveries",
-      "description": "List recent webhook deliveries",
+      "description": "Returns recent Shellui Actions webhook deliveries for this company, with status, attempt counts, and last error.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/deliveries"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_action_event_log",
-      "description": "List recent domain events for the company",
+      "description": "Returns recent email domain events stored for this company, including event_type, data, and created_at.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/event-log"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_action_event_log_types",
-      "description": "List domain event type ids",
+      "description": "Returns the Shellui Actions event type ids that are valid for log filters and webhook rules.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/event-log/types"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_action_events",
-      "description": "List Shellui Actions event types",
+      "description": "Returns Shellui Actions event ids a webhook rule can subscribe to, with a label and description for each.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/events"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_action_rules",
-      "description": "List Shellui Actions webhook rules",
+      "description": "Returns this company's Shellui Actions webhook rules. Signing secrets are masked.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/rules"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_broadcasts",
-      "description": "List broadcast campaigns",
+      "description": "Returns this company's broadcast drafts and sent campaigns, with audience summary and delivery counts.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/broadcasts"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_library",
-      "description": "List library email designs",
+      "description": "Returns built-in Shellui designs and this company's library templates, grouped by set. Each row includes the name, subject, and rendered HTML.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/library"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_messages",
-      "description": "List recent outbound messages",
+      "description": "Returns recent outbound messages for this company, with masked recipients and status. Optional filters are `status`, `lane`, `template_key`, and `limit` (default 50, max 200).",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/messages"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
+          "lane": {
+            "description": "Delivery lane: auth, transactional, or bulk.",
             "type": "string",
             "enum": [
-              "GET"
+              "auth",
+              "bulk",
+              "transactional"
             ]
           },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              },
-              "lane": {
-                "type": "string"
-              },
-              "limit": {
-                "type": "integer"
-              },
-              "status": {
-                "type": "string"
-              },
-              "template_key": {
-                "type": "string"
-              }
-            }
+          "limit": {
+            "description": "Maximum messages to return. Default 50, maximum 200.",
+            "type": "integer"
           },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "status": {
+            "description": "Message status to match.",
+            "type": "string",
+            "enum": [
+              "bounced",
+              "cancelled",
+              "complained",
+              "delivered",
+              "delivery_delayed",
+              "expired",
+              "failed",
+              "queued",
+              "retrying",
+              "sending",
+              "sent",
+              "suppressed"
+            ]
+          },
+          "template_key": {
+            "description": "Template key to match.",
+            "type": "string"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_newsletters",
-      "description": "List newsletter lists",
+      "description": "Returns this company's newsletter lists, with public keys, subscriber counts, and sign-up URLs.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/newsletters"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_newsletters_subscribers",
-      "description": "List newsletter subscribers",
+      "description": "Returns a page of subscribers for newsletter `newsletter_id`. Optional `status` filters by pending, confirmed, or unsubscribed, and `email` looks up one address.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/newsletters/{newsletter_id}/subscribers"
+          "newsletter_id": {
+            "description": "Newsletter list id.",
+            "type": "integer"
           },
-          "method": {
+          "email": {
+            "description": "Exact subscriber address.",
+            "type": "string"
+          },
+          "page": {
+            "description": "Page number, starting at 1.",
+            "type": "integer"
+          },
+          "status": {
+            "description": "Subscriber status. Omit to return every status.",
             "type": "string",
             "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "email": {
-                "type": "string"
-              },
-              "page": {
-                "type": "integer"
-              },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "confirmed",
-                  "pending",
-                  "unsubscribed"
-                ]
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "newsletter_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "newsletter_id"
+              "confirmed",
+              "pending",
+              "unsubscribed"
             ]
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "newsletter_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_rules",
-      "description": "List email rules for a company",
+      "description": "Returns this company's email rules, each binding an event_type to a template and recipients, with optional `service` to limit by catalog service. Built-in auth rules are included and cannot be deleted or disabled.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/rules"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
+          "service": {
+            "description": "Catalog service that owns the event, such as hosting or email.",
             "type": "string",
             "enum": [
-              "GET"
+              "email",
+              "hosting",
+              "identity",
+              "storage"
             ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              },
-              "service": {
-                "type": "string"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_suppressions",
-      "description": "List suppressed email addresses",
+      "description": "Returns this company's suppressed addresses, masked, with reason and lanes.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/suppressions"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_template_versions",
-      "description": "List versions of a template copy",
+      "description": "Returns every draft and published version of template `template_id`, including document, translations, theme, and state.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/templates/{template_id}/versions"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "GET"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "template_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "template_id"
-            ]
+          "template_id": {
+            "description": "Template copy id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "template_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_list_templates",
-      "description": "List event and broadcast email copies",
+      "description": "Returns this company's event and broadcast template copies. Optional `event_type` limits the list to one catalog event.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/templates"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
+          "event_type": {
+            "description": "Catalog event id. An unknown id returns event_unknown.",
             "type": "string",
             "enum": [
-              "GET"
+              "email.newsletter.confirmed",
+              "email.newsletter.requested",
+              "email.newsletter.unsubscribed",
+              "hosting.app.created",
+              "hosting.app.deleted",
+              "hosting.deployment.created",
+              "hosting.deployment.failed",
+              "hosting.deployment.succeeded",
+              "identity.auth.magic_link.requested",
+              "identity.auth.magic_link.staff_blocked",
+              "identity.group.created",
+              "identity.group.deleted",
+              "identity.group.membership_changed",
+              "identity.group.updated",
+              "identity.scim.provisioning_conflict",
+              "identity.scim.token.created",
+              "identity.scim.token.revoked",
+              "identity.scim.user.deprovisioned",
+              "identity.scim.user.provisioned",
+              "identity.user.created",
+              "identity.user.deleted",
+              "identity.user.invitation_revoked",
+              "identity.user.invited",
+              "identity.user.updated",
+              "storage.bucket.created",
+              "storage.object.deleted",
+              "storage.object.uploaded"
             ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              },
-              "event_type": {
-                "type": "string"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_publish_template_versions",
-      "description": "Publish a draft template version",
+      "description": "Publishes draft `version_number` of template `template_id` after link and placeholder checks, and sets it as active_version. Returns the version number, state, and checksum.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/templates/{template_id}/versions/{number}/publish"
+          "template_id": {
+            "description": "Template copy id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "template_id": {
-                "type": "string"
-              },
-              "number": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "template_id",
-              "number"
-            ]
+          "version_number": {
+            "description": "Template version number.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "template_id",
+          "version_number"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_render_preview_templates",
-      "description": "Render HTML preview for a template version",
+      "description": "Renders HTML and plain text for template `template_id` with placeholders filled, and does not send mail. Omit `document` to use the newest draft, or send `document` and `variables` to preview unsaved JSON.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/templates/{template_id}/render-preview"
+          "template_id": {
+            "description": "Template copy id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
+          "number": {
+            "description": "Version number. Default: newest draft, else the active published version.",
+            "type": "integer"
           },
-          "query": {
+          "subject": {
+            "type": "string"
+          },
+          "preheader": {
+            "type": "string"
+          },
+          "document": {
+            "description": "Unsaved editor JSON. When sent, `subject` is required unless the version supplies it.",
             "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+            "additionalProperties": true
           },
-          "body": {
+          "theme": {
+            "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. Used with `document`.",
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "number": {
-                "description": "Version number. Default: newest draft, else the active published version.",
-                "type": "integer"
-              },
-              "subject": {
-                "type": "string"
-              },
-              "preheader": {
-                "type": "string"
-              },
-              "document": {
-                "description": "Unsaved editor JSON. When sent, `subject` is required unless the version supplies it.",
-                "type": "object",
-                "additionalProperties": true
-              },
-              "theme": {
-                "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. Used with `document`.",
-                "type": "object",
-                "additionalProperties": true
-              },
-              "variables": {
-                "description": "Placeholder map for `{{ token }}` values. Omitted keys use catalog examples where available.",
-                "type": "object",
-                "additionalProperties": true
-              }
-            }
+            "additionalProperties": true
           },
-          "path_params": {
+          "variables": {
+            "description": "Placeholder map for `{{ token }}` values. Omitted keys use catalog examples where available.",
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "template_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "template_id"
-            ]
+            "additionalProperties": true
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "template_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_replace_auth_link_hosts",
-      "description": "Replace company auth link hosts",
+      "description": "Replaces the company auth-link host allowlist with `hosts`, and returns the saved hosts plus platform and application hosts. Removing a host makes template links on that host fail checks.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/auth-link-hosts"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "PUT"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "hosts": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": [
-              "hosts"
-            ]
           }
         },
         "required": [
-          "path",
-          "method"
+          "hosts"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_replace_library",
-      "description": "Update a company library design",
+      "description": "Updates name, subject, preheader, document, or theme on the company library design `library_id`, and returns the saved design. Built-in Shellui designs reject the write.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/library/{library_id}"
+          "library_id": {
+            "description": "Library design id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "PUT"
-            ]
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "query": {
+          "name": {
+            "type": "string"
+          },
+          "source_id": {
+            "description": "Library template to duplicate. Create only.",
+            "type": "integer"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "preheader": {
+            "type": "string"
+          },
+          "document": {
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
+            "additionalProperties": true,
+            "description": "JSON value"
           },
-          "body": {
+          "theme": {
+            "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. A duplicate keeps its source's when omitted.",
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "source_id": {
-                "description": "Library template to duplicate. Create only.",
-                "type": "integer"
-              },
-              "subject": {
-                "type": "string"
-              },
-              "preheader": {
-                "type": "string"
-              },
-              "document": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "JSON value"
-              },
-              "theme": {
-                "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. A duplicate keeps its source's when omitted.",
-                "type": "object",
-                "additionalProperties": true
-              }
-            }
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "library_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "library_id"
-            ]
+            "additionalProperties": true
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "library_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_replace_provider",
-      "description": "Update company mail provider settings",
+      "description": "Replaces this company's mail provider (`resend`, `ses`, or `smtp`), from addresses, and credentials, and returns the saved settings without secrets. Omitted optional fields keep their stored values.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/provider"
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
           },
-          "method": {
+          "provider": {
+            "description": "Sending provider: resend, ses, or smtp.",
             "type": "string",
             "enum": [
-              "PUT"
+              "resend",
+              "ses",
+              "smtp"
             ]
           },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
+          "from_email": {
+            "type": "string",
+            "format": "email"
           },
-          "body": {
+          "from_name": {
+            "type": "string"
+          },
+          "sending_domain": {
+            "type": "string"
+          },
+          "bulk_from_email": {
+            "type": "string"
+          },
+          "credentials": {
             "type": "object",
-            "additionalProperties": false,
             "properties": {
-              "provider": {
-                "description": "* `resend` - resend\n* `ses` - ses\n* `smtp` - smtp",
-                "type": "string",
-                "enum": [
-                  "resend",
-                  "ses",
-                  "smtp"
-                ]
-              },
-              "from_email": {
-                "type": "string",
-                "format": "email"
-              },
-              "from_name": {
+              "api_key": {
                 "type": "string"
               },
-              "sending_domain": {
+              "host": {
                 "type": "string"
               },
-              "bulk_from_email": {
+              "port": {
+                "type": "integer"
+              },
+              "username": {
                 "type": "string"
               },
-              "credentials": {
-                "type": "object",
-                "properties": {
-                  "api_key": {
-                    "type": "string"
-                  },
-                  "host": {
-                    "type": "string"
-                  },
-                  "port": {
-                    "type": "integer"
-                  },
-                  "username": {
-                    "type": "string"
-                  },
-                  "password": {
-                    "type": "string"
-                  },
-                  "use_tls": {
-                    "type": "boolean"
-                  },
-                  "use_ssl": {
-                    "type": "boolean"
-                  },
-                  "access_key_id": {
-                    "description": "Amazon SES access key id.",
-                    "type": "string"
-                  },
-                  "secret_access_key": {
-                    "description": "Amazon SES secret access key. Write-only.",
-                    "type": "string"
-                  },
-                  "region": {
-                    "description": "Amazon SES region. Defaults to eu-central-2.",
-                    "type": "string"
-                  },
-                  "configuration_set": {
-                    "description": "Optional Amazon SES configuration set.",
-                    "type": "string"
-                  }
-                },
-                "additionalProperties": false
+              "password": {
+                "type": "string"
               },
-              "webhook_secret": {
+              "use_tls": {
+                "type": "boolean"
+              },
+              "use_ssl": {
+                "type": "boolean"
+              },
+              "access_key_id": {
+                "description": "Amazon SES access key id.",
+                "type": "string"
+              },
+              "secret_access_key": {
+                "description": "Amazon SES secret access key. Write-only.",
+                "type": "string"
+              },
+              "region": {
+                "description": "Amazon SES region. Defaults to eu-central-2.",
+                "type": "string"
+              },
+              "configuration_set": {
+                "description": "Optional Amazon SES configuration set.",
                 "type": "string"
               }
             },
-            "required": [
-              "from_email",
-              "provider"
-            ]
+            "additionalProperties": false
+          },
+          "webhook_secret": {
+            "type": "string"
           }
         },
         "required": [
-          "path",
-          "method"
+          "from_email",
+          "provider"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_requeue_action_deliveries",
-      "description": "Requeue a failed webhook delivery",
+      "description": "Queues another attempt for failed or dead Shellui Actions delivery `delivery_id`, and returns the delivery with status pending.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
+          "delivery_id": {
+            "description": "Shellui Actions webhook delivery id.",
             "type": "string",
-            "const": "/api/v1/actions/deliveries/{delivery_id}/requeue"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "delivery_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "delivery_id"
-            ]
+            "format": "uuid"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "delivery_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_rotate_newsletter_key",
-      "description": "Rotate newsletter public sign-up key",
+      "description": "Issues a new public_key for newsletter `newsletter_id` and returns the list. Sign-up URLs that still use the old key stop working.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/newsletters/{newsletter_id}/rotate-key"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "newsletter_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "newsletter_id"
-            ]
+          "newsletter_id": {
+            "description": "Newsletter list id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "newsletter_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_rotate_rule_secret",
-      "description": "Rotate a webhook signing secret",
+      "description": "Replaces the signing secret on Shellui Actions webhook rule `rule_id` and returns the rule with `secret` masked. The previous secret stops verifying immediately.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/rules/{id}/rotate-secret"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id"
-            ]
+          "rule_id": {
+            "description": "Shellui Actions webhook rule id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "rule_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_send_test_rule",
-      "description": "Queue a sample webhook delivery",
+      "description": "Queues a sample Shellui Actions delivery to the URL on rule `rule_id`, and returns status queued. This sends an HTTPS webhook, not email.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/rules/{id}/send-test"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id"
-            ]
+          "rule_id": {
+            "description": "Shellui Actions webhook rule id.",
+            "type": "integer"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "rule_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_send_test_templates",
-      "description": "Send a test message for a draft",
+      "description": "Queues one test message for template `template_id` to the caller address, or to `to` when the caller is Shellui staff, and returns the provider send status. Use render preview when you only need HTML.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
+          "template_id": {
+            "description": "Template copy id.",
+            "type": "integer"
+          },
+          "to": {
             "type": "string",
-            "const": "/api/v1/templates/{template_id}/send-test"
+            "format": "email"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
+          "subject": {
+            "type": "string"
           },
-          "query": {
+          "preheader": {
+            "type": "string"
+          },
+          "document": {
             "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+            "additionalProperties": true,
+            "description": "JSON value"
           },
-          "body": {
+          "theme": {
+            "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. Used with document.",
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "to": {
-                "type": "string",
-                "format": "email"
-              },
-              "subject": {
-                "type": "string"
-              },
-              "preheader": {
-                "type": "string"
-              },
-              "document": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "JSON value"
-              },
-              "theme": {
-                "description": "Colors that repaint a library design: {name, label, colors: {role: \"#rrggbb\"}}. Roles: background, foreground, card, muted, muted_foreground, primary, primary_foreground, border. {} keeps the design's own colors. Used with document.",
-                "type": "object",
-                "additionalProperties": true
-              }
-            }
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "template_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "template_id"
-            ]
+            "additionalProperties": true
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "template_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_test_send_provider",
-      "description": "Send a provider configuration test message",
+      "description": "Queues one test message through the saved provider to the caller address, or to `to` when the caller is Shellui staff, and returns the provider status. Missing credentials return 400 provider_not_configured.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
+          },
+          "to": {
             "type": "string",
-            "const": "/api/v1/provider/test-send"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "POST"
-            ]
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
-            }
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "to": {
-                "type": "string",
-                "format": "email"
-              }
-            }
+            "format": "email"
           }
         },
-        "required": [
-          "path",
-          "method"
-        ],
+        "required": [],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       }
     },
     {
       "name": "email_update_action_rules",
-      "description": "Update a Shellui Actions webhook rule",
+      "description": "Updates name, description, enabled, URL, or newsletter filter on Shellui Actions webhook rule `rule_id`, and returns the saved rule.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/actions/rules/{id}"
+          "rule_id": {
+            "description": "Shellui Actions webhook rule id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "PATCH"
-            ]
+          "name": {
+            "type": "string"
           },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
+          "description": {
+            "type": "string"
           },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "enabled": {
-                "type": "boolean"
-              },
-              "url": {
-                "type": "string"
-              },
-              "newsletter_id": {
-                "description": "email.newsletter.* rules only: only events of this list. Null or 0 clears it.",
-                "type": [
-                  "integer",
-                  "null"
-                ]
-              }
-            }
+          "enabled": {
+            "type": "boolean"
           },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id"
+          "url": {
+            "type": "string"
+          },
+          "newsletter_id": {
+            "description": "email.newsletter.* rules only: only events of this list. Null or 0 clears it.",
+            "type": [
+              "integer",
+              "null"
             ]
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "rule_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_update_broadcasts",
-      "description": "Update a broadcast draft",
+      "description": "Updates `name` or `audience` on broadcast draft `broadcast_id`, and returns the saved broadcast. A broadcast that has started sending returns 409 broadcast_not_editable.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/broadcasts/{broadcast_id}"
+          "broadcast_id": {
+            "description": "Broadcast id.",
+            "type": "integer"
           },
-          "method": {
-            "type": "string",
-            "enum": [
-              "PATCH"
-            ]
+          "name": {
+            "type": "string"
           },
-          "query": {
+          "audience": {
             "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
             "properties": {
-              "name": {
+              "mode": {
+                "description": "filter: members matching every filter. pick: chosen users and addresses. newsletter: confirmed subscribers of list_id.",
+                "type": "string",
+                "enum": [
+                  "filter",
+                  "pick",
+                  "newsletter"
+                ]
+              },
+              "list_id": {
+                "description": "Newsletter list, for mode newsletter.",
+                "type": "integer"
+              },
+              "group_ids": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "roles": {
+                "description": "Company roles to match.",
+                "type": "array",
+                "items": {
+                  "description": "Company role: owner, staff, or member.",
+                  "type": "string",
+                  "enum": [
+                    "owner",
+                    "staff",
+                    "member"
+                  ]
+                }
+              },
+              "access": {
+                "description": "Account access to match: enabled, disabled, or any.",
+                "type": "string",
+                "enum": [
+                  "enabled",
+                  "disabled",
+                  "any"
+                ]
+              },
+              "joined_after": {
+                "description": "ISO date.",
                 "type": "string"
               },
-              "audience": {
-                "type": "object",
-                "properties": {
-                  "mode": {
-                    "description": "filter: members matching every filter. pick: chosen users and addresses. newsletter: confirmed subscribers of list_id.\n\n* `filter` - filter\n* `pick` - pick\n* `newsletter` - newsletter",
-                    "type": "string",
-                    "enum": [
-                      "filter",
-                      "pick",
-                      "newsletter"
-                    ]
-                  },
-                  "list_id": {
-                    "description": "Newsletter list, for mode newsletter.",
-                    "type": "integer"
-                  },
-                  "group_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    }
-                  },
-                  "roles": {
-                    "type": "array",
-                    "items": {
-                      "description": "* `owner` - owner\n* `staff` - staff\n* `member` - member",
-                      "type": "string",
-                      "enum": [
-                        "owner",
-                        "staff",
-                        "member"
-                      ]
-                    }
-                  },
-                  "access": {
-                    "description": "* `enabled` - enabled\n* `disabled` - disabled\n* `any` - any",
-                    "type": "string",
-                    "enum": [
-                      "enabled",
-                      "disabled",
-                      "any"
-                    ]
-                  },
-                  "joined_after": {
-                    "description": "ISO date.",
-                    "type": "string"
-                  },
-                  "joined_before": {
-                    "description": "ISO date, inclusive.",
-                    "type": "string"
-                  },
-                  "seen_after": {
-                    "description": "ISO date.",
-                    "type": "string"
-                  },
-                  "seen_before": {
-                    "description": "ISO date, inclusive. Never-seen users match.",
-                    "type": "string"
-                  },
-                  "user_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    }
-                  },
-                  "emails": {
-                    "description": "Addresses outside the directory. They get the main language.",
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "additionalProperties": false,
-                "required": [
-                  "mode"
-                ]
-              }
-            }
-          },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "broadcast_id": {
+              "joined_before": {
+                "description": "ISO date, inclusive.",
                 "type": "string"
+              },
+              "seen_after": {
+                "description": "ISO date.",
+                "type": "string"
+              },
+              "seen_before": {
+                "description": "ISO date, inclusive. Never-seen users match.",
+                "type": "string"
+              },
+              "user_ids": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "emails": {
+                "description": "Addresses outside the directory. They get the main language.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
+            "additionalProperties": false,
             "required": [
-              "broadcast_id"
+              "mode"
             ]
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "broadcast_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_update_newsletters",
-      "description": "Update newsletter list settings",
+      "description": "Updates name, description, language, origins, redirect URL, or Turnstile keys on newsletter `newsletter_id`, and returns the saved list. `turnstile_secret` is write-only.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/newsletters/{newsletter_id}"
+          "newsletter_id": {
+            "description": "Newsletter list id.",
+            "type": "integer"
           },
-          "method": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "default_language": {
+            "description": "en or fr. Default en.",
             "type": "string",
             "enum": [
-              "PATCH"
+              "en",
+              "fr"
             ]
           },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-          },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "default_language": {
-                "type": "string"
-              },
-              "allowed_origins": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "confirmed_redirect_url": {
-                "type": "string"
-              },
-              "turnstile_site_key": {
-                "type": "string"
-              },
-              "turnstile_secret": {
-                "description": "Write only. Empty clears it.",
-                "type": "string"
-              }
+          "allowed_origins": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "newsletter_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "newsletter_id"
-            ]
+          "confirmed_redirect_url": {
+            "type": "string"
+          },
+          "turnstile_site_key": {
+            "type": "string"
+          },
+          "turnstile_secret": {
+            "description": "Write only. Empty clears it.",
+            "type": "string"
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "newsletter_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     },
     {
       "name": "email_update_rules",
-      "description": "Update email rule recipients or enabled state",
+      "description": "Updates `enabled`, `recipient_mode`, `static_recipients`, `language`, or `newsletter_id` on email rule `rule_id`, and returns the saved rule. Built-in auth rules reject changes to enabled or recipients.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "const": "/api/v1/rules/{rule_id}"
+          "rule_id": {
+            "description": "Email rule id.",
+            "type": "integer"
           },
-          "method": {
+          "company_id": {
+            "description": "Target company. Company owners omit this when the JWT already includes `company_id`. Shellui staff may set it to manage another company.",
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "recipient_mode": {
+            "description": "hints uses addresses on the event. static uses static_recipients.",
             "type": "string",
             "enum": [
-              "PATCH"
+              "hints",
+              "static"
             ]
           },
-          "query": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "company_id": {
-                "type": "integer"
-              }
+          "static_recipients": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           },
-          "body": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "enabled": {
-                "type": "boolean"
-              },
-              "recipient_mode": {
-                "type": "string"
-              },
-              "static_recipients": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "language": {
-                "type": "string"
-              },
-              "newsletter_id": {
-                "description": "`email.newsletter.*` rules only: one newsletter list, or null for every list.",
-                "type": [
-                  "integer",
-                  "null"
-                ]
-              }
-            }
+          "language": {
+            "description": "en or fr. Omit to leave the saved language.",
+            "type": "string",
+            "enum": [
+              "en",
+              "fr"
+            ]
           },
-          "path_params": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "rule_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "rule_id"
+          "newsletter_id": {
+            "description": "`email.newsletter.*` rules only: one newsletter list, or null for every list.",
+            "type": [
+              "integer",
+              "null"
             ]
           }
         },
         "required": [
-          "path",
-          "method",
-          "path_params"
+          "rule_id"
         ],
         "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
       }
     }
   ],
@@ -3626,9 +2298,9 @@
       "method": "POST",
       "path": "/api/v1/broadcasts/{broadcast_id}/send",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [],
       "query_required": [],
       "path_params": [
@@ -3639,9 +2311,9 @@
       "method": "POST",
       "path": "/api/v1/messages/{message_id}/cancel",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [],
       "query_required": [],
       "path_params": [
@@ -3705,9 +2377,9 @@
       "method": "POST",
       "path": "/api/v1/newsletters/{newsletter_id}/subscribers",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [
         "email"
       ],
@@ -3758,7 +2430,7 @@
     },
     "email_delete_action_rules": {
       "method": "DELETE",
-      "path": "/api/v1/actions/rules/{id}",
+      "path": "/api/v1/actions/rules/{rule_id}",
       "read_only": false,
       "destructive": true,
       "needs_approval_ask": true,
@@ -3766,7 +2438,7 @@
       "body_required": [],
       "query_required": [],
       "path_params": [
-        "id"
+        "rule_id"
       ]
     },
     "email_delete_broadcasts": {
@@ -3889,7 +2561,7 @@
     },
     "email_get_action_event_log": {
       "method": "GET",
-      "path": "/api/v1/actions/event-log/{id}",
+      "path": "/api/v1/actions/event-log/{event_id}",
       "read_only": true,
       "destructive": false,
       "needs_approval_ask": false,
@@ -3897,7 +2569,7 @@
       "body_required": [],
       "query_required": [],
       "path_params": [
-        "id"
+        "event_id"
       ]
     },
     "email_get_action_event_log_retention": {
@@ -3913,7 +2585,7 @@
     },
     "email_get_action_rules": {
       "method": "GET",
-      "path": "/api/v1/actions/rules/{id}",
+      "path": "/api/v1/actions/rules/{rule_id}",
       "read_only": true,
       "destructive": false,
       "needs_approval_ask": false,
@@ -3921,7 +2593,7 @@
       "body_required": [],
       "query_required": [],
       "path_params": [
-        "id"
+        "rule_id"
       ]
     },
     "email_get_auth_link_hosts": {
@@ -4035,7 +2707,7 @@
     },
     "email_get_template_versions": {
       "method": "GET",
-      "path": "/api/v1/templates/{template_id}/versions/{number}",
+      "path": "/api/v1/templates/{template_id}/versions/{version_number}",
       "read_only": true,
       "destructive": false,
       "needs_approval_ask": false,
@@ -4044,7 +2716,7 @@
       "query_required": [],
       "path_params": [
         "template_id",
-        "number"
+        "version_number"
       ]
     },
     "email_get_templates": {
@@ -4064,9 +2736,9 @@
       "method": "POST",
       "path": "/api/v1/newsletters/{newsletter_id}/subscribers/import",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [
         "csv"
       ],
@@ -4235,7 +2907,7 @@
     },
     "email_publish_template_versions": {
       "method": "POST",
-      "path": "/api/v1/templates/{template_id}/versions/{number}/publish",
+      "path": "/api/v1/templates/{template_id}/versions/{version_number}/publish",
       "read_only": false,
       "destructive": false,
       "needs_approval_ask": true,
@@ -4244,7 +2916,7 @@
       "query_required": [],
       "path_params": [
         "template_id",
-        "number"
+        "version_number"
       ]
     },
     "email_render_preview_templates": {
@@ -4264,9 +2936,9 @@
       "method": "PUT",
       "path": "/api/v1/auth-link-hosts",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [
         "hosts"
       ],
@@ -4290,9 +2962,9 @@
       "method": "PUT",
       "path": "/api/v1/provider",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [
         "from_email",
         "provider"
@@ -4304,9 +2976,9 @@
       "method": "POST",
       "path": "/api/v1/actions/deliveries/{delivery_id}/requeue",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [],
       "query_required": [],
       "path_params": [
@@ -4317,9 +2989,9 @@
       "method": "POST",
       "path": "/api/v1/newsletters/{newsletter_id}/rotate-key",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [],
       "query_required": [],
       "path_params": [
@@ -4328,37 +3000,37 @@
     },
     "email_rotate_rule_secret": {
       "method": "POST",
-      "path": "/api/v1/actions/rules/{id}/rotate-secret",
+      "path": "/api/v1/actions/rules/{rule_id}/rotate-secret",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [],
       "query_required": [],
       "path_params": [
-        "id"
+        "rule_id"
       ]
     },
     "email_send_test_rule": {
       "method": "POST",
-      "path": "/api/v1/actions/rules/{id}/send-test",
+      "path": "/api/v1/actions/rules/{rule_id}/send-test",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [],
       "query_required": [],
       "path_params": [
-        "id"
+        "rule_id"
       ]
     },
     "email_send_test_templates": {
       "method": "POST",
       "path": "/api/v1/templates/{template_id}/send-test",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [],
       "query_required": [],
       "path_params": [
@@ -4369,16 +3041,16 @@
       "method": "POST",
       "path": "/api/v1/provider/test-send",
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "needs_approval_ask": true,
-      "needs_approval_full": false,
+      "needs_approval_full": true,
       "body_required": [],
       "query_required": [],
       "path_params": []
     },
     "email_update_action_rules": {
       "method": "PATCH",
-      "path": "/api/v1/actions/rules/{id}",
+      "path": "/api/v1/actions/rules/{rule_id}",
       "read_only": false,
       "destructive": false,
       "needs_approval_ask": true,
@@ -4386,7 +3058,7 @@
       "body_required": [],
       "query_required": [],
       "path_params": [
-        "id"
+        "rule_id"
       ]
     },
     "email_update_broadcasts": {

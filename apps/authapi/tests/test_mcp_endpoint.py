@@ -1116,7 +1116,7 @@ class McpEndpointTests(TestCase):
         self.assertEqual(logged.get('outcome'), 'allowed')
         self.assertEqual(logged.get('approval_id'), approval_id)
         self.assertEqual(logged.get('tool'), 'email_test_send_provider')
-        self.assertEqual(logged.get('access_kind'), 'write')
+        self.assertEqual(logged.get('access_kind'), 'destructive')
         self.assertEqual(logged.get('result'), '')
         self.assertNotIn('arguments', logged)
         self.assertNotIn('arguments_redacted', logged)
