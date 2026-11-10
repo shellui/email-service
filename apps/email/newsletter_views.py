@@ -25,6 +25,7 @@ from apps.email.schema import (
     NewsletterSubscriberAddedSerializer,
     NewsletterSubscriberCreateSerializer,
     NewsletterSubscriberPageSerializer,
+    NewsletterCreateSerializer,
     NewsletterWriteSerializer,
 )
 from apps.email.service import SendError
@@ -104,7 +105,7 @@ def _company_newsletter(request, newsletter_id) -> NewsletterList:
         tags=['newsletters'],
         operation_id='api_v1_newsletters_create',
         parameters=[COMPANY_QUERY],
-        request=NewsletterWriteSerializer,
+        request=NewsletterCreateSerializer,
         responses={201: NewsletterSerializer, **_API_ERRORS},
         **mcp_openapi_fields('api_v1_newsletters_create'),
         **mcp_tool(operation_id='api_v1_newsletters_create', read_only=False, sensitive=True),

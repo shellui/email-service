@@ -28,8 +28,9 @@ MCP_SPECS: dict[str, _McpSpec] = {
         'Read-only.',
     ),
     'api_v1_library_create': _McpSpec(
-        'Create a company library design',
-        'Creates a new library template, optionally duplicated from `source_id`.',
+        'Create a company library design. Send name, or source_id to duplicate.',
+        'Creates a new library template. Send `name`, or `source_id` to duplicate an existing design. '
+        'Omitting both returns `validation_failed`.',
         'Inserts a library row and composed HTML snapshot.',
     ),
     'api_v1_library_retrieve': _McpSpec(
@@ -281,7 +282,8 @@ MCP_SPECS: dict[str, _McpSpec] = {
     ),
     'api_v1_newsletters_subscribers_export': _McpSpec(
         'Export newsletter subscribers as CSV',
-        'Returns `text/csv` with email and metadata columns, optionally filtered by `status`.',
+        'HTTP returns `text/csv` with email and metadata columns, optionally filtered by `status`. '
+        'MCP returns that CSV text in `csv` with `content_type` `text/csv`.',
         'Read-only export.',
     ),
     'api_v1_newsletters_subscribers_import': _McpSpec(
@@ -299,15 +301,17 @@ MCP_SPECS: dict[str, _McpSpec] = {
     'api_v1_actions_rules_list': _McpSpec(
         'List Shellui Actions webhook rules',
         'Each rule posts signed HTTPS webhooks when an email domain event fires. '
-        'Secrets are write-only except immediately after create or rotate.',
+        'MCP results mask signing secrets, including on create and rotate. '
+        'Those two HTTP responses include plaintext `secret` once.',
         'Read-only.',
     ),
     'api_v1_actions_rules_create': _McpSpec(
         'Create a Shellui Actions webhook rule',
         'Creates an HTTPS webhook rule for a registered `event_type`. '
-        'Returns the signing `secret` once in the response body.',
+        'The HTTP response includes signing `secret` once. MCP tool results mask it (`x-mcp-secret`).',
         'Inserts rule row and stores encrypted secret.',
-        notes='Store `secret` before closing the response. URL must be publicly reachable unless staff SSRF override is enabled.',
+        notes='Read the plaintext `secret` from the HTTP response, not from an MCP tool result. '
+        'URL must be publicly reachable unless staff SSRF override is enabled.',
     ),
     'api_v1_actions_rules_retrieve': _McpSpec(
         'Read one Shellui Actions webhook rule',
@@ -326,9 +330,9 @@ MCP_SPECS: dict[str, _McpSpec] = {
     ),
     'api_v1_actions_rules_rotate_secret': _McpSpec(
         'Rotate a webhook signing secret',
-        'Generates a new HMAC secret and returns it once in the response body.',
+        'Generates a new HMAC secret. The HTTP response includes it once. MCP tool results mask it (`x-mcp-secret`).',
         'Updates encrypted secret on the rule.',
-        notes='Update your receiver before relying on the new secret.',
+        notes='Read the new plaintext from the HTTP response, then update the receiver.',
     ),
     'api_v1_actions_rules_send_test': _McpSpec(
         'Queue a sample webhook delivery',

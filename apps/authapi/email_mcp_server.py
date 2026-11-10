@@ -52,6 +52,30 @@ _ERROR_CODES = frozenset(
     }
 )
 
+def _tool_result_payload(response: Any) -> Any:
+    """View payload for an MCP tool result.
+
+    DRF ``Response`` exposes ``data``. A raw ``HttpResponse`` (subscriber CSV export)
+    does not, so the CSV bytes are returned under ``csv`` instead of a placeholder.
+    """
+    if hasattr(response, 'data'):
+        return response.data
+    content_type = ''
+    header = getattr(response, 'get', None)
+    if callable(header):
+        content_type = str(header('Content-Type') or '')
+    raw = getattr(response, 'content', b'') or b''
+    if isinstance(raw, (bytes, bytearray)):
+        text = bytes(raw).decode('utf-8', errors='replace')
+    else:
+        text = str(raw)
+    if 'text/csv' in content_type.lower():
+        return {'content_type': 'text/csv', 'csv': text}
+    if text:
+        return {'body': text}
+    return {'detail': 'ok'}
+
+
 def _json_default(value: Any) -> Any:
     if isinstance(value, Decimal):
         return str(value)
@@ -640,10 +664,7 @@ class EmailMcpServer(McpServer):
         response = match.func(drf_request, *match.args, **match.kwargs)
         status_code = getattr(response, 'status_code', 500)
         duration_ms = int(max(0.0, (time.monotonic() - exec_started) * 1000.0))
-        try:
-            data = response.data  # type: ignore[attr-defined]
-        except AttributeError:
-            data = {'detail': 'ok'}
+        data = _tool_result_payload(response)
         read_sensitive = read_level == 'sensitive'
         redacted = redact_mapping(
             data if isinstance(data, dict) else {'result': data},
