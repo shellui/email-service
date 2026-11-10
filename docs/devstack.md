@@ -78,7 +78,7 @@ Open [http://localhost:8025](http://localhost:8025) to read captured messages. P
 
 The dev Docker target runs `migrate` and `runserver` only. The Shellui compose file may start lane workers and Celery in separate services or overrides. Set `REDIS_URL` so scheduled jobs can run when those processes are enabled.
 
-For the production image, lane workers and the scheduler start in the same container via [tools/docker-entrypoint.sh](https://github.com/shellui/email-service/blob/develop/tools/docker-entrypoint.sh).
+For the production image, lane workers and the scheduler start in the same container via [tools/docker-entrypoint.sh](../tools/docker-entrypoint.sh).
 
 ## Service keys for callers
 
