@@ -48,6 +48,18 @@ def _default_revocation_agents() -> list[dict]:
     return [{'agent_id': _snapshot_agent_id(), 'company_id': 42}]
 
 
+def _rule_create_body() -> dict:
+    """OpenAPI body for ``api_v1_rules_create`` (``EmailRuleWriteSerializer``).
+
+    Unknown fields are rejected before the approval gate.
+    """
+    return {
+        'event_type': 'identity.auth.magic_link',
+        'enabled': True,
+        'content': {'library_id': 1},
+    }
+
+
 MCP_SETTINGS = {
     'DEBUG': True,
     'JWT_HS256_FALLBACK_SECRET': SIGNING,
@@ -653,7 +665,7 @@ class McpEndpointTests(TestCase):
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
-                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                    'body': _rule_create_body(),
                 },
             },
         )
@@ -678,7 +690,7 @@ class McpEndpointTests(TestCase):
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
-                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                    'body': _rule_create_body(),
                 },
             },
         )
@@ -732,7 +744,7 @@ class McpEndpointTests(TestCase):
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
-                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                    'body': _rule_create_body(),
                 },
             },
         )
@@ -795,7 +807,7 @@ class McpEndpointTests(TestCase):
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
-                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                    'body': _rule_create_body(),
                 },
             },
         )
@@ -828,7 +840,7 @@ class McpEndpointTests(TestCase):
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
-                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                    'body': _rule_create_body(),
                 },
             },
         )
@@ -872,7 +884,7 @@ class McpEndpointTests(TestCase):
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
-                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                    'body': _rule_create_body(),
                 },
             },
         )
@@ -918,7 +930,7 @@ class McpEndpointTests(TestCase):
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
-                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                    'body': _rule_create_body(),
                 },
             },
         )
@@ -959,7 +971,7 @@ class McpEndpointTests(TestCase):
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
-                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                    'body': _rule_create_body(),
                 },
             },
         )
@@ -1003,7 +1015,7 @@ class McpEndpointTests(TestCase):
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
-                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                    'body': _rule_create_body(),
                 },
             },
         )
@@ -1964,7 +1976,7 @@ class McpEndpointTests(TestCase):
                 'arguments': {
                     'path': '/api/v1/rules',
                     'method': 'POST',
-                    'body': {'event_key': 'identity.auth.magic_link', 'enabled': True},
+                    'body': _rule_create_body(),
                 },
             },
         )
