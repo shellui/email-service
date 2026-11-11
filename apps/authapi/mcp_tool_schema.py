@@ -107,8 +107,15 @@ def published_mcp_tools(schema: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def public_mcp_tools(schema: dict[str, Any]) -> list[dict[str, Any]]:
-    """``tools/list`` payload. Drops ``_meta``."""
-    return [{key: value for key, value in tool.items() if not str(key).startswith('_')} for tool in published_mcp_tools(schema)]
+    """``tools/list`` payload. Keeps registry ``_meta`` for the AI gateway; drops other ``_`` keys."""
+    rows: list[dict[str, Any]] = []
+    for tool in published_mcp_tools(schema):
+        row = {key: value for key, value in tool.items() if not str(key).startswith('_')}
+        meta = tool.get('_meta')
+        if isinstance(meta, dict):
+            row['_meta'] = meta
+        rows.append(row)
+    return rows
 
 
 def coerce_mcp_arguments(arguments: dict[str, Any], tool: dict[str, Any]) -> dict[str, Any]:
