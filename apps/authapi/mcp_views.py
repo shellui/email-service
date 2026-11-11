@@ -81,12 +81,6 @@ def _approval_consume(approval_id: str, payload: dict | None = None) -> bool:
     return consume_approval(approval_id, payload=payload or {})
 
 
-def _forward_call(entry: dict) -> None:
-    from apps.authapi.mcp_identity import forward_call_log
-
-    forward_call_log(entry)
-
-
 def _get_server() -> EmailMcpServer:
     global _server
     if _server is None:
@@ -95,7 +89,6 @@ def _get_server() -> EmailMcpServer:
             urlconf=settings.ROOT_URLCONF,
             service_name='email',
             identity_revocation_check=_revocation_check,
-            on_call=_forward_call,
             approval_handler=_approval_handler,
             approval_state=_approval_state,
             approval_consume=_approval_consume,

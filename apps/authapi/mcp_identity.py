@@ -1,4 +1,4 @@
-"""Identity-service MCP internal APIs (revocation list, approvals, call logs)."""
+"""Identity-service MCP internal APIs (revocation list, approvals)."""
 
 from __future__ import annotations
 
@@ -15,19 +15,15 @@ from shellui_django.mcp.internal import (
     InternalAssertionError,
     REVOCATION_CACHE_SECONDS,
     build_mcp_approval_assertion,
-    build_mcp_call_log_assertion,
     build_mcp_revocation_assertion,
     parse_trusted_revocation_poll_response,
 )
 
 from config.service_signing import build_mcp_delegated_authority_assertion, signing_kwargs
 
-from apps.authapi.identity_call_log_codes import sanitize_call_log_error_code_for_identity
-from apps.authapi.mcp_claims import AgentClaimsValidationError, strict_json_nonneg_int
-
 logger = logging.getLogger(__name__)
 
-# Filled by ``resolve_approval_state`` so the MCP server can log ``approval_request_id``.
+# Filled by ``resolve_approval_state`` so the MCP tool result can include ``approval_request_id``.
 # Request-scoped via ``approval_state_extras_scope`` (``EmailMcpServer._tools_call``); not a process-wide global.
 _approval_state_extras_ctx: ContextVar[dict[str, Any] | None] = ContextVar('mcp_approval_state_extras', default=None)
 
@@ -810,57 +806,6 @@ def consume_approval(approval_id: str, *, payload: dict[str, Any] | None = None)
         raise McpIdentityUnavailable('approval_consume_failed') from exc
 
 
-# Identity ``canonical_outcome_ingest`` (``call_log_outcome.py``): ``pending_approval`` aliases to ``waiting_approval``.
-_IDENTITY_OUTCOME_ALIASES: dict[str, str] = {'pending_approval': 'waiting_approval'}
-
-
-def _canonical_outcome_for_identity_ingest(raw: str) -> str:
-    s = (raw or '').strip().lower()
-    return _IDENTITY_OUTCOME_ALIASES.get(s, s)
-
-
-def _call_log_access_kind_for_ingest(entry: dict[str, Any]) -> str:
-    """Truthful OpenAPI destructive flag for Identity ingest (all outcomes)."""
-    raw = str(entry.get('access_kind') or '').strip().lower()
-    if entry.get('tool_destructive') is True:
-        return 'destructive'
-    if raw in ('read', 'write', 'destructive'):
-        return raw
-    return 'unknown'
-
-
-# email-service local ``_flat_audit_entry`` / DRF codes -> Identity ``mcp_audit_codes.ALLOWED_ERROR_CODES`` (develop).
-_EMAIL_TO_IDENTITY_ERROR_CODE: dict[str, str] = {
-    'forbidden': 'forbidden',
-    'not_found': 'not_found',
-    'validation_failed': 'bad_request',
-    'conflict': 'conflict',
-    'server_error': 'server_error',
-    'request_failed': 'unknown',
-    'identity_unavailable': 'identity_unreachable',
-    'tool_error': 'downstream_error',
-    'read_only_blocked': 'forbidden',
-    'approval_pending': 'waiting_approval',
-    'approval_denied': 'denied',
-    'approval_expired': 'expired',
-    'rate_limited': 'rate_limited',
-    'authority_ambiguous': 'unknown',
-    'authority_mismatch': 'denied',
-    'authority_row_missing': 'unknown',
-    'authority_binding_missing': 'conflict',
-    'out_of_sync': 'out_of_sync',
-}
-
-
-def _map_email_error_code_to_identity(local_code: str | None) -> str | None:
-    """Map local audit codes to Identity ingest allowlist; unknown locals become ``unknown`` after sanitize."""
-    if not local_code:
-        return None
-    lc = str(local_code).strip()
-    mapped = _EMAIL_TO_IDENTITY_ERROR_CODE.get(lc, lc)
-    return sanitize_call_log_error_code_for_identity(mapped) or sanitize_call_log_error_code_for_identity('unknown')
-
-
 def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
     _require_service_assertions()
     # Delegated agents obtain approvals through the regional AI gateway; email-service does not open approval rows directly.
@@ -902,131 +847,3 @@ def create_approval_request(payload: dict[str, Any]) -> dict[str, Any] | None:
         logger.warning('MCP approval request failed (%s).', type(exc).__name__)
         raise McpIdentityUnavailable('approval_request_failed') from exc
 
-
-def forward_call_log(entry: dict[str, Any]) -> None:
-    # Truthful ``access_kind`` for OpenAPI-destructive tools. Identity ``develop``
-    # ``McpInternalCallLogView`` may still reject some destructive outcome pairs until PR #136 lands;
-    # forward failures are logged and do not weaken local audits.
-    try:
-        _require_service_assertions()
-    except McpIdentityUnavailable:
-        return
-    origin = identity_origin()
-    base = identity_api_base()
-    if not origin or not base:
-        return
-    cc_raw = entry.get('company_id')
-    if cc_raw is None:
-        return
-    try:
-        cc_val = strict_json_nonneg_int(cc_raw, field='company_id')
-    except AgentClaimsValidationError:
-        return
-    gv_for_live = entry.get('grant_version')
-    cbv_for_live = entry.get('company_binding_version')
-    gci_live = entry.get('global_company_id')
-    has_gci = gci_live is not None
-    has_cbv = cbv_for_live is not None
-    if has_gci != has_cbv:
-        return
-    if has_gci and has_cbv:
-        if gv_for_live is None or entry.get('agent_id') is None:
-            return
-        try:
-            gv_i = strict_json_nonneg_int(gv_for_live, field='grant_version')
-            cbv_i = strict_json_nonneg_int(cbv_for_live, field='company_binding_version')
-        except AgentClaimsValidationError:
-            return
-        vc = entry.get('verified_agent_claims')
-        if not isinstance(vc, dict):
-            return
-        live_claims: dict[str, Any] = dict(vc)
-        live_claims['global_company_id'] = str(gci_live)
-        live_claims['company_binding_version'] = cbv_i
-        live_claims['grant_version'] = gv_i
-        try:
-            verify_live_delegated_authority_against_token(str(entry['agent_id']), cc_val, live_claims)
-        except McpIdentityUnavailable:
-            return
-        except McpAgentCompanyMismatch as exc:
-            code = str(exc.args[0]) if exc.args else ''
-            entry = dict(entry)
-            entry['outcome'] = 'denied'
-            if code == 'authority_binding_missing':
-                entry['error_code'] = 'authority_binding_missing'
-            elif code in {'authority_snapshot_mismatch', 'regional_company_mismatch'}:
-                entry['error_code'] = 'authority_mismatch'
-            elif code == 'authority_snapshot_invalid':
-                entry['error_code'] = 'request_failed'
-            else:
-                entry['error_code'] = 'authority_mismatch'
-    assertion = build_mcp_call_log_assertion(audience_url=origin, **signing_kwargs())
-    url = f'{base}/api/v1/mcp/internal/mcp-call-logs'
-    stat = entry.get('http_status')
-    dur_raw = entry.get('duration_ms')
-    try:
-        dur_val = strict_json_nonneg_int(dur_raw, field='duration_ms')
-    except AgentClaimsValidationError:
-        return
-    outcome_raw = str(entry.get('outcome') or '').strip().lower()
-    outcome_norm = _canonical_outcome_for_identity_ingest(outcome_raw)
-    ak = _call_log_access_kind_for_ingest(entry)
-    try:
-        hs = strict_json_nonneg_int(stat, field='http_status') if stat is not None else 0
-    except AgentClaimsValidationError:
-        return
-    body: dict[str, Any] = {
-        'agent_id': str(entry.get('agent_id') or ''),
-        'company_id': cc_val,
-        'service': str(entry.get('service') or '')[:32],
-        'tool': str(entry.get('tool') or '')[:255],
-        'method': 'POST',
-        'path': '/mcp',
-        'status': hs,
-        'duration_ms': dur_val,
-        'result': '',
-        'outcome': outcome_norm,
-        'access_kind': ak,
-    }
-    gv_entry = entry.get('grant_version')
-    if gv_entry is None:
-        return
-    try:
-        body['grant_version'] = strict_json_nonneg_int(gv_entry, field='grant_version')
-    except AgentClaimsValidationError:
-        return
-    gci_entry = entry.get('global_company_id')
-    cbv_entry = entry.get('company_binding_version')
-    has_gci_b = gci_entry is not None
-    has_cbv_b = cbv_entry is not None
-    if has_gci_b != has_cbv_b:
-        return
-    if has_gci_b:
-        try:
-            body['global_company_id'] = str(gci_entry)
-            body['company_binding_version'] = strict_json_nonneg_int(cbv_entry, field='company_binding_version')
-        except AgentClaimsValidationError:
-            return
-    ec_ingest = _map_email_error_code_to_identity(entry.get('error_code'))
-    if ec_ingest:
-        body['error_code'] = ec_ingest
-    appr = entry.get('approval_request_id')
-    if appr:
-        # Do not imply a consumed destructive grant on pre-execution denial (Identity matches row to tool + agent).
-        if ak == 'destructive' and outcome_norm == 'denied':
-            pass
-        else:
-            try:
-                body['approval_id'] = str(uuid.UUID(str(appr)))
-            except (ValueError, TypeError):
-                pass
-    try:
-        response = requests.post(
-            url,
-            json=body,
-            headers={'Authorization': f'Bearer {assertion}'},
-            timeout=getattr(settings, 'JWKS_TIMEOUT', 15),
-        )
-        response.raise_for_status()
-    except (requests.RequestException, OSError) as exc:
-        logger.warning('MCP call log forward failed (%s).', type(exc).__name__)
