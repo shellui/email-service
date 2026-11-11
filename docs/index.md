@@ -16,6 +16,8 @@ email-service is the Shellui mail API. It keeps a catalog of events, a queue per
 
 It is a Django app, published as the `shellui/email-service` Docker image. It checks JSON Web Tokens (JWTs) issued by identity-service for admin calls. Service-to-service calls use an `esk_` key. It does not sign people in itself.
 
+Company-owner routes that Shellui MCP agents may call are listed in [Shellui MCP](mcp.md). The OpenAPI schema marks them with an `x-mcp` extension.
+
 ## Who it is for
 
 Use it when a Shellui product needs mail: a sign-in link, an invitation, a notice after a storage or hosting event, a broadcast, or a newsletter. Company owners set the provider, the email rules, and the copy. Operators run the process, Postgres, and Redis.
@@ -71,12 +73,14 @@ Pick the row that matches what you are doing:
 | You want to | Start with |
 | --- | --- |
 | Run it locally | [Run email-service](getting-started.md) |
+| Run in the Shellui dev stack | [Shellui dev stack](devstack.md) |
 | Set environment variables | [Configuration](configuration.md) |
 | Issue a service key and call the API | [Service keys](authentication.md) and the [integration contract](integration.md) |
 | See which events exist | [Events catalog](events.md) |
 | Connect Resend or SMTP | [Providers](providers.md) |
 | Turn an event into mail | [Email rules](rules.md) |
 | Edit copy, languages, and colors | [Templates and translations](templates.md) and the [design library](library.md) |
+| Expose email settings to Shellui MCP agents | [Shellui MCP](mcp.md) |
 | Collect sign-ups from a website | [Newsletters](newsletters.md) |
 | Mail many people at once | [Broadcasts](broadcasts.md) |
 | See why sign-in mail has its own queue | [Lanes](lanes.md) |

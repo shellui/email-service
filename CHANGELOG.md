@@ -21,6 +21,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 🗑 Removed
+
+- MCP: email-service no longer POSTs tool activity to Identity `/api/v1/mcp/internal/mcp-call-logs`. The ai-service gateway records `tools/call`. Token verification, revocation polling, and approvals still call Identity.
+
+### 🐛 Bug Fixes
+
+- MCP: `email_export_newsletter_subscribers` returns the CSV body (`content_type` `text/csv` and `csv`). Read-safe mode still masks addresses inside that text.
+- MCP: `email_create_newsletters` requires `name`, matching `create_list`. Library create copy states that `name` or `source_id` is required. Webhook create and rotate copy states that MCP results mask `secret`.
+
+### 🚨 Changed
+
+- MCP tool arguments are flat. `method`, `path`, and the request URL are not inputs. Parameters with a fixed set of values publish an `enum` and a short description. Each tool description says what it does, which arguments matter, and what it returns. Deletes, sends, secret rotations, and other hard-to-undo tools set `destructive` (`destructiveHint`) so full access still asks for approval. Reads set `readOnlyHint`.
+- MCP `tools/list` names match the ai-service gateway (`email_list_rules`, `email_create_newsletters`, and the other 63). `x-mcp.tool_name` is that name. OpenAPI `operationId` values stay `api_v1_*`.
+- MCP: after Identity `mcp-approval-consume` returns `consumed: true` for the same agent, company, tool, and arguments hash, that call runs once. The tool body is posted to the underlying view as JSON. A later call does not run or consume again. Ask mode no longer consumes the approval and then returns "Write requires approval."
+
+### 🛠 Improvements
+
+- MCP: Identity approval consume accepts only JSON boolean `true` for `consumed`; HTTP `409` already consumed maps to the same path as approval state ``expired`` (until Identity PR #136 finalizes consume semantics).
+- MCP: approval state extras for ``approval_request_id`` use a request-scoped context (``EmailMcpServer._tools_call``) instead of a module global.
+- MCP: optional global delegation claims on agent JWTs are checked when Identity includes a snapshot row for that agent; strict `build_mcp_approval_assertion` kwargs for personal vs delegated agents.
+- MCP: stricter agent JWT numeric claims (no string `company_id`, no bool coercion) and revocation binding (delegated agents without a snapshot row or ambiguous duplicate rows are forbidden).
+- MCP: delegated agents call Identity `POST …/mcp-agent-delegated-authority` with the JWT triple; internal assertion uses `aud` `shellui-mcp-agent-delegated-authority` and scope `mcp.agent.delegated.authority.read` (`target` = Identity issuer). Live authority responses use Identity ``_delegated_authority_fixed_payload`` (15 JSON keys on every HTTP `200`) at [`d7fe351`](https://raw.githubusercontent.com/shellui/identity-service/d7fe351/apps/agents/internal_views.py). The live row is matched to the JWT on `access_mode`, `read_level`, **`global_agent_id`** (must equal live SaaS catalog id), exact **set** equality between normalized `scope` (space-delimited) and `services_allowed`, and `allow_destructive` vs `mcp_destructive`. HTTP `404` maps to `403 authority_binding_missing`. HTTP `401` on the delegated call is a **service assertion** problem and maps to `503 identity_unavailable` (not an agent deny). Revocation snapshots match delegated rows on `agent_id` only (no `id` aliases). Agent JWTs must include `grant_version` and **`mcp_destructive`** (boolean only, no default); delegated tokens must include **`global_agent_id`**. Approval create bodies stay `{}` (fingerprints live in the service assertion only). Delegated approval live checks merge **`verified_agent_claims`** (normalized JWT copy from the gateway) with assertion fields. Delegated agents do not create approval rows in email-service (refused before Identity `POST`; no redundant live verify on that path). Delegated approval Identity responses with HTTP `409` and `error_code` `out_of_sync` surface as MCP HTTP `409` (routed via AI, no local fallback).
+- MCP: destructive tools always require a fresh human approval per call, even when `mcp_destructive` is true.
+- MCP: stable machine codes on internal exceptions to Identity.
+- MCP: `shellui-django[mcp]==0.5.0` comes from PyPI (`pyproject.toml` and `uv.lock`).
+
+## [0.8.0] - 2026-11-01
+
+### 🛠 Improvements
+
+- Bump `shellui-django[mcp]` to 0.4.0 and sign internal MCP assertions to Identity with this service's own RS256 key (`EMAIL_SERVICE_SIGNING_KEY`, `EMAIL_SERVICE_ISSUER`), public key at `/.well-known/jwks.json`.
+- Docker `dev` target for the Shellui local stack (bind-mounted source, `runserver` on port 8000); production publish unchanged.
+- Local host port **8004** and [Shellui dev stack](docs/devstack.md) env documentation (identity issuer public, JWKS and SMTP via compose DNS).
+- `register_dev_service_keys` registers the dev stack's service keys from `EMAIL_DEV_SERVICE_KEYS` on start (DEBUG only).
+
+- Production may verify admin JWTs from a cached `IDENTITY_JWKS_URL` fetch when keys are not pinned.
+
+### ✨ Feature
+
+- MCP endpoint for Shellui agents at `POST /mcp`.
+- OpenAPI schema tags for MCP tool discovery.
+- Template render-preview exposed to MCP agents.
+- OpenAPI descriptions for admin API operations.
+
+### 🏗 Chore
+
+- Use the shared shellui-django package for MCP instead of a vendored copy.
+
+### 🐛 Bug Fixes
+
+- MCP revocation lists are verified with keys from `IDENTITY_JWKS_URL` when no JWKS is pinned, instead of the public issuer URL.
+
 ## [0.7.1] - 2026-11-01
 
 ### 🐛 Bug Fixes

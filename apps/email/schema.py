@@ -6,23 +6,117 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter
 from rest_framework import serializers
 
+from apps.authapi.mcp_fields import McpSecretCharField, McpSensitiveCharField, McpSensitiveJSONField
+from apps.email.catalog import LANGUAGES, LANES, catalog_event_types, catalog_services, rule_event_types
+from apps.email.models import EmailRule, Message, Suppression
+
 COMPANY_QUERY = OpenApiParameter(
     name='company_id',
     type=OpenApiTypes.INT,
     location=OpenApiParameter.QUERY,
     required=False,
-    description='Company to read. Staff may set this. Owners use the company on the JWT when it is omitted.',
+    description=(
+        'Target company. Company owners omit this when the JWT already includes `company_id`. '
+        'Shellui staff may set it to manage another company.'
+    ),
+)
+
+MESSAGE_STATUS_QUERY = OpenApiParameter(
+    'status',
+    str,
+    OpenApiParameter.QUERY,
+    required=False,
+    enum=list(Message.STATUSES),
+    description='Message status to match.',
+)
+
+LANE_QUERY = OpenApiParameter(
+    'lane',
+    str,
+    OpenApiParameter.QUERY,
+    required=False,
+    enum=list(LANES),
+    description='Delivery lane: auth, transactional, or bulk.',
+)
+
+CATALOG_EVENT_QUERY = OpenApiParameter(
+    'event_type',
+    str,
+    OpenApiParameter.QUERY,
+    required=False,
+    enum=list(catalog_event_types()),
+    description='Catalog event id.',
+)
+
+TEMPLATE_EVENT_QUERY = OpenApiParameter(
+    'event_type',
+    str,
+    OpenApiParameter.QUERY,
+    required=False,
+    enum=list(catalog_event_types()),
+    description='Catalog event id. An unknown id returns event_unknown.',
+)
+
+SERVICE_QUERY = OpenApiParameter(
+    'service',
+    str,
+    OpenApiParameter.QUERY,
+    required=False,
+    enum=list(catalog_services()),
+    description='Catalog service that owns the event, such as hosting or email.',
+)
+
+STATS_FROM_QUERY = OpenApiParameter(
+    'from',
+    str,
+    OpenApiParameter.QUERY,
+    required=False,
+    description='Start of the window, as an ISO date (YYYY-MM-DD).',
+)
+
+STATS_TO_QUERY = OpenApiParameter(
+    'to',
+    str,
+    OpenApiParameter.QUERY,
+    required=False,
+    description='End of the window, inclusive, as an ISO date (YYYY-MM-DD).',
+)
+
+TEMPLATE_KEY_QUERY = OpenApiParameter(
+    'template_key',
+    str,
+    OpenApiParameter.QUERY,
+    required=False,
+    description='Template key to match.',
+)
+
+MESSAGE_LIMIT_QUERY = OpenApiParameter(
+    'limit',
+    int,
+    OpenApiParameter.QUERY,
+    required=False,
+    description='Maximum messages to return. Default 50, maximum 200.',
 )
 
 
 class ErrorSerializer(serializers.Serializer):
-    error_code = serializers.CharField()
+    error_code = serializers.CharField(
+        help_text='Stable machine code (for example `validation_failed`, `not_found`, `forbidden`). Never a translated sentence.',
+    )
     field_errors = serializers.DictField(
         child=serializers.ListField(child=serializers.CharField()),
         required=False,
+        help_text='Optional map of field names to lists of stable error tokens (for example `required`, `invalid`).',
     )
-    missing_variables = serializers.ListField(child=serializers.CharField(), required=False)
-    request_id = serializers.CharField(required=False)
+    missing_variables = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        help_text='Template preview only: placeholder tokens that were not supplied.',
+    )
+    request_id = serializers.CharField(
+        required=False,
+        help_text='Echo of the `X-Request-ID` header when present.',
+    )
 
 
 class HealthSerializer(serializers.Serializer):
@@ -140,7 +234,7 @@ class MessageListItemSerializer(serializers.Serializer):
     template_key = serializers.CharField()
     lane = serializers.CharField()
     status = serializers.CharField()
-    to = serializers.CharField()
+    to = McpSensitiveCharField()
     accepted_at = serializers.CharField()
 
 
@@ -319,6 +413,31 @@ class TemplateTestSendRequestSerializer(serializers.Serializer):
     theme = serializers.JSONField(required=False, help_text=THEME_HELP + ' Used with document.')
 
 
+class TemplateRenderPreviewRequestSerializer(serializers.Serializer):
+    number = serializers.IntegerField(
+        required=False,
+        help_text='Version number. Default: newest draft, else the active published version.',
+    )
+    subject = serializers.CharField(required=False)
+    preheader = serializers.CharField(required=False, allow_blank=True)
+    document = serializers.JSONField(
+        required=False,
+        help_text='Unsaved editor JSON. When sent, `subject` is required unless the version supplies it.',
+    )
+    theme = serializers.JSONField(required=False, help_text=THEME_HELP + ' Used with `document`.')
+    variables = serializers.JSONField(
+        required=False,
+        help_text='Placeholder map for `{{ token }}` values. Omitted keys use catalog examples where available.',
+    )
+
+
+class TemplateRenderPreviewResponseSerializer(serializers.Serializer):
+    subject = serializers.CharField()
+    html = serializers.CharField()
+    text = serializers.CharField()
+    missing_variables = serializers.ListField(child=serializers.CharField())
+
+
 class TestSendResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     provider = serializers.CharField()
@@ -354,38 +473,61 @@ class EmailRuleListSerializer(serializers.Serializer):
 
 
 class EmailRuleWriteSerializer(serializers.Serializer):
-    service = serializers.CharField(required=False)
-    event_type = serializers.CharField()
+    service = serializers.ChoiceField(
+        choices=catalog_services(),
+        required=False,
+        help_text='Owner service for event_type. Omit to use the catalog service. A mismatch returns event_unknown.',
+    )
+    event_type = serializers.ChoiceField(
+        choices=rule_event_types(),
+        help_text='Catalog event id. Auth-lane events are rejected.',
+    )
     enabled = serializers.BooleanField(required=False)
-    recipient_mode = serializers.CharField(required=False)
+    recipient_mode = serializers.ChoiceField(
+        choices=EmailRule.MODES,
+        required=False,
+        help_text='hints uses addresses on the event. static uses static_recipients.',
+    )
     static_recipients = serializers.ListField(child=serializers.CharField(), required=False)
-    language = serializers.CharField(required=False, allow_blank=True)
+    language = serializers.ChoiceField(
+        choices=LANGUAGES,
+        required=False,
+        help_text='en or fr. Omit to use the catalog default.',
+    )
     newsletter_id = serializers.IntegerField(
         required=False, allow_null=True, help_text='`email.newsletter.*` rules only: one newsletter list, or null for every list.'
     )
-    content = EmailRuleContentSerializer()
+    content = EmailRuleContentSerializer(help_text='Template the rule sends. `library_id` is required.')
 
 
 class EmailRulePatchSerializer(serializers.Serializer):
     enabled = serializers.BooleanField(required=False)
-    recipient_mode = serializers.CharField(required=False)
+    recipient_mode = serializers.ChoiceField(
+        choices=EmailRule.MODES,
+        required=False,
+        help_text='hints uses addresses on the event. static uses static_recipients.',
+    )
     static_recipients = serializers.ListField(child=serializers.CharField(), required=False)
-    language = serializers.CharField(required=False, allow_blank=True)
+    language = serializers.ChoiceField(
+        choices=LANGUAGES,
+        required=False,
+        help_text='en or fr. Omit to leave the saved language.',
+    )
     newsletter_id = serializers.IntegerField(
         required=False, allow_null=True, help_text='`email.newsletter.*` rules only: one newsletter list, or null for every list.'
     )
 
 
 class ProviderCredentialsSerializer(serializers.Serializer):
-    api_key = serializers.CharField(required=False)
+    api_key = McpSecretCharField(required=False)
     host = serializers.CharField(required=False)
     port = serializers.IntegerField(required=False)
     username = serializers.CharField(required=False, allow_blank=True)
-    password = serializers.CharField(required=False)
+    password = McpSecretCharField(required=False)
     use_tls = serializers.BooleanField(required=False)
     use_ssl = serializers.BooleanField(required=False)
     access_key_id = serializers.CharField(required=False, help_text='Amazon SES access key id.')
-    secret_access_key = serializers.CharField(required=False, help_text='Amazon SES secret access key. Write-only.')
+    secret_access_key = McpSecretCharField(required=False, help_text='Amazon SES secret access key. Write-only.')
     region = serializers.CharField(required=False, help_text='Amazon SES region. Defaults to eu-central-2.')
     configuration_set = serializers.CharField(required=False, allow_blank=True, help_text='Optional Amazon SES configuration set.')
 
@@ -398,9 +540,9 @@ class ProviderSerializer(serializers.Serializer):
     from_name = serializers.CharField(allow_blank=True)
     sending_domain = serializers.CharField(allow_blank=True)
     bulk_from_email = serializers.CharField(allow_blank=True)
-    credentials_hint = serializers.CharField(allow_blank=True)
+    credentials_hint = McpSensitiveCharField(allow_blank=True)
     webhook_configured = serializers.BooleanField()
-    webhook_hint = serializers.CharField(allow_blank=True)
+    webhook_hint = McpSensitiveCharField(allow_blank=True)
     fallback_provider = serializers.CharField()
     fallback_configured = serializers.BooleanField()
     smtp_allowed = serializers.BooleanField()
@@ -420,13 +562,16 @@ class AuthLinkHostsWriteSerializer(serializers.Serializer):
 
 
 class ProviderWriteSerializer(serializers.Serializer):
-    provider = serializers.ChoiceField(choices=['resend', 'ses', 'smtp'])
+    provider = serializers.ChoiceField(
+        choices=['resend', 'ses', 'smtp'],
+        help_text='Sending provider: resend, ses, or smtp.',
+    )
     from_email = serializers.EmailField()
     from_name = serializers.CharField(required=False, allow_blank=True)
     sending_domain = serializers.CharField(required=False, allow_blank=True)
     bulk_from_email = serializers.CharField(required=False, allow_blank=True)
     credentials = ProviderCredentialsSerializer(required=False)
-    webhook_secret = serializers.CharField(required=False, allow_blank=True)
+    webhook_secret = McpSecretCharField(required=False, allow_blank=True)
 
 
 class ProviderTestSendRequestSerializer(serializers.Serializer):
@@ -483,8 +628,16 @@ class SuppressionListSerializer(serializers.Serializer):
 
 class SuppressionCreateSerializer(serializers.Serializer):
     email = serializers.EmailField()
-    reason = serializers.CharField(required=False)
-    lanes = serializers.ListField(child=serializers.CharField(), required=False)
+    reason = serializers.ChoiceField(
+        choices=Suppression.REASONS,
+        required=False,
+        help_text='Why the address is blocked. Default manual.',
+    )
+    lanes = serializers.ListField(
+        child=serializers.ChoiceField(choices=LANES, help_text='One delivery lane: auth, transactional, or bulk.'),
+        required=False,
+        help_text='Lanes to block. Omit or send an empty list to block every lane.',
+    )
 
 
 class SuppressionCreatedSerializer(serializers.Serializer):
@@ -550,7 +703,7 @@ class ServiceClientCreateSerializer(serializers.Serializer):
 class ServiceClientCreatedSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     service = serializers.CharField()
-    key = serializers.CharField()
+    key = McpSecretCharField()
     key_prefix = serializers.CharField()
 
 
@@ -561,8 +714,19 @@ class BroadcastAudienceSerializer(serializers.Serializer):
     )
     list_id = serializers.IntegerField(required=False, help_text='Newsletter list, for mode newsletter.')
     group_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
-    roles = serializers.ListField(child=serializers.ChoiceField(choices=['owner', 'staff', 'member']), required=False)
-    access = serializers.ChoiceField(choices=['enabled', 'disabled', 'any'], required=False)
+    roles = serializers.ListField(
+        child=serializers.ChoiceField(
+            choices=['owner', 'staff', 'member'],
+            help_text='Company role: owner, staff, or member.',
+        ),
+        required=False,
+        help_text='Company roles to match.',
+    )
+    access = serializers.ChoiceField(
+        choices=['enabled', 'disabled', 'any'],
+        required=False,
+        help_text='Account access to match: enabled, disabled, or any.',
+    )
     joined_after = serializers.CharField(required=False, allow_blank=True, help_text='ISO date.')
     joined_before = serializers.CharField(required=False, allow_blank=True, help_text='ISO date, inclusive.')
     seen_after = serializers.CharField(required=False, allow_blank=True, help_text='ISO date.')
@@ -616,7 +780,11 @@ class BroadcastListSerializer(serializers.Serializer):
 class BroadcastCreateSerializer(serializers.Serializer):
     name = serializers.CharField()
     source_key = serializers.CharField(help_text='Library template to start from.')
-    language = serializers.CharField(required=False, help_text='Main language of the content. Default en.')
+    language = serializers.ChoiceField(
+        choices=LANGUAGES,
+        required=False,
+        help_text='Main language of the content, en or fr. Default en.',
+    )
     audience = BroadcastAudienceSerializer(required=False)
 
 
@@ -676,16 +844,44 @@ class NewsletterListSerializer(serializers.Serializer):
 class NewsletterWriteSerializer(serializers.Serializer):
     name = serializers.CharField(required=False)
     description = serializers.CharField(required=False, allow_blank=True)
-    default_language = serializers.CharField(required=False)
+    default_language = serializers.ChoiceField(
+        choices=LANGUAGES,
+        required=False,
+        help_text='en or fr. Default en.',
+    )
     allowed_origins = serializers.ListField(child=serializers.CharField(), required=False)
     confirmed_redirect_url = serializers.CharField(required=False, allow_blank=True)
     turnstile_site_key = serializers.CharField(required=False, allow_blank=True)
-    turnstile_secret = serializers.CharField(required=False, allow_blank=True, help_text='Write only. Empty clears it.')
+    turnstile_secret = McpSecretCharField(
+        required=False,
+        allow_blank=True,
+        help_text='Write only. Empty clears it.',
+    )
+
+
+class NewsletterCreateSerializer(serializers.Serializer):
+    """Create requires ``name``. Updates use ``NewsletterWriteSerializer``, where it stays optional."""
+
+    name = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True)
+    default_language = serializers.ChoiceField(
+        choices=LANGUAGES,
+        required=False,
+        help_text='en or fr. Default en.',
+    )
+    allowed_origins = serializers.ListField(child=serializers.CharField(), required=False)
+    confirmed_redirect_url = serializers.CharField(required=False, allow_blank=True)
+    turnstile_site_key = serializers.CharField(required=False, allow_blank=True)
+    turnstile_secret = McpSecretCharField(
+        required=False,
+        allow_blank=True,
+        help_text='Write only. Empty clears it.',
+    )
 
 
 class NewsletterSubscriberSerializer(serializers.Serializer):
     id = serializers.IntegerField()
-    email = serializers.CharField(help_text='Masked once the address is cleared after unsubscribing.')
+    email = McpSensitiveCharField(help_text='Masked once the address is cleared after unsubscribing.')
     first_name = serializers.CharField(allow_blank=True)
     metadata = serializers.DictField(child=serializers.CharField(allow_blank=True), help_text='Extra details sent with the sign-up. Untrusted text.')
     language = serializers.CharField()
@@ -706,7 +902,11 @@ class NewsletterSubscriberPageSerializer(serializers.Serializer):
 class NewsletterSubscriberCreateSerializer(serializers.Serializer):
     email = serializers.EmailField()
     first_name = serializers.CharField(required=False, allow_blank=True)
-    language = serializers.CharField(required=False, allow_blank=True)
+    language = serializers.ChoiceField(
+        choices=LANGUAGES,
+        required=False,
+        help_text='en or fr. Omit to use the list default.',
+    )
     mode = serializers.ChoiceField(
         choices=['confirm', 'consented'],
         required=False,
@@ -721,7 +921,11 @@ class NewsletterSubscriberAddedSerializer(serializers.Serializer):
 
 class NewsletterImportRequestSerializer(serializers.Serializer):
     csv = serializers.CharField(help_text='CSV text with an email column, and optional first_name and language.')
-    mode = serializers.ChoiceField(choices=['confirm', 'consented'], required=False)
+    mode = serializers.ChoiceField(
+        choices=['confirm', 'consented'],
+        required=False,
+        help_text='confirm (default) emails each new address. consented marks them confirmed without mail.',
+    )
 
 
 class NewsletterImportSerializer(serializers.Serializer):
