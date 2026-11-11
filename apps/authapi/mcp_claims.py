@@ -67,7 +67,7 @@ def normalize_mcp_agent_claims(agent_claims: dict[str, Any]) -> dict[str, Any]:
         if authority not in _VALID_MCP_AUTHORITY:
             raise AgentClaimsValidationError('mcp_authority')
 
-    # Identity call-log ingest requires ``grant_version`` in the JWT body (never omitted or guessed downstream).
+    # Identity mints ``grant_version`` on every agent JWT. Never omit it or invent a value here.
     if 'grant_version' not in agent_claims:
         raise AgentClaimsValidationError('grant_version')
     gv = strict_json_nonneg_int(agent_claims.get('grant_version'), field='grant_version')
