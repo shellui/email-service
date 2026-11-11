@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import threading
 
 from django.conf import settings
 from django.http import HttpRequest, JsonResponse
@@ -27,6 +28,8 @@ from apps.authapi.mcp_tool_names import publish_mcp_tool_names
 from apps.authapi.spectacular_hooks import mcp_schema_for_server
 
 _server: EmailMcpServer | None = None
+_schema_cache: dict | None = None
+_schema_lock = threading.Lock()
 
 
 def _schema() -> dict:
@@ -35,11 +38,23 @@ def _schema() -> dict:
     The public schema keeps ``operationId`` (``api_v1_*``). This copy rewrites those
     ids from ``x-mcp.tool_name`` because shellui-django 0.5.1 names tools from
     ``operationId`` only.
+
+    Cached under a lock: concurrent ``SchemaGenerator`` calls race inside
+    drf-spectacular optional extensions (``dj_rest_auth``) and raise
+    ``AttributeError: 'NoneType' object has no attribute 'startswith'``.
     """
-    generator = SchemaGenerator()
-    schema = copy.deepcopy(generator.get_schema(request=None, public=True))
-    schema = mcp_schema_for_server(schema)
-    return publish_mcp_tool_names(schema)
+    global _schema_cache
+    cached = _schema_cache
+    if cached is not None:
+        return cached
+    with _schema_lock:
+        if _schema_cache is not None:
+            return _schema_cache
+        generator = SchemaGenerator()
+        schema = copy.deepcopy(generator.get_schema(request=None, public=True))
+        schema = mcp_schema_for_server(schema)
+        _schema_cache = publish_mcp_tool_names(schema)
+        return _schema_cache
 
 
 def _revocation_check(agent_id: str, _company_id: int | None) -> bool:
@@ -122,8 +137,10 @@ class OAuthProtectedResourceMetadataView(APIView):
 
 def reset_mcp_server_cache() -> None:
     """Testing helper: rebuild ``McpServer`` after dependency overrides."""
-    global _server
-    _server = None
+    global _server, _schema_cache
+    with _schema_lock:
+        _server = None
+        _schema_cache = None
 
 
 @csrf_exempt
