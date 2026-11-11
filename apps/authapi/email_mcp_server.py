@@ -1,4 +1,4 @@
-"""email-service Shellui MCP server: safe flat audit fields for Identity call logs."""
+"""email-service Shellui MCP server."""
 
 from __future__ import annotations
 
@@ -167,7 +167,7 @@ def _flat_audit_entry(
 
 
 class EmailMcpServer(McpServer):
-    """Adds flat Identity-safe audit entries; never forwards MCP tool ``arguments`` to Identity."""
+    """Runs company-owner tools. Production does not register ``on_call``, so tool activity is not posted to Identity."""
 
     def handle(self, request: HttpRequest, *, agent_claims: dict[str, Any] | None) -> JsonResponse:
         if agent_claims is not None:

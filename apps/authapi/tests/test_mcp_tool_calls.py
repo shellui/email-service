@@ -69,7 +69,9 @@ def _approving_identity_post(agents_fn):
             ok.raise_for_status = MagicMock()
             ok.json = MagicMock(return_value={'consumed': True})
             return ok
-        if 'mcp-call-logs' in target or 'mcp-approval-requests' in target:
+        if 'mcp-call-logs' in target:
+            raise AssertionError(f'email-service must not POST identity call logs: {url}')
+        if 'mcp-approval-requests' in target:
             ok = MagicMock()
             ok.status_code = 201
             ok.raise_for_status = MagicMock()

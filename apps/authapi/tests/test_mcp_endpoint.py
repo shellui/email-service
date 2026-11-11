@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, call, patch
 import jwt
 from django.test import Client, TestCase, override_settings
 
-from apps.authapi.mcp_identity import McpAgentCompanyMismatch, McpDelegatedApprovalRoutingError, reset_revocation_cache_for_tests
+from apps.authapi.mcp_identity import McpDelegatedApprovalRoutingError, reset_revocation_cache_for_tests
 from apps.email.models import CompanyProfile
 from apps.authapi.mcp_openapi import MCP_EXPLICIT_REGISTRY, MCP_FORBIDDEN_OPERATION_IDS
 from apps.authapi.tests.rs256_helpers import generate_test_rsa_jwks, sign_test_revocation_list_assertion
@@ -295,10 +295,11 @@ def make_identity_post_side_effect(agents_fn):
                 }
                 return _live_delegated_authority_response(row=denial)
             return _live_delegated_authority_response(row=row)
+        if 'mcp-call-logs' in s:
+            raise AssertionError(f'email-service must not POST identity call logs: {url}')
         if any(
             part in s
             for part in (
-                'mcp-call-logs',
                 'mcp-approval-state',
                 'mcp-approval-consume',
                 'mcp-approval-requests',
@@ -357,7 +358,7 @@ class McpEndpointTests(TestCase):
         self.mock_identity_post.side_effect = make_identity_post_side_effect(_agents_fn)
 
     def _default_identity_post_chain(self):
-        """Delegated authority, approvals, call logs (one patched ``requests.post``)."""
+        """Delegated authority and approvals (one patched ``requests.post``)."""
 
         def _agents_fn():
             return self._revocation_agents_override if self._revocation_agents_override is not None else _default_revocation_agents()
@@ -368,7 +369,9 @@ class McpEndpointTests(TestCase):
             s = str(url)
             if 'mcp-agent-delegated-authority' in s:
                 return delegated(url, **kwargs)
-            if 'mcp-approval-state' in s or 'mcp-approval-consume' in s or 'mcp-approval-requests' in s or 'mcp-call-logs' in s:
+            if 'mcp-call-logs' in s:
+                raise AssertionError(f'email-service must not POST identity call logs: {url}')
+            if 'mcp-approval-state' in s or 'mcp-approval-consume' in s or 'mcp-approval-requests' in s:
                 ok = MagicMock()
                 ok.status_code = 200
                 ok.raise_for_status = MagicMock()
@@ -700,13 +703,12 @@ class McpEndpointTests(TestCase):
         self.assertEqual(result.get('meta', {}).get('status'), 'pending')
         self.assertEqual(result.get('meta', {}).get('approval_request_id'), 'approval-123')
 
-    @patch('apps.authapi.mcp_identity.forward_call_log')
     @patch('apps.authapi.mcp_identity.resolve_approval_state', return_value='not_found')
     @patch(
         'apps.authapi.mcp_identity.create_approval_request',
         side_effect=McpDelegatedApprovalRoutingError('approval_routed_via_ai_only'),
     )
-    def test_delegated_ask_mode_no_direct_approval_create_returns_409(self, _create, _state, mock_forward):
+    def test_delegated_ask_mode_no_direct_approval_create_returns_409(self, _create, _state):
         """Delegated agents must not open approval rows from email-service (gateway-only)."""
         from apps.authapi.mcp_views import reset_mcp_server_cache
 
@@ -750,10 +752,8 @@ class McpEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json().get('error_code'), 'out_of_sync')
-        self.assertTrue(mock_forward.called)
-        row = mock_forward.call_args[0][0]
-        self.assertEqual(row.get('outcome'), 'waiting_approval')
-        self.assertEqual(row.get('error_code'), 'out_of_sync')
+        posted = [str(posted_call.args[0]) for posted_call in self.mock_identity_post.call_args_list if posted_call.args]
+        self.assertFalse(any('mcp-call-logs' in url for url in posted))
         self._set_revocation_agents(None)
 
     @patch('apps.authapi.mcp_identity.requests.post')
@@ -1037,7 +1037,6 @@ class McpEndpointTests(TestCase):
         provider.fail_code = ''
         approved_key: dict[str, tuple[str, str] | None] = {'value': None}
         consume_count = {'n': 0}
-        call_logs: list[dict] = []
         delegated = self._default_identity_post_chain()
 
         def post_side_effect(url, **kwargs):
@@ -1073,12 +1072,7 @@ class McpEndpointTests(TestCase):
                 ok.json = MagicMock(return_value={'consumed': True})
                 return ok
             if 'mcp-call-logs' in s:
-                call_logs.append(dict(kwargs.get('json') or {}))
-                ok = MagicMock()
-                ok.status_code = 201
-                ok.raise_for_status = MagicMock()
-                ok.json = MagicMock(return_value={'id': 1})
-                return ok
+                raise AssertionError(f'email-service must not POST identity call logs: {url}')
             if 'mcp-approval-requests' in s:
                 ok = MagicMock()
                 ok.status_code = 200
@@ -1111,17 +1105,6 @@ class McpEndpointTests(TestCase):
         self.assertEqual(sent.subject, '[Shellui] Test message')
         self.assertIn('test message from Shellui', sent.text)
         self.assertEqual(consume_count['n'], 1)
-        self.assertEqual(len(call_logs), 1)
-        logged = call_logs[0]
-        self.assertEqual(logged.get('outcome'), 'allowed')
-        self.assertEqual(logged.get('approval_id'), approval_id)
-        self.assertEqual(logged.get('tool'), 'email_test_send_provider')
-        self.assertEqual(logged.get('access_kind'), 'destructive')
-        self.assertEqual(logged.get('result'), '')
-        self.assertNotIn('arguments', logged)
-        self.assertNotIn('arguments_redacted', logged)
-        self.assertNotIn('client_ip', logged)
-        self.assertNotIn(owner_email, json.dumps(logged))
 
         second = _rpc(
             self.client,
@@ -1133,12 +1116,6 @@ class McpEndpointTests(TestCase):
         self.assertIn('Approval already used.', second_text)
         self.assertEqual(len(provider.sent), 1)
         self.assertEqual(consume_count['n'], 1)
-        self.assertEqual(call_logs[-1].get('outcome'), 'denied')
-        self.assertEqual(call_logs[-1].get('error_code'), 'expired')
-        self.assertNotIn('approval_id', call_logs[-1])
-        self.assertNotIn('arguments', call_logs[-1])
-        self.assertNotIn('client_ip', call_logs[-1])
-        self.assertNotIn(owner_email, json.dumps(call_logs[-1]))
 
         other = _rpc(
             self.client,
@@ -1290,10 +1267,11 @@ class McpEndpointTests(TestCase):
                 nf = MagicMock()
                 nf.status_code = 404
                 return nf
+            if 'mcp-call-logs' in s:
+                raise AssertionError(f'email-service must not POST identity call logs: {url}')
             if any(
                 part in s
                 for part in (
-                    'mcp-call-logs',
                     'mcp-approval-state',
                     'mcp-approval-consume',
                     'mcp-approval-requests',
@@ -1343,10 +1321,11 @@ class McpEndpointTests(TestCase):
                 nf = MagicMock()
                 nf.status_code = 401
                 return nf
+            if 'mcp-call-logs' in s:
+                raise AssertionError(f'email-service must not POST identity call logs: {url}')
             if any(
                 part in s
                 for part in (
-                    'mcp-call-logs',
                     'mcp-approval-state',
                     'mcp-approval-consume',
                     'mcp-approval-requests',
@@ -1526,10 +1505,11 @@ class McpEndpointTests(TestCase):
                 nf = MagicMock()
                 nf.status_code = 403
                 return nf
+            if 'mcp-call-logs' in s:
+                raise AssertionError(f'email-service must not POST identity call logs: {url}')
             if any(
                 part in s
                 for part in (
-                    'mcp-call-logs',
                     'mcp-approval-state',
                     'mcp-approval-consume',
                     'mcp-approval-requests',
@@ -2052,8 +2032,7 @@ class McpEndpointTests(TestCase):
         self.assertIn('Destructive', result['content'][0]['text'])
 
     @patch('apps.email.views.ensure_builtin_rules')
-    @patch('apps.authapi.mcp_identity.forward_call_log')
-    def test_call_log_includes_safe_activity_metadata(self, mock_forward, _no_builtin):
+    def test_tools_call_does_not_post_identity_call_log(self, _no_builtin):
         token, _agent_id = _agent_token(company_id=42)
         response = _rpc(
             self.client,
@@ -2069,131 +2048,8 @@ class McpEndpointTests(TestCase):
             req_id=50,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(mock_forward.called)
-        entry = mock_forward.call_args[0][0]
-        self.assertEqual(entry.get('resource_path'), '/api/v1/rules')
-        self.assertEqual(entry.get('access_kind'), 'read')
-        self.assertEqual(entry.get('outcome'), 'allowed')
-        self.assertNotIn('arguments', entry)
-        self.assertNotIn('activity', entry)
-
-    @patch('apps.authapi.mcp_identity.requests.post')
-    def test_forward_call_log_identity_payload_shape(self, mock_post):
-        mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
-        from apps.authapi.mcp_identity import forward_call_log
-
-        forward_call_log(
-            {
-                'company_id': 42,
-                'agent_id': str(uuid.uuid4()),
-                'grant_version': 0,
-                'service': 'email',
-                'tool': 'email_list_rules',
-                'method': 'GET',
-                'resource_path': '/api/v1/rules',
-                'access_kind': 'read',
-                'outcome': 'allowed',
-                'duration_ms': 1,
-                'http_status': 200,
-            }
-        )
-        body = mock_post.call_args.kwargs['json']
-        self.assertNotIn('arguments', body)
-        self.assertNotIn('company_name', body)
-        self.assertEqual(body.get('path'), '/mcp')
-        self.assertEqual(body.get('method'), 'POST')
-        self.assertEqual(body.get('status'), 200)
-        self.assertNotIn('resource_path', body)
-        self.assertNotIn('http_status', body)
-        self.assertEqual(body.get('result'), '')
-        self.assertEqual(body.get('grant_version'), 0)
-
-    @patch('apps.authapi.mcp_identity.verify_live_delegated_authority_against_token')
-    @patch('apps.authapi.mcp_identity.requests.post')
-    def test_forward_call_log_delegated_includes_grant_and_binding(self, mock_post, _mock_verify_live):
-        mock_post.return_value = MagicMock(status_code=201, raise_for_status=MagicMock())
-        from apps.authapi.mcp_identity import forward_call_log
-
-        gcid = str(uuid.uuid4())
-        aid = str(uuid.uuid4())
-        gaid = str(uuid.uuid5(uuid.NAMESPACE_URL, f'mcp-delegated-global-agent:{aid}'))
-        forward_call_log(
-            {
-                'company_id': 42,
-                'agent_id': aid,
-                'global_company_id': gcid,
-                'company_binding_version': 0,
-                'grant_version': 1,
-                'verified_agent_claims': {
-                    'agent_id': aid,
-                    'company_id': 42,
-                    'scope': 'email',
-                    'mcp_access': 'read_only',
-                    'mcp_read': 'safe',
-                    'mcp_destructive': False,
-                    'grant_version': 1,
-                    'global_company_id': gcid,
-                    'company_binding_version': 0,
-                    'global_agent_id': gaid,
-                },
-                'service': 'email',
-                'tool': 'email_list_rules',
-                'method': 'GET',
-                'resource_path': '/api/v1/rules',
-                'access_kind': 'read',
-                'outcome': 'allowed',
-                'duration_ms': 1,
-                'http_status': 200,
-            }
-        )
-        body = mock_post.call_args.kwargs['json']
-        self.assertEqual(body.get('grant_version'), 1)
-        self.assertEqual(body.get('global_company_id'), gcid)
-        self.assertEqual(body.get('company_binding_version'), 0)
-
-    @patch('apps.authapi.mcp_identity.verify_live_delegated_authority_against_token')
-    @patch('apps.authapi.mcp_identity.requests.post')
-    def test_forward_call_log_rewrites_outcome_when_live_delegated_check_fails(
-        self, mock_post, mock_verify_live
-    ):
-        mock_verify_live.side_effect = McpAgentCompanyMismatch('authority_snapshot_mismatch')
-        mock_post.return_value = MagicMock(status_code=200, raise_for_status=MagicMock())
-        from apps.authapi.mcp_identity import forward_call_log
-
-        aid = str(uuid.uuid4())
-        gcid = str(uuid.uuid4())
-        gaid = str(uuid.uuid5(uuid.NAMESPACE_URL, f'mcp-delegated-global-agent:{aid}'))
-        forward_call_log(
-            {
-                'company_id': 42,
-                'agent_id': aid,
-                'global_company_id': gcid,
-                'company_binding_version': 0,
-                'grant_version': 1,
-                'verified_agent_claims': {
-                    'agent_id': aid,
-                    'company_id': 42,
-                    'scope': 'email',
-                    'mcp_access': 'read_only',
-                    'mcp_read': 'safe',
-                    'mcp_destructive': False,
-                    'grant_version': 1,
-                    'global_company_id': gcid,
-                    'company_binding_version': 0,
-                    'global_agent_id': gaid,
-                },
-                'service': 'email',
-                'tool': 'email_list_rules',
-                'method': 'GET',
-                'resource_path': '/api/v1/rules',
-                'access_kind': 'read',
-                'outcome': 'allowed',
-                'duration_ms': 1,
-            }
-        )
-        body = mock_post.call_args.kwargs['json']
-        self.assertEqual(body.get('outcome'), 'denied')
-        self.assertEqual(body.get('error_code'), 'denied')
+        posted = [str(posted_call.args[0]) for posted_call in self.mock_identity_post.call_args_list if posted_call.args]
+        self.assertFalse(any('mcp-call-logs' in url for url in posted))
 
     def test_approval_assertion_personal_optional_grant_version_zero(self):
         import jwt
