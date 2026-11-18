@@ -9,15 +9,15 @@
     "import:demos": "node tools/import-demos.mjs"
   },
   "dependencies": {
-    "@react-email/editor": "1.7.3",
-    "@react-email/render": "2.1.0",
+    "@react-email/editor": "1.8.7",
+    "@react-email/render": "2.3.1",
     "happy-dom": "21.0.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "react-email": "6.9.3"
+    "react-email": "6.11.13"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "^4.3.3",
+    "@tailwindcss/cli": "^4.3.5",
     "esbuild": "0.28.2",
     "tailwindcss": "^4.3.3"
   },
