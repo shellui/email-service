@@ -43,6 +43,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🏗 Chore
 
+- Docs build fetches identity, storage, and hosting docs so links outside email still resolve.
+
 ## [0.8.0] - 2026-11-18
 
 ### ✨ Feature
