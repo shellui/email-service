@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!---
-## [Unreleased] - yyyy-mm-dd
+## [x.y.z] - yyyy-mm-dd
 
 ### ✨ Feature - for new features
 ### 🛠 Improvements - for general improvements
@@ -20,6 +20,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
+
+## [0.8.0] - 2026-11-18
+
+### ✨ Feature
+
+- Shellui MCP for company-owner tools at `POST /mcp`, with `GET /.well-known/oauth-protected-resource`. Agents use an Identity JWT whose audience is `{EMAIL_PUBLIC_URL}/mcp`. See [docs/mcp.md](docs/mcp.md).
+- OpenAPI descriptions and `x-mcp` markers so agents can discover email tools. Only operations registered with `mcp_tool` are exposed.
+- Template render-preview is available to MCP agents.
+- MCP calls to Identity (revocation, approvals, and delegated authority) need `EMAIL_SERVICE_SIGNING_KEY` or `EMAIL_SERVICE_SIGNING_KEY_FILE`, and `EMAIL_SERVICE_ISSUER`. Without them, MCP fails closed and agents are refused. Mail delivery does not read these variables. The public key is at `GET /.well-known/jwks.json`.
+
+### 🛠 Improvements
+
+- MCP tool names match the ai-service gateway (`email_<verb>_<noun>`). OpenAPI operation ids stay `api_v1_*`.
+- `tools/list` keeps registry metadata the ai-service gateway reads.
+- Tool arguments are flat, with enums for fixed values. Method, path, and the request URL are not inputs.
+- Deletes, sends, secret rotations, and other hard-to-undo tools always ask for a fresh approval.
+- Delegated agents get live authority from identity-service. email-service does not create a second approval row for them.
+- Production verifies admin JWTs from a cached `IDENTITY_JWKS_URL`, or from `{IDENTITY_SERVICE_URL}/.well-known/jwks.json`, when keys are not pinned.
+- With `DEBUG=true`, templates allow http URLs for allowed hosts, including Tailscale and localhost.
+
+### 🚨 Changed
+
+- Docker Compose maps host port `8004` by default (was `8003`). The container still listens on `8000`. With `DEBUG=true` and no identity URL set, the default origin is `http://localhost:8001` (was `http://localhost:8000`).
+- Dependabot version updates now open against develop.
+
+### 📚 Documentation
+
+- Docker Hub overview in `DOCKERHUB.md`. After the image push, the publish workflow updates that overview when the repository secrets `DOCKERHUB_DESCRIPTION_USERNAME` and `DOCKERHUB_DESCRIPTION_TOKEN` are set. Use a personal Docker Hub access token for those two secrets. Organization tokens are rejected. Image push still uses `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`. If the description secrets are unset, the overview step is skipped and the image push still succeeds.
+- Local runs are documented against the Shellui dev stack in [docs/devstack.md](docs/devstack.md), including the dev service keys and the auth lane for identity's dev key.
+
+### 🗑 Removed
+
+- email-service no longer posts tool-call logs to identity-service. The ai-service gateway records `tools/call`. Token checks, revocation, and approvals still call identity-service. A direct `POST /mcp` does not write a call log.
+
+### 🐛 Bug Fixes
+
+- After an approval is consumed for the same agent, company, tool, and arguments, that call runs once and is not consumed again.
+- `email_export_newsletter_subscribers` returns the CSV body. Read-safe mode still masks addresses in that text.
+- Newsletter create requires a name. Webhook create and rotate results mask the signing secret.
+- MCP revocation lists are verified with keys from `IDENTITY_JWKS_URL` when no JWKS is pinned.
+- ReDoc renders without waiting for the Shellui SDK, so the API docs page is not blank.
+- `POST /mcp` caches the OpenAPI schema under a lock, so overlapping calls do not return 500.
+
+### 🏗 Chore
+
+- Depend on `shellui-django[mcp]==0.5.1` from PyPI, and sign internal MCP assertions with this service's RS256 key.
+- The Docker dev target registers the Shellui dev-stack service keys on start.
+- The docs build fetches identity, storage, and hosting docs so links outside email still resolve.
 
 ## [0.7.1] - 2026-11-01
 

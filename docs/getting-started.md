@@ -10,19 +10,23 @@ This page takes you from a clone to a process that can accept mail. You start em
 
 Run identity-service first when you need admin JWTs or broadcast audiences. The identity handbook is on [docs.shellui.com/identity](https://docs.shellui.com/identity/).
 
+## Shellui dev stack
+
+To run email-service with identity, storage, hosting, Postgres, Redis, and Mailpit, use the shared compose file in [shellui/shellui](https://github.com/shellui/shellui) (`dev/docker-compose.yml`). That file builds this repo with Docker target `dev` and maps host port **8004**. Environment variables for that stack are listed in [Shellui dev stack](devstack.md).
+
 ## What has to be running
 
 | Piece | Local Compose | Production (`DEBUG=false`) |
 | --- | --- | --- |
-| email-service | This image, host port `8003` | `shellui/email-service`, container port `8000` |
+| email-service | This image, host port `8004` | `shellui/email-service`, container port `8000` |
 | Redis | Started by Compose | Required. Rate limits and the scheduled jobs use it |
 | Postgres | Not in Compose. SQLite on the data volume when `POSTGRES_DATABASE_URL` is empty | Required. The process refuses to start without `POSTGRES_DATABASE_URL` |
 
-Identity is 8000, storage 8001, hosting 8002, email 8003.
+On the Shellui dev stack, identity is 8001, storage 8002, hosting 8003, and email is 8004.
 
 ## Start with Docker Compose
 
-Docker Compose builds the image, maps port 8003 to Gunicorn on port 8000, starts Redis, and stores SQLite in the `email-service-data` volume. You need Docker and Git:
+Docker Compose builds the production image target, maps port 8004 to Gunicorn on port 8000, starts Redis, and stores SQLite in the `email-service-data` volume. You need Docker and Git:
 
 ```bash
 git clone https://github.com/shellui/email-service.git
@@ -42,9 +46,9 @@ PY
 
 `.env.example` sets `DEBUG=true`. Compose passes `DEBUG` through, so this stack stays in local mode. The image itself defaults to `DEBUG=false` when you run it without that variable.
 
-From inside Compose, identity-service on the host is `http://host.docker.internal:8000`. The Compose file uses that host when `IDENTITY_SERVICE_URL` is unset. If `.env` still says `localhost`, change it to `host.docker.internal` or the container cannot reach identity-service.
+From inside Compose, identity-service on the host is `http://host.docker.internal:8001`. The Compose file uses that host when `IDENTITY_SERVICE_URL` is unset. If `.env` still says `localhost`, change it to `host.docker.internal` or the container cannot reach identity-service.
 
-The API is at [http://localhost:8003/api/v1/health](http://localhost:8003/api/v1/health). Stop the stack with `docker compose down`. The named volume keeps the SQLite file.
+The API is at [http://localhost:8004/api/v1/health](http://localhost:8004/api/v1/health). Stop the stack with `docker compose down`. The named volume keeps the SQLite file.
 
 Compose does not start Postgres. For a local Postgres, set `POSTGRES_DATABASE_URL` and point it at a database you run yourself.
 
@@ -58,7 +62,7 @@ cp .env.example .env
 npm ci
 npm run build:css
 uv run python manage.py migrate
-uv run python manage.py runserver 8003
+uv run python manage.py runserver 8004
 ```
 
 `npm run build:css` writes the landing-page stylesheet. With `DEBUG=true`, `runserver` runs that build once at startup, and runs `npm ci` if `node_modules` is missing. When you edit `templates/` or the Tailwind sources, run `npm run watch:css` in a second terminal.
@@ -76,7 +80,7 @@ The Celery command needs `REDIS_URL`. Leave `EMAIL_DELIVER_SYNC=false` outside t
 
 ## Create the first admin user
 
-With `DEBUG=true` and an empty user table, [http://localhost:8003/](http://localhost:8003/) shows a one-time form for the first Django superuser. After that, the same URL is the landing page, with links to Swagger, ReDoc, and Django admin.
+With `DEBUG=true` and an empty user table, [http://localhost:8004/](http://localhost:8004/) shows a one-time form for the first Django superuser. After that, the same URL is the landing page, with links to Swagger, ReDoc, and Django admin.
 
 In production (`DEBUG=false`), leave `SETUP_TOKEN` empty and create the superuser from the shell:
 
@@ -91,7 +95,7 @@ Or set `SETUP_TOKEN` and open `/?setup_token=your_setup_token_here` once. The fo
 `GET /api/v1/health` is public. It returns the process version and does not open the database:
 
 ```bash
-curl -fsS http://localhost:8003/api/v1/health
+curl -fsS http://localhost:8004/api/v1/health
 ```
 
 ```json
@@ -111,7 +115,7 @@ uv run python manage.py create_service_key \
   --prefixes identity.
 ```
 
-The command prints the key once. email-service stores a SHA-256 hash and a 12-character prefix. Put the printed value in the caller as `EMAIL_SERVICE_API_KEY`. `EMAIL_SERVICE_URL` defaults to `https://email.shellui.com`. Locally it is `http://localhost:8003`.
+The command prints the key once. email-service stores a SHA-256 hash and a 12-character prefix. Put the printed value in the caller as `EMAIL_SERVICE_API_KEY`. `EMAIL_SERVICE_URL` defaults to `https://email.shellui.com`. Locally it is `http://localhost:8004`.
 
 Recommended scopes:
 
@@ -129,7 +133,7 @@ The image defaults to `DEBUG=false`. It runs `manage.py check` before migrations
 
 - `SECRET_KEY` (at least 50 characters, and not a published placeholder)
 - `IDENTITY_ISSUER` and `IDENTITY_AUDIENCE` (match identity-service)
-- `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` (a pinned document, not only a JWKS URL)
+- `IDENTITY_JWKS`, `IDENTITY_JWKS_FILE`, `IDENTITY_JWKS_URL`, or `IDENTITY_SERVICE_URL` (pin the JWKS or set a fetch URL)
 - `POSTGRES_DATABASE_URL`
 - `REDIS_URL`
 - `EMAIL_CREDENTIALS_KEY`, `EMAIL_VARIABLES_KEY`, and `EMAIL_HASH_PEPPER`

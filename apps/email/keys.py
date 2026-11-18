@@ -17,8 +17,9 @@ def issue_service_key(
     allowed_company_ids: list[int] | None = None,
     callback_url: str = '',
     callback_secret: str = '',
+    raw: str = '',
 ) -> tuple[str, ServiceClient]:
-    raw = SERVICE_KEY_PREFIX + secrets.token_urlsafe(32)
+    raw = raw or SERVICE_KEY_PREFIX + secrets.token_urlsafe(32)
     from apps.email.crypto import encrypt_text
 
     client = ServiceClient.objects.create(

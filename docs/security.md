@@ -69,9 +69,9 @@ Session and CSRF cookies are host-only (no `Domain`). The CSRF cookie is HttpOnl
 
 ## JWT issuer and audience
 
-When `DEBUG=false`, `IDENTITY_ISSUER`, `IDENTITY_AUDIENCE`, and a pinned JWKS document (`IDENTITY_JWKS` or `IDENTITY_JWKS_FILE`) are required. Issuer and audience must match identity-service `JWT_ISSUER` and `JWT_AUDIENCE` (typically `https://id.shellui.com` and `shellui`). The process refuses to start if the document is missing, including when only `IDENTITY_JWKS_URL` is set.
+When `DEBUG=false`, `IDENTITY_ISSUER`, `IDENTITY_AUDIENCE`, and a JWKS source are required: pin `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE`, or set `IDENTITY_JWKS_URL` or `IDENTITY_SERVICE_URL` for a cached runtime fetch. Issuer and audience must match identity-service `JWT_ISSUER` and `JWT_AUDIENCE` (typically `https://id.shellui.com` and `shellui`). The process refuses to start when none of those JWKS settings are set (localhost is not assumed in production).
 
-The token `kid` must name a key in that document. A missing or unknown `kid` fails verification, including when the document has one key. During rotation, leave the previous key in the document until tokens signed with it expire.
+The token `kid` must name a key in the JWKS. A missing or unknown `kid` fails verification, including when the document has one key. During rotation, leave the previous key in the pinned document until tokens signed with it expire.
 
 ## Transport
 

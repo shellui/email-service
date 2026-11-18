@@ -10,7 +10,7 @@ Publishing to Docker Hub is manual. There is no CI workflow that pushes the imag
 | --- | --- |
 | Registry | Docker Hub |
 | Repository | `shellui/email-service` |
-| Listen port | `8000` (Compose maps host `${EMAIL_SERVICE_PORT:-8003}`) |
+| Listen port | `8000` (Compose maps host `${EMAIL_SERVICE_PORT:-8004}`) |
 | Data volume | `/app/data` |
 
 The image contains application code, Node with the React Email compose script (`renderer/compose.mjs`), and collected static files, including the library images and fonts under `/static/library/`. Secrets come from the environment at start (see `.env.example`).
@@ -48,7 +48,7 @@ Keep these on the release version:
 ### Smoke test
 
 ```bash
-VERSION=0.7.1
+VERSION=0.8.0
 docker build -t "shellui/email-service:${VERSION}" .
 
 docker run --rm -d --name email-release-smoke -p 18003:8000 \
@@ -90,7 +90,7 @@ For the runtime env, `python manage.py generate_env --host email.example.com` pr
 On Apple Silicon a plain `docker build` produces `linux/arm64` only, and most servers expect `linux/amd64`. Publish both with buildx:
 
 ```bash
-VERSION=0.7.1
+VERSION=0.8.0
 IMAGE=shellui/email-service
 
 docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
@@ -115,7 +115,7 @@ Docs are not published from this repository. [shellui/shellui](https://github.co
 
 ### Production settings
 
-Set the production variables from `.env.example`. These are required with `DEBUG=false`. Run `./tools/prod-config-check.sh` with the production environment loaded: it fails when one of them is missing, except the JWKS.
+Set the production variables from `.env.example`. These are required with `DEBUG=false`. Run `./tools/prod-config-check.sh` with the production environment loaded: it fails when one of them is missing.
 
 | Variable | Notes |
 | --- | --- |
@@ -123,7 +123,8 @@ Set the production variables from `.env.example`. These are required with `DEBUG
 | `POSTGRES_DATABASE_URL` | Postgres. SQLite is not allowed in production |
 | `REDIS_URL` | Rate limits and the broker for the scheduled jobs |
 | `IDENTITY_ISSUER`, `IDENTITY_AUDIENCE` | Must match identity-service `JWT_ISSUER` and `JWT_AUDIENCE` |
-| `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` | A pinned copy of identity `/.well-known/jwks.json`, not a runtime URL. Update it when identity rotates its signing key |
+| `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` | Pinned copy of identity `/.well-known/jwks.json`. Preferred when the container cannot reach identity-service |
+| `IDENTITY_SERVICE_URL` or `IDENTITY_JWKS_URL` | Runtime JWKS fetch (cached). Set one when keys are not pinned |
 | `EMAIL_CREDENTIALS_KEY`, `EMAIL_VARIABLES_KEY` | Fernet keys for provider credentials and stored variables |
 | `EMAIL_HASH_PEPPER` | HMAC pepper for address hashes |
 
@@ -139,16 +140,16 @@ Also set `ALLOWED_HOSTS`, `PUBLIC_BASE_URL`, `IDENTITY_SERVICE_URL`, `EMAIL_AUTH
 ### Run the containers
 
 ```bash
-docker pull shellui/email-service:0.7.1
+docker pull shellui/email-service:0.8.0
 ```
 
 ```bash
 docker volume create email-service-data
 
-docker run -d --name email-service -p 8003:8000 \
+docker run -d --name email-service -p 8004:8000 \
   -v email-service-data:/app/data \
   --env-file .env \
-  shellui/email-service:0.7.1
+  shellui/email-service:0.8.0
 ```
 
 The container applies migrations, which also sync the built-in library designs, then starts gunicorn, the three lane workers, and the scheduled jobs (`retry_webhooks` and `sweep_email_queue` every minute, `purge_expired_data` every hour). There is no cron to set up. If you had Coolify Scheduled Tasks for these commands, remove them. To run the workers in their own container, see [docs/scheduled-jobs.md](docs/scheduled-jobs.md#run-the-workers-in-their-own-container).

@@ -33,9 +33,12 @@ REQUIRED = (
     Required('ALLOWED_HOSTS', 'Public host names, comma-separated, no scheme.'),
     Required('CSRF_TRUSTED_ORIGINS', 'Full HTTPS origin of this service.'),
     Required('PUBLIC_BASE_URL', 'Public URL of this service (links in mail).'),
+    Required(
+        'IDENTITY_SERVICE_URL',
+        'identity-service origin. JWKS is read from {url}/.well-known/jwks.json when not pinned.',
+    ),
     Required('IDENTITY_ISSUER', 'JWT iss claim, the identity-service JWT_ISSUER.'),
     Required('IDENTITY_AUDIENCE', 'JWT aud claim, the identity-service JWT_AUDIENCE.'),
-    Required('IDENTITY_JWKS', 'Pinned JWKS JSON from the identity /.well-known/jwks.json.'),
     Required('POSTGRES_DATABASE_URL', 'PostgreSQL DSN.'),
     Required('REDIS_URL', 'Shared cache and job broker.'),
     Required('EMAIL_CREDENTIALS_KEY', 'Fernet key for provider credentials. Generated.'),
@@ -47,18 +50,23 @@ OPTIONAL = (
     Var('LOG_LEVEL', 'INFO', 'Runtime'),
     Var('SETUP_TOKEN', ''),
     Var('DJANGO_ADMIN_ENABLED', 'true'),
-    Var('EMAIL_SERVICE_PORT', '8003'),
+    Var('EMAIL_SERVICE_PORT', '8004'),
     Var('SQLITE_PATH', 'db.sqlite3', 'Database: SQLite (local only) unless POSTGRES_DATABASE_URL is set'),
     Var('POSTGRES_SSL_REQUIRE', 'true'),
-    Var('IDENTITY_SERVICE_URL', '', 'Identity (admin JWTs)'),
-    Var('IDENTITY_JWKS_FILE', ''),
+    Var('IDENTITY_JWKS_FILE', '', 'Identity (admin JWTs). Pin the JWKS with a file or JSON in production.'),
+    Var('IDENTITY_JWKS', ''),
     Var('IDENTITY_JWKS_URL', ''),
+    Var('EMAIL_SERVICE_ISSUER', '', ''),
+    Var('EMAIL_SERVICE_SIGNING_KEY', ''),
+    Var('EMAIL_SERVICE_SIGNING_KEY_FILE', ''),
     Var('JWKS_CACHE_TTL', '900'),
     Var('JWKS_TIMEOUT', '15'),
     Var('JWKS_RETRIES', '2'),
     Var('JWT_ALGORITHMS', 'RS256'),
     Var('JWT_HS256_FALLBACK_SECRET', ''),
     Var('ALLOW_JWT_HS256_FALLBACK', 'false'),
+    Var('JWT_PRIVATE_KEY', '', 'Optional RS256 key for MCP internal assertions to Identity (same as identity JWT_PRIVATE_KEY in production).'),
+    Var('JWT_KEY_ID', '', 'Optional JWT kid for MCP service assertions when JWT_PRIVATE_KEY is set.'),
     Var('EMAIL_PUBLIC_URL', '', 'Addresses and links (EMAIL_PUBLIC_URL defaults to PUBLIC_BASE_URL)'),
     Var('DEFAULT_FROM_EMAIL', 'no-reply@shellui.com'),
     Var('DEFAULT_FROM_NAME', 'Shellui'),
@@ -178,8 +186,10 @@ _EXAMPLE_HEADER = """\
 SECRET_KEY=
 # Local development only. Unset means false (production).
 DEBUG=true
-# Local identity-service. JWKS is fetched from {url}/.well-known/jwks.json in DEBUG.
-IDENTITY_SERVICE_URL=http://localhost:8000
+# Local identity-service (host port 8001 in the Shellui dev stack). JWKS defaults from {url}/.well-known/jwks.json in DEBUG.
+IDENTITY_SERVICE_URL=http://localhost:8001
+# Inside Shellui dev Compose, set IDENTITY_JWKS_URL=http://identity:8000/.well-known/jwks.json and IDENTITY_SERVICE_URL=http://identity:8000.
+# IDENTITY_JWKS_URL=
 # Local dev: allow-all CORS. Unset in production (defaults to false).
 CORS_ALLOW_ALL_ORIGINS=true
 
@@ -189,7 +199,7 @@ CSRF_TRUSTED_ORIGINS=
 PUBLIC_BASE_URL=
 IDENTITY_ISSUER=
 IDENTITY_AUDIENCE=
-IDENTITY_JWKS=
+IDENTITY_SERVICE_URL=
 POSTGRES_DATABASE_URL=
 REDIS_URL=
 EMAIL_CREDENTIALS_KEY=

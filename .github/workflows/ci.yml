@@ -84,13 +84,14 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.1'
+          python-version: '3.14'
           enable-cache: true
           cache-dependency-glob: 'uv.lock'
 
       - name: Dependency vulnerabilities (pip-audit)
         run: |
           uv export --frozen --no-dev --no-emit-project --no-hashes -o /tmp/requirements.txt
-          uvx pip-audit -r /tmp/requirements.txt
+          uv run --with pip-audit pip-audit -r /tmp/requirements.txt
 
       - name: Repo hygiene
         run: |
@@ -184,13 +185,15 @@ jobs:
         working-directory: shellui
         run: pnpm install --frozen-lockfile
 
-      # Builds docs.shellui.com with only the email docs, read from this checkout.
+      # This checkout supplies the email docs. Identity, storage, and hosting
+      # are fetched from GitHub so links on the main docs still resolve.
       # onBrokenLinks is 'throw', so a broken link or an invalid page fails the job.
-      - name: Build docs (email only)
+      - name: Build docs
         working-directory: shellui
         env:
-          DOCS_SOURCE: local
-          DOCS_SERVICES: email
+          DOCS_SOURCE: auto
+          EMAIL_DOCS_SOURCE: local
+          DOCS_SERVICES: identity,storage,hosting,email
           DOCS_SERVICES_DIR: ${{ github.workspace }}
         run: pnpm docs:build
 

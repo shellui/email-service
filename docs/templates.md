@@ -84,7 +84,11 @@ A theme is `{"name": "ocean", "label": "Ocean", "colors": {"primary": "#0a66c2",
 
 The admin lists "Template colors" and every theme of Settings > Appearance, using each theme's light colors. Switching sets the variables on the editor canvas, so the design repaints live, and the preview composes with the theme. A design without roles (a blank template, or colors the map does not know) is unaffected.
 
+`POST /api/v1/templates/{id}/render-preview` composes HTML and plain text with placeholders substituted. It does not enqueue mail. Send optional `document`, `variables`, or `number` (version). See [Shellui MCP](mcp.md#calling-render-preview).
+
 `POST /api/v1/templates/{id}/send-test` sends the posted `subject`, `preheader`, `document`, and `theme` (composed on the fly) or, without a document, the latest draft, to the caller or to `to` for staff.
+
+Template list, read, version, publish, render-preview, and send-test are Shellui MCP tools when `x-mcp` is set on the operation in OpenAPI. See [Shellui MCP](mcp.md).
 
 `GET /api/v1/templates?event_type=` lists the company's copies, optionally only those whose tokens fit that event. Every `{{ token }}` must be declared on the event, or be `recipient_email`, or start with `system.`. List and detail items carry `name`, `event_type`, `language`, `active_version`, `source_key`, `set`, and `head`.
 

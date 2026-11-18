@@ -114,6 +114,16 @@ class ShelluiAuthentication(IdentityJWKSAuthentication):
         if len(parts) == 2 and parts[0] == self.keyword and parts[1].startswith(SERVICE_KEY_PREFIX):
             principal = authenticate_service_key(parts[1])
             return (principal, parts[1])
+        if len(parts) == 2 and parts[0] == self.keyword:
+            from apps.authapi.mcp_agent import agent_claims_from_token, agent_principal_from_claims
+
+            try:
+                claims = agent_claims_from_token(parts[1], request=request)
+            except exceptions.AuthenticationFailed:
+                claims = None
+            if claims is not None:
+                principal = agent_principal_from_claims(claims)
+                return (principal, parts[1])
         return super().authenticate(request)
 
 

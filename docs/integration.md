@@ -16,7 +16,7 @@ OpenAPI (generated from the running service): `GET /api/schema/`, Swagger at `/a
 
 | Variable | Default | Use |
 | --- | --- | --- |
-| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. Callers append paths such as `/api/v1/send`. No trailing slash required. Local Compose is `http://localhost:8003`. |
+| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. Callers append paths such as `/api/v1/send`. No trailing slash required. Local Compose is `http://localhost:8004`. |
 | `EMAIL_SERVICE_API_KEY` | none | Service key issued by email-service. Prefix `esk_`. Send as `Authorization: Bearer <key>`. |
 
 Store the key in the caller's secret store. email-service stores only a SHA-256 hash and a 12-character prefix. The plaintext is returned once, from `POST /api/v1/service-clients` or `manage.py create_service_key`.
