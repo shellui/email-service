@@ -43,6 +43,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🚨 Changed
 
 - Docker Compose maps host port `8004` by default (was `8003`). The container still listens on `8000`. With `DEBUG=true` and no identity URL set, the default origin is `http://localhost:8001` (was `http://localhost:8000`).
+- Dependabot version updates now open against develop.
 
 ### 📚 Documentation
 
