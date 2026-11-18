@@ -33,6 +33,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 📚 Documentation
 
+- Docker Hub overview in `DOCKERHUB.md`, updated by the publish workflow after the image push.
+
 ### 🗑 Removed
 
 ### 🐛 Bug Fixes
@@ -40,6 +42,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🔒 Security
 
 ### 🏗 Chore
+
+- Docs build fetches identity, storage, and hosting docs so links outside email still resolve.
 
 ## [0.8.0] - 2026-11-18
 
