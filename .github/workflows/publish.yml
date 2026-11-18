@@ -23,7 +23,7 @@ jobs:
     env:
       HAS_DESC: ${{ secrets.DOCKERHUB_DESCRIPTION_USERNAME != '' && secrets.DOCKERHUB_DESCRIPTION_TOKEN != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name || inputs.tag }}
 
