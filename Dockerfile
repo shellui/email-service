@@ -11,7 +11,7 @@ COPY templates ./templates
 COPY renderer ./renderer
 RUN npm run build:css
 
-FROM python:3.14-slim AS dev
+FROM python:3.15-slim AS dev
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -47,7 +47,7 @@ RUN chmod +x /usr/local/bin/docker-dev-entrypoint.sh
 ENTRYPOINT ["docker-dev-entrypoint.sh"]
 CMD ["web"]
 
-FROM python:3.14-slim AS production
+FROM python:3.15-slim AS production
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
