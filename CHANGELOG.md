@@ -33,6 +33,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 📚 Documentation
 
+- Docker Hub overview in `DOCKERHUB.md`, updated by the publish workflow after the image push.
+
 ### 🗑 Removed
 
 ### 🐛 Bug Fixes
