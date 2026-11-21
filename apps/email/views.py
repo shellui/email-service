@@ -14,6 +14,7 @@ from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.authapi.mcp_agent import agent_token_company_id, is_agent_principal
 from apps.authapi.service_auth import ServicePrincipal
 from apps.email.fallback import usage as fallback_usage
 from apps.email.access import company_from_request, require_admin, require_staff
@@ -279,6 +280,11 @@ def _can_read_message(user, message: Message) -> bool:
         return message.service == user.service and user.allows_company(message.company_id)
     if getattr(user, 'is_staff', False):
         return True
+    if is_agent_principal(user):
+        try:
+            return agent_token_company_id(user) == message.company_id
+        except ValueError:
+            return False
     if getattr(user, 'is_company_owner', False) and user.company_id == message.company_id:
         return True
     return False
@@ -404,7 +410,12 @@ class MessageListView(APIView):
 class CatalogView(APIView):
     def get(self, request):
         user = request.user
-        if isinstance(user, ServicePrincipal) or getattr(user, 'is_staff', False) or getattr(user, 'is_company_owner', False):
+        if (
+            isinstance(user, ServicePrincipal)
+            or getattr(user, 'is_staff', False)
+            or getattr(user, 'is_company_owner', False)
+            or is_agent_principal(user)
+        ):
             events = []
             for row in all_definitions():
                 if not row.get('company_editable', True):

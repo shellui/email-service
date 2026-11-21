@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from apps.authapi.mcp_agent import resolve_company_id_for_request
+from apps.authapi.mcp_agent import agent_token_company_id, is_agent_principal, resolve_company_id_for_request
 from apps.authapi.service_auth import ServicePrincipal
 from apps.email.service import SendError
 
@@ -17,6 +17,14 @@ def require_admin(request, company_id, *, allow_platform: bool = False):
         return user
     if company_id is None:
         raise SendError(400, 'validation_failed', {'company_id': ['required']})
+    if is_agent_principal(user):
+        try:
+            token_company = agent_token_company_id(user)
+        except ValueError:
+            raise SendError(403, 'forbidden')
+        if int(token_company) != int(company_id):
+            raise SendError(403, 'company_mismatch')
+        return user
     token_company = getattr(user, 'company_id', None)
     if getattr(user, 'is_staff', False):
         return user

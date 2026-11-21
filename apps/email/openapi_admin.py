@@ -62,7 +62,7 @@ ADMIN_API_ERRORS = {
 def mcp_openapi_fields(operation_id: str) -> dict[str, str]:
     """Summary and description for an MCP allowlisted operation.
 
-    Both fields carry the same one or two sentences. shellui-django 0.5.1 copies
+    Both fields carry the same one or two sentences. shellui-django 0.6.0 copies
     ``summary`` into the MCP tool description, and the ai-service gateway may read
     either field.
     """

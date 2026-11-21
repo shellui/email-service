@@ -45,7 +45,7 @@ Admin routes verify RS256 tokens with the same JWKS client as storage-service an
 | --- | --- |
 | `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` | Pinned public keys. Preferred when the container cannot reach identity-service. |
 | `IDENTITY_SERVICE_URL` | identity-service base URL. JWKS is `{url}/.well-known/jwks.json` when no document is pinned. |
-| `IDENTITY_JWKS_URL` | Explicit JWKS fetch URL when no document is pinned. |
+| `IDENTITY_JWKS_URL` | Explicit JWKS fetch URL when no document is pinned. `https` when `DEBUG=false`. `http` is allowed when `DEBUG=true`. Redirects are not followed. |
 | `IDENTITY_ISSUER` | Required when `DEBUG=false`. Match identity `JWT_ISSUER`. |
 | `IDENTITY_AUDIENCE` | Required when `DEBUG=false`. Match identity `JWT_AUDIENCE`. |
 | `JWT_HS256_FALLBACK_SECRET` | Local only, when identity is in `DEBUG` with HS256. |

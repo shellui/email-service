@@ -73,7 +73,7 @@ Pin a JSON Web Key Set (JWKS) with `IDENTITY_JWKS_FILE` or `IDENTITY_JWKS` in pr
 | `IDENTITY_JWKS_FILE` | empty | Path to a JWKS file. Wins over `IDENTITY_JWKS` |
 | `IDENTITY_JWKS` | empty | Pinned JWKS JSON when no file is set. Preferred in production |
 | `IDENTITY_SERVICE_URL` | `http://localhost:8001` when `DEBUG=true`, otherwise empty | identity-service base URL. JWKS is `{url}/.well-known/jwks.json` when no document is pinned. Broadcasts also call `{url}/api/v1/users/audience`. In Shellui dev Compose use `http://identity:8000` |
-| `IDENTITY_JWKS_URL` | derived, or `http://localhost:8001/.well-known/jwks.json` when `DEBUG=true` | Fetch URL when no document is pinned. Ignored for verification when a document is set. In Shellui dev Compose use `http://identity:8000/.well-known/jwks.json` |
+| `IDENTITY_JWKS_URL` | derived, or `http://localhost:8001/.well-known/jwks.json` when `DEBUG=true` | Fetch URL when no document is pinned. MCP token checks use this URL as given: `https` when `DEBUG=false` (`http` is allowed when `DEBUG=true`, including Shellui dev Compose `http://identity:8000/.well-known/jwks.json`). Redirects are not followed. Ignored for verification when a document is pinned |
 | `IDENTITY_ISSUER` | empty | Required when `DEBUG=false`. Match identity `JWT_ISSUER` |
 | `IDENTITY_AUDIENCE` | empty | Required when `DEBUG=false`. Match identity `JWT_AUDIENCE`, typically `shellui` |
 | `JWT_HS256_FALLBACK_SECRET` | empty | Local only, when identity is in `DEBUG` with HS256. Refused when `DEBUG=false` unless `ALLOW_JWT_HS256_FALLBACK` is set |

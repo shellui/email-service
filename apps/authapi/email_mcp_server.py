@@ -4,19 +4,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 import uuid
 from decimal import Decimal
 from typing import Any
 
 from django.http import HttpRequest, JsonResponse
+from rest_framework.test import force_authenticate
+from shellui_django.mcp.identity_jwks import IdentityJwksError, jwt_unix_timestamp_claim_strict
 from shellui_django.mcp.masking import redact_mapping
 from shellui_django.mcp.openapi_mcp import marker_tree_for_operation_response
 from shellui_django.mcp.openapi_tools import tools_from_schema
-from shellui_django.mcp.routing import McpToolArgumentError, materialize_openapi_path, validate_mcp_tool_arguments
+from shellui_django.mcp.rate_limit import check_agent_rate_limit
+from shellui_django.mcp.routing import (
+    McpToolArgumentError,
+    materialize_openapi_path,
+    tool_arguments_match_company,
+    validate_mcp_tool_arguments,
+)
 from shellui_django.mcp.server import McpServer
-from shellui_django.mcp.write_gate import decide_write, is_destructive_operation
+from shellui_django.mcp.write_gate import WriteGateDecision, decide_write, is_destructive_operation
 
+from apps.authapi.mcp_agent import _staff_agent_refused, agent_principal_from_claims
 from apps.authapi.mcp_claims import AgentClaimsValidationError, normalize_mcp_agent_claims, strict_json_nonneg_int
 from apps.authapi.mcp_tool_schema import coerce_mcp_arguments, public_mcp_tools
 from apps.authapi.mcp_identity import (
@@ -24,7 +34,10 @@ from apps.authapi.mcp_identity import (
     McpIdentityUnavailable,
     approval_state_extras_scope,
     last_approval_state_extras,
+    verify_agent_company_binding,
 )
+
+logger = logging.getLogger(__name__)
 
 _BODYLESS_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS', 'TRACE'})
 
@@ -101,6 +114,36 @@ def _arguments_fingerprint(arguments: dict[str, Any]) -> str:
     return hashlib.sha256(_canonical_json_bytes(arguments)).hexdigest()
 
 
+def _claim_company_id(agent_claims: dict[str, Any]) -> int | None:
+    company_id = agent_claims.get('company_id')
+    if isinstance(company_id, bool) or not isinstance(company_id, int):
+        return None
+    return company_id
+
+
+def _arguments_match_company(arguments: Any, agent_claims: dict[str, Any]) -> bool:
+    return tool_arguments_match_company(arguments, _claim_company_id(agent_claims))
+
+
+def _gateway_delegation_covers(agent_claims: dict[str, Any], tool_name: str) -> bool:
+    """True when ``mcp_gateway_delegated`` names this tool and has not expired.
+
+    The claim must be an object ``{"action": "<tool name>", "exp": <unix seconds>}``.
+    A boolean or any other shape does not skip approval.
+    """
+    claim = agent_claims.get('mcp_gateway_delegated')
+    if not isinstance(claim, dict):
+        return False
+    action = claim.get('action')
+    if not isinstance(action, str) or not action or action != tool_name:
+        return False
+    try:
+        exp = jwt_unix_timestamp_claim_strict(claim.get('exp'), field='exp')
+    except IdentityJwksError:
+        return False
+    return exp > int(time.time())
+
+
 def _flat_audit_entry(
     *,
     agent_claims: dict[str, Any],
@@ -167,15 +210,12 @@ def _flat_audit_entry(
 
 
 class EmailMcpServer(McpServer):
-    """Runs company-owner tools. Production does not register ``on_call``, so tool activity is not posted to Identity."""
+    """Runs company-scoped agent tools. Production does not register ``on_call``, so tool activity is not posted to Identity."""
 
-    def handle(self, request: HttpRequest, *, agent_claims: dict[str, Any] | None) -> JsonResponse:
-        if agent_claims is not None:
-            try:
-                agent_claims = normalize_mcp_agent_claims(agent_claims)
-            except AgentClaimsValidationError:
-                return JsonResponse({'error': 'forbidden'}, status=403)
-        response = super().handle(request, agent_claims=agent_claims)
+    def handle(self, request: HttpRequest, *, agent_claims: dict[str, Any] | None = None) -> JsonResponse:
+        # Authorization uses the bearer token verified in ``_prepare``. ``agent_claims`` is ignored.
+        del agent_claims
+        response = super().handle(request)
         if not _is_tools_list(request) or response.status_code != 200:
             return response
         try:
@@ -186,6 +226,48 @@ class EmailMcpServer(McpServer):
         if not isinstance(result, dict) or not isinstance(result.get('tools'), list):
             return response
         return JsonResponse(self._result(body.get('id'), {'tools': public_mcp_tools(self.schema_provider())}))
+
+    def _prepare(self, request: HttpRequest) -> dict[str, Any] | JsonResponse:
+        """Verify the bearer token, then the Identity revocation and grant binding."""
+        if request.method != 'POST':
+            return JsonResponse({'error': 'method_not_allowed'}, status=405)
+        raw = self._claims_from_bearer(request)
+        if not isinstance(raw, dict):
+            return JsonResponse({'error': 'unauthorized'}, status=401)
+        if _staff_agent_refused(raw):
+            return JsonResponse({'error': 'unauthorized'}, status=401)
+        sub = str(raw.get('sub') or '')
+        if not sub.startswith('agent:'):
+            return JsonResponse({'error': 'unauthorized'}, status=401)
+        try:
+            claims = normalize_mcp_agent_claims(raw)
+        except AgentClaimsValidationError:
+            return JsonResponse({'error': 'unauthorized'}, status=401)
+        agent_id = str(claims.get('agent_id') or '')
+        if not agent_id:
+            return JsonResponse({'error': 'unauthorized'}, status=401)
+        if check_agent_rate_limit(agent_id):
+            return JsonResponse({'error': 'rate_limited'}, status=429)
+        company_id = _claim_company_id(claims)
+        if company_id is None:
+            return JsonResponse({'error': 'unauthorized'}, status=401)
+        if self.identity_revocation_check is None:
+            return JsonResponse({'error': 'revocation_unavailable'}, status=403)
+        try:
+            revoked = bool(self.identity_revocation_check(agent_id, company_id))
+        except Exception as exc:
+            logger.warning(
+                'MCP revocation check failed agent_id=%s err=%s',
+                agent_id,
+                type(exc).__name__,
+            )
+            return JsonResponse({'error': 'revocation_unavailable'}, status=403)
+        if revoked:
+            return JsonResponse({'error': 'agent_revoked'}, status=403)
+        if not self._service_allowed(claims, self.service_name):
+            return JsonResponse({'error': 'forbidden'}, status=403)
+        verify_agent_company_binding(agent_id, company_id, claims=claims)
+        return claims
 
     def _tools_call(
         self,
@@ -198,6 +280,8 @@ class EmailMcpServer(McpServer):
         arguments = params.get('arguments') or {}
         if not isinstance(arguments, dict):
             arguments = {}
+        if not _arguments_match_company(arguments, agent_claims):
+            return JsonResponse(self._error(req_id, -32602, 'company_id does not match the authenticated company'))
         req_trace = (getattr(request, 'request_id', None) or '').strip() or None
         schema = self.schema_provider()
         tools = tools_from_schema(schema)
@@ -205,6 +289,8 @@ class EmailMcpServer(McpServer):
         if tool is None:
             return JsonResponse(self._error(req_id, -32602, 'Unknown tool'))
         arguments = coerce_mcp_arguments(arguments, tool)
+        if not _arguments_match_company(arguments, agent_claims):
+            return JsonResponse(self._error(req_id, -32602, 'company_id does not match the authenticated company'))
         with approval_state_extras_scope():
             return self._tools_call_inner(
                 request, req_id, params, agent_claims, tool_name, arguments, req_trace, schema, tool
@@ -275,6 +361,8 @@ class EmailMcpServer(McpServer):
             allow_destructive_without_asking=False,
             tool_read_only=tool_read_only,
         )
+        if decision.needs_approval and _gateway_delegation_covers(agent_claims, tool_name):
+            decision = WriteGateDecision(allowed=True)
 
         def _after_gate_ms() -> int:
             return int(max(0.0, (time.monotonic() - gate_started) * 1000.0))
@@ -677,7 +765,7 @@ class EmailMcpServer(McpServer):
             inner_kwargs['data'] = json.dumps(payload, default=_json_default).encode('utf-8')
             inner_kwargs['content_type'] = 'application/json'
         drf_request = self._factory.generic(method, resolved_path, **inner_kwargs)
-        self._attach_request_principal(drf_request, request, agent_claims)
+        self._attach_request_principal(drf_request, agent_claims)
         from django.urls import resolve
 
         match = resolve(resolved_path, urlconf=self.urlconf)
@@ -744,3 +832,10 @@ class EmailMcpServer(McpServer):
                 },
             )
         )
+
+    @staticmethod
+    def _attach_request_principal(target_request, agent_claims: dict[str, Any]) -> None:
+        """Inner ``request.user`` is the verified agent. ``request.auth`` is the verified claims."""
+        principal = agent_principal_from_claims(agent_claims)
+        force_authenticate(target_request, user=principal, token=agent_claims)
+        target_request.auth = agent_claims

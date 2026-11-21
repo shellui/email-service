@@ -57,7 +57,7 @@ Generate Fernet keys and a pepper with `python manage.py generate_env` (see [Con
 
 ## Identity: public issuer, internal JWKS
 
-Admin JWTs use `IDENTITY_ISSUER` as the expected `iss` claim (browser-facing `http://localhost:8001`). Verification loads keys from `IDENTITY_JWKS_URL` on the internal network (`http://identity:8000/.well-known/jwks.json`), not from the public host port. Pinning `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` is optional in dev.
+Admin JWTs use `IDENTITY_ISSUER` as the expected `iss` claim (browser-facing `http://localhost:8001`). Verification loads keys from `IDENTITY_JWKS_URL` on the internal network (`http://identity:8000/.well-known/jwks.json`), not from the public host port. Pinning `IDENTITY_JWKS` or `IDENTITY_JWKS_FILE` is optional in dev. That `http` JWKS URL is valid while `DEBUG=true`. When `DEBUG=false` the URL must be `https`, and MCP does not follow redirects. The MCP audience is `{EMAIL_PUBLIC_URL}/mcp`.
 
 ## Platform mail through Mailpit
 

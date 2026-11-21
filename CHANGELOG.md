@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 🚨 Changed
+
+- Depend on `shellui-django[mcp]==0.6.0`. `POST /mcp` verifies the Identity bearer token (`IDENTITY_ISSUER`, audience `{EMAIL_PUBLIC_URL}/mcp`, and `IDENTITY_JWKS` or `IDENTITY_JWKS_URL`). A missing or failing revocation check returns HTTP 403 `revocation_unavailable`. Agent principals are not company owners. `mcp_gateway_delegated` skips a second approval only when it is `{"action": "<tool name>", "exp": <unix seconds>}` for that tool and `exp` is still in the future.
+
 ## [0.8.0] - 2026-11-18
 
 ### ✨ Feature

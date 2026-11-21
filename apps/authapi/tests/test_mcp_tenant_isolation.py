@@ -7,7 +7,6 @@ import uuid
 from datetime import timedelta
 from unittest.mock import patch
 
-import jwt
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
@@ -27,6 +26,7 @@ from apps.email.models import (
 from apps.authapi.tests.test_mcp_endpoint import (
     MCP_SETTINGS,
     _agent_token,
+    _sign_agent_claims,
     make_identity_get_side_effect,
     make_identity_post_side_effect,
     _rpc,
@@ -308,7 +308,8 @@ class McpTenantIsolationTests(TestCase):
             self.mock_identity_post.side_effect = make_identity_post_side_effect(_agents_mismatch)
             reset_mcp_server_cache()
             reset_revocation_cache_for_tests()
-            token = jwt.encode(
+            now = int(timezone.now().timestamp())
+            token = _sign_agent_claims(
                 {
                     'sub': f'agent:{agent_id}',
                     'agent_id': agent_id,
@@ -319,12 +320,12 @@ class McpTenantIsolationTests(TestCase):
                     'mcp_read': 'safe',
                     'mcp_destructive': False,
                     'mcp_authority': 'personal',
-                    'exp': int(timezone.now().timestamp()) + 600,
+                    'iat': now,
+                    'exp': now + 600,
+                    'jti': uuid.uuid4().hex,
                     'iss': MCP_SETTINGS['IDENTITY_ISSUER'],
                     'aud': 'https://email.test/mcp',
-                },
-                MCP_SETTINGS['JWT_HS256_FALLBACK_SECRET'],
-                algorithm='HS256',
+                }
             )
             response = _rpc(self.client, token, 'tools/list')
             self.assertEqual(response.status_code, 403)
