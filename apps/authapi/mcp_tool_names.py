@@ -1,6 +1,6 @@
 """Published Shellui MCP tool names for email-service.
 
-``shellui-django`` 0.5.1 names tools from the OpenAPI ``operationId`` (``api_v1_*``).
+``shellui-django`` 0.6.0 names tools from the OpenAPI ``operationId`` (``api_v1_*``).
 The gateway on ai-service ``develop`` already exports these ``email_*`` names
 (``apps/connector/tests/fixtures/mcp_tool_release_snapshot.json``). This map is that
 list. ``x-mcp.tool_name`` carries the same string, and the MCP schema copy used by

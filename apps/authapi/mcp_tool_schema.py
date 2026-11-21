@@ -1,6 +1,6 @@
 """Flat MCP tool arguments for agents.
 
-shellui-django 0.5.1 wraps every tool in ``method``, ``path``, ``query``, ``body``,
+shellui-django 0.6.0 wraps every tool in ``method``, ``path``, ``query``, ``body``,
 and ``path_params``. Those transport fields are not arguments an agent should fill.
 This module publishes the same operations as one flat object and maps a flat call
 back to that envelope before the pinned library validates it.

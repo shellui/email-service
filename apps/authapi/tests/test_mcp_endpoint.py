@@ -128,7 +128,16 @@ def _agent_token(
         claims['mcp_authority'] = 'personal'
     if email:
         claims['email'] = email
-    return jwt.encode(claims, SIGNING, algorithm='HS256'), agent_id
+    now = int(time.time())
+    claims.setdefault('iat', now)
+    claims.setdefault('jti', uuid.uuid4().hex)
+    return _sign_agent_claims(claims), agent_id
+
+
+def _sign_agent_claims(claims: dict) -> str:
+    """RS256 agent JWT for the test Identity JWKS. ``McpServer.handle`` rejects other algorithms."""
+    token = jwt.encode(claims, _TEST_PRIVATE_PEM, algorithm='RS256', headers={'kid': _TEST_KID})
+    return token if isinstance(token, str) else token.decode('utf-8')
 
 
 def _rpc(client: Client, token: str, method: str, params: dict | None = None, req_id: int = 1):
@@ -411,7 +420,7 @@ class McpEndpointTests(TestCase):
         token, _agent_id = _agent_token()
         claims = jwt.decode(token, options={'verify_signature': False})
         claims['user_metadata'] = {'is_staff': True}
-        staff_token = jwt.encode(claims, SIGNING, algorithm='HS256')
+        staff_token = _sign_agent_claims(claims)
         response = _rpc(self.client, staff_token, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
@@ -419,9 +428,10 @@ class McpEndpointTests(TestCase):
         token, _agent_id = _agent_token()
         claims = jwt.decode(token, options={'verify_signature': False})
         claims['scope'] = 'identity'
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()['error'], 'forbidden')
 
     def test_revocation_list_requires_signed_assertion(self):
         token, _agent_id = _agent_token()
@@ -469,16 +479,16 @@ class McpEndpointTests(TestCase):
             },
         )
         self.assertEqual(list_response.status_code, 200)
-        result = list_response.json()['result']
-        self.assertTrue(result.get('isError'))
-        self.assertIn('company_mismatch', result['content'][0]['text'])
+        error = list_response.json()['error']
+        self.assertEqual(error['code'], -32602)
+        self.assertIn('company_id', error['message'])
 
     def test_revocation_fetch_failure_refuses_mcp(self):
         self.mock_revocation_get.side_effect = ConnectionError('refused')
         token, _agent_id = _agent_token()
         response = _rpc(self.client, token, 'tools/list')
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json()['error'], 'identity_unavailable')
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()['error'], 'revocation_unavailable')
         self._set_revocation_agents(None)
 
     def test_revocation_404_refuses_mcp(self):
@@ -500,7 +510,8 @@ class McpEndpointTests(TestCase):
         self.mock_revocation_get.side_effect = _404_side_effect
         token, _agent_id = _agent_token()
         response = _rpc(self.client, token, 'tools/list')
-        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()['error'], 'revocation_unavailable')
         self._set_revocation_agents(None)
 
     def test_revocation_unsigned_payload_refuses_mcp(self):
@@ -524,8 +535,8 @@ class McpEndpointTests(TestCase):
         self.mock_revocation_get.side_effect = _bad_side_effect
         token, _agent_id = _agent_token()
         response = _rpc(self.client, token, 'tools/list')
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json()['error'], 'identity_unavailable')
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()['error'], 'revocation_unavailable')
         self._set_revocation_agents(None)
 
     @patch('apps.authapi.mcp_identity.agent_is_revoked', return_value=True)
@@ -702,6 +713,127 @@ class McpEndpointTests(TestCase):
         self.assertTrue(result.get('isError'))
         self.assertEqual(result.get('meta', {}).get('status'), 'pending')
         self.assertEqual(result.get('meta', {}).get('approval_request_id'), 'approval-123')
+
+    def _ask_rule_token(self, gateway):
+        token, _agent_id = _agent_token(access='ask')
+        claims = jwt.decode(token, options={'verify_signature': False})
+        claims['mcp_gateway_delegated'] = gateway
+        return _sign_agent_claims(claims)
+
+    def _ask_create_rules(self, token):
+        return _rpc(
+            self.client,
+            token,
+            'tools/call',
+            {
+                'name': 'email_create_rules',
+                'arguments': {
+                    'path': '/api/v1/rules',
+                    'method': 'POST',
+                    'body': _rule_create_body(),
+                },
+            },
+        )
+
+    @patch('apps.authapi.mcp_identity.resolve_approval_state', return_value='not_found')
+    @patch('apps.authapi.mcp_identity.create_approval_request', return_value={'id': 'approval-123'})
+    def test_boolean_gateway_delegation_does_not_skip_approval(self, create_approval, _state):
+        token = self._ask_rule_token(True)
+        response = self._ask_create_rules(token)
+        result = response.json()['result']
+        self.assertTrue(result.get('isError'))
+        self.assertEqual(result.get('meta', {}).get('status'), 'pending')
+        create_approval.assert_called()
+
+    @patch('apps.authapi.mcp_identity.resolve_approval_state', return_value='not_found')
+    @patch('apps.authapi.mcp_identity.create_approval_request', return_value={'id': 'approval-123'})
+    def test_expired_or_other_gateway_delegation_does_not_skip_approval(self, create_approval, _state):
+        expired = self._ask_rule_token({'action': 'email_create_rules', 'exp': int(time.time()) - 30})
+        other = self._ask_rule_token({'action': 'email_list_rules', 'exp': int(time.time()) + 600})
+        for token in (expired, other):
+            create_approval.reset_mock()
+            response = self._ask_create_rules(token)
+            result = response.json()['result']
+            self.assertTrue(result.get('isError'), result)
+            self.assertEqual(result.get('meta', {}).get('status'), 'pending')
+            create_approval.assert_called()
+
+    @patch('apps.authapi.mcp_identity.resolve_approval_state', return_value='not_found')
+    @patch('apps.authapi.mcp_identity.create_approval_request', return_value={'id': 'approval-123'})
+    def test_gateway_delegation_object_skips_named_tool(self, create_approval, resolve_state):
+        token = self._ask_rule_token({'action': 'email_create_rules', 'exp': int(time.time()) + 600})
+        response = self._ask_create_rules(token)
+        body = json.dumps(response.json())
+        self.assertNotIn('Approval', body)
+        create_approval.assert_not_called()
+        resolve_state.assert_not_called()
+
+    def test_handle_ignores_caller_supplied_claims(self):
+        from django.test import RequestFactory
+
+        from apps.authapi.mcp_views import _get_server
+
+        request = RequestFactory().post(
+            '/mcp',
+            data=json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}}),
+            content_type='application/json',
+        )
+        response = _get_server().handle(request, agent_claims={'agent_id': 'forged', 'scope': 'email', 'company_id': 42})
+        self.assertEqual(response.status_code, 401)
+
+    def test_missing_or_raising_revocation_hook_is_forbidden(self):
+        from django.test import RequestFactory
+
+        from apps.authapi.email_mcp_server import EmailMcpServer
+
+        token, _agent_id = _agent_token()
+        payload = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}})
+
+        def _request():
+            return RequestFactory().post(
+                '/mcp',
+                data=payload,
+                content_type='application/json',
+                HTTP_AUTHORIZATION=f'Bearer {token}',
+            )
+
+        def _server(hook):
+            return EmailMcpServer(
+                schema_provider=lambda: {'openapi': '3.0.3', 'paths': {}},
+                urlconf='config.urls',
+                service_name='email',
+                identity_issuer=ISSUER,
+                mcp_audience=MCP_RESOURCE,
+                identity_jwks=_TEST_JWKS,
+                identity_revocation_check=hook,
+            )
+
+        missing = _server(None).handle(_request())
+        self.assertEqual(missing.status_code, 403)
+        self.assertEqual(json.loads(missing.content)['error'], 'revocation_unavailable')
+
+        def _boom(_agent_id, _company_id):
+            raise RuntimeError('identity down')
+
+        raised = _server(_boom).handle(_request())
+        self.assertEqual(raised.status_code, 403)
+        self.assertEqual(json.loads(raised.content)['error'], 'revocation_unavailable')
+
+    def test_inner_user_is_agent_principal_not_company_owner(self):
+        from rest_framework.test import APIRequestFactory
+
+        from apps.authapi.email_mcp_server import EmailMcpServer
+        from apps.authapi.mcp_agent import agent_principal_from_claims
+
+        claims = {'agent_id': 'agent-1', 'company_id': 42, 'email': 'agent@example.com'}
+        principal = agent_principal_from_claims(claims)
+        self.assertFalse(principal.is_company_owner)
+        request = APIRequestFactory().get('/api/v1/rules')
+        EmailMcpServer._attach_request_principal(request, claims)
+        self.assertIs(request.auth, claims)
+        self.assertFalse(request._force_auth_user.is_company_owner)
+        self.assertEqual(request._force_auth_user.company_id, 42)
+        self.assertTrue(str(request._force_auth_user.username).startswith('agent:'))
 
     @patch('apps.authapi.mcp_identity.resolve_approval_state', return_value='not_found')
     @patch(
@@ -1735,33 +1867,35 @@ class McpEndpointTests(TestCase):
             'mcp_destructive': False,
             'grant_version': 0,
             'mcp_authority': 'delegated',
+            'iat': int(time.time()),
             'exp': int(time.time()) + 600,
+            'jti': uuid.uuid4().hex,
             'iss': ISSUER,
             'aud': MCP_RESOURCE,
             'global_company_id': str(uuid.uuid4()),
         }
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
     def test_agent_token_invalid_mcp_access_rejected(self):
         claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
         claims['mcp_access'] = 'superuser'
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
     def test_agent_token_mcp_destructive_string_rejected(self):
         claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
         claims['mcp_destructive'] = 'true'
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
     def test_agent_token_omitted_mcp_destructive_rejected(self):
         claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
         claims.pop('mcp_destructive', None)
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
@@ -1803,11 +1937,13 @@ class McpEndpointTests(TestCase):
             'company_binding_version': 0,
             'mcp_authority': 'delegated',
             'global_agent_id': token_catalog,
+            'iat': int(time.time()),
             'exp': int(time.time()) + 600,
+            'jti': uuid.uuid4().hex,
             'iss': ISSUER,
             'aud': MCP_RESOURCE,
         }
-        token = jwt.encode(claims, SIGNING, algorithm='HS256')
+        token = _sign_agent_claims(claims)
         response = _rpc(self.client, token, 'tools/list')
         self.assertEqual(response.status_code, 403)
         self._set_revocation_agents(None)
@@ -1827,32 +1963,34 @@ class McpEndpointTests(TestCase):
             'global_company_id': gcid,
             'company_binding_version': 0,
             'mcp_authority': 'delegated',
+            'iat': int(time.time()),
             'exp': int(time.time()) + 600,
+            'jti': uuid.uuid4().hex,
             'iss': ISSUER,
             'aud': MCP_RESOURCE,
         }
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
     def test_agent_token_company_id_string_rejected(self):
         claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
         claims['company_id'] = '42'
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
     def test_agent_token_company_id_bool_rejected(self):
         claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
         claims['company_id'] = True
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
     def test_agent_token_company_id_float_rejected(self):
         claims = jwt.decode(_agent_token()[0], options={'verify_signature': False})
         claims['company_id'] = 42.0
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
@@ -1864,7 +2002,7 @@ class McpEndpointTests(TestCase):
         claims['global_company_id'] = gcid
         claims['company_binding_version'] = 0
         claims['grant_version'] = 0
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
@@ -1878,7 +2016,7 @@ class McpEndpointTests(TestCase):
         claims['global_company_id'] = 'not-a-uuid'
         claims['company_binding_version'] = 1
         claims['grant_version'] = 1
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 
@@ -1887,7 +2025,7 @@ class McpEndpointTests(TestCase):
         claims['global_company_id'] = '00000000-0000-0000-0000-000000000000'
         claims['company_binding_version'] = 0
         claims['grant_version'] = 0
-        bad = jwt.encode(claims, SIGNING, algorithm='HS256')
+        bad = _sign_agent_claims(claims)
         response = _rpc(self.client, bad, 'tools/list')
         self.assertEqual(response.status_code, 401)
 

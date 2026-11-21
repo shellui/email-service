@@ -13,16 +13,14 @@ from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.views import APIView
 
+from shellui_django.mcp.resources import mcp_resource_from_origin
+
 from apps.authapi.email_mcp_server import EmailMcpServer
-from apps.authapi.mcp_agent import authenticate_agent_request
 from apps.authapi.mcp_identity import (
     McpDelegatedApprovalRoutingError,
     McpAgentCompanyMismatch,
     McpIdentityUnavailable,
-    agent_is_revoked,
-    ensure_revocation_snapshot,
     identity_origin,
-    verify_agent_company_binding,
 )
 from apps.authapi.mcp_tool_names import publish_mcp_tool_names
 from apps.authapi.spectacular_hooks import mcp_schema_for_server
@@ -36,7 +34,7 @@ def _schema() -> dict:
     """OpenAPI used by ``POST /mcp``. Tool names are the gateway ``email_*`` names.
 
     The public schema keeps ``operationId`` (``api_v1_*``). This copy rewrites those
-    ids from ``x-mcp.tool_name`` because shellui-django 0.5.1 names tools from
+    ids from ``x-mcp.tool_name`` because shellui-django names tools from
     ``operationId`` only.
 
     Cached under a lock: concurrent ``SchemaGenerator`` calls race inside
@@ -58,9 +56,36 @@ def _schema() -> dict:
 
 
 def _revocation_check(agent_id: str, _company_id: int | None) -> bool:
-    from apps.authapi.mcp_identity import agent_is_revoked
+    """Identity revocation list, then the revoked-id check.
 
+    ``McpServer`` treats a missing hook, or any exception from this hook, as HTTP 403
+    ``revocation_unavailable``. The grant and company binding check runs after this
+    returns, using the verified claims.
+
+    Imports stay inside the function so tests can patch ``mcp_identity.agent_is_revoked``.
+    """
+    from apps.authapi.mcp_identity import agent_is_revoked, ensure_revocation_snapshot
+
+    ensure_revocation_snapshot()
     return agent_is_revoked(agent_id)
+
+
+def _mcp_audience() -> str:
+    base = (getattr(settings, 'EMAIL_PUBLIC_URL', None) or '').strip().rstrip('/')
+    if not base:
+        base = (getattr(settings, 'PUBLIC_BASE_URL', None) or '').strip().rstrip('/')
+    return mcp_resource_from_origin(base)
+
+
+def _identity_jwks_kwargs() -> dict:
+    document = getattr(settings, 'IDENTITY_JWKS_DOCUMENT', None)
+    url = (getattr(settings, 'IDENTITY_JWKS_URL', None) or '').strip() or None
+    kwargs: dict = {}
+    if document is not None:
+        kwargs['identity_jwks'] = document
+    if url:
+        kwargs['identity_jwks_url'] = url
+    return kwargs
 
 
 def _approval_handler(payload: dict) -> dict | None:
@@ -84,14 +109,18 @@ def _approval_consume(approval_id: str, payload: dict | None = None) -> bool:
 def _get_server() -> EmailMcpServer:
     global _server
     if _server is None:
+        issuer = (getattr(settings, 'IDENTITY_ISSUER', None) or '').strip().rstrip('/') or None
         _server = EmailMcpServer(
             schema_provider=_schema,
             urlconf=settings.ROOT_URLCONF,
             service_name='email',
+            identity_issuer=issuer,
+            mcp_audience=_mcp_audience() or None,
             identity_revocation_check=_revocation_check,
             approval_handler=_approval_handler,
             approval_state=_approval_state,
             approval_consume=_approval_consume,
+            **_identity_jwks_kwargs(),
         )
     return _server
 
@@ -136,34 +165,22 @@ def reset_mcp_server_cache() -> None:
         _schema_cache = None
 
 
+def _binding_error(exc: McpAgentCompanyMismatch) -> JsonResponse:
+    code = str(exc.args[0]) if exc.args else 'forbidden'
+    if code == 'authority_row_missing':
+        return JsonResponse({'error_code': 'authority_row_missing'}, status=403)
+    if code == 'authority_binding_missing':
+        return JsonResponse({'error_code': 'authority_binding_missing'}, status=403)
+    return JsonResponse({'error': 'forbidden'}, status=403)
+
+
 @csrf_exempt
 def mcp_endpoint(request: HttpRequest):
-    authenticated = authenticate_agent_request(request)
-    claims = None
-    if authenticated is not None:
-        user, claims = authenticated
-        request.user = user
-    if claims is not None:
-        try:
-            ensure_revocation_snapshot()
-            aid_bind = str(claims.get('agent_id') or '')
-            if aid_bind and agent_is_revoked(aid_bind):
-                return JsonResponse({'error': 'agent_revoked'}, status=403)
-            verify_agent_company_binding(aid_bind, int(claims['company_id']), claims=claims)
-        except McpIdentityUnavailable:
-            return JsonResponse({'error': 'identity_unavailable'}, status=503)
-        except McpAgentCompanyMismatch as exc:
-            code = str(exc.args[0]) if exc.args else 'forbidden'
-            if code == 'authority_row_missing':
-                return JsonResponse({'error_code': 'authority_row_missing'}, status=403)
-            if code == 'authority_binding_missing':
-                return JsonResponse({'error_code': 'authority_binding_missing'}, status=403)
-            return JsonResponse({'error': 'forbidden'}, status=403)
-        except (KeyError, TypeError, ValueError):
-            return JsonResponse({'error': 'forbidden'}, status=403)
     try:
-        return _get_server().handle(request, agent_claims=claims)
+        return _get_server().handle(request)
     except McpDelegatedApprovalRoutingError:
         return JsonResponse({'error_code': 'out_of_sync'}, status=409)
     except McpIdentityUnavailable:
         return JsonResponse({'error': 'identity_unavailable'}, status=503)
+    except McpAgentCompanyMismatch as exc:
+        return _binding_error(exc)

@@ -189,6 +189,7 @@ DEBUG=true
 # Local identity-service (host port 8001 in the Shellui dev stack). JWKS defaults from {url}/.well-known/jwks.json in DEBUG.
 IDENTITY_SERVICE_URL=http://localhost:8001
 # Inside Shellui dev Compose, set IDENTITY_JWKS_URL=http://identity:8000/.well-known/jwks.json and IDENTITY_SERVICE_URL=http://identity:8000.
+# When DEBUG=false, IDENTITY_JWKS_URL must be https. MCP does not follow redirects.
 # IDENTITY_JWKS_URL=
 # Local dev: allow-all CORS. Unset in production (defaults to false).
 CORS_ALLOW_ALL_ORIGINS=true

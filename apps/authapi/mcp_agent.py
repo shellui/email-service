@@ -225,7 +225,7 @@ def agent_principal_from_claims(claims: dict[str, Any]) -> EmailPrincipal:
         company_id=company_id,
         email=str(claims.get('email') or '').strip(),
         username=f'agent:{claims.get("agent_id")}',
-        is_company_owner=True,
+        is_company_owner=False,
         claims=claims,
     )
 

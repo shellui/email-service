@@ -76,8 +76,8 @@ def build_mcp_delegated_authority_assertion(*, audience_url: str, lifetime_secon
     """RS256 service JWT for Identity ``POST …/mcp-agent-delegated-authority`` (live delegated row lookup).
 
     Uses ``aud`` ``shellui-mcp-agent-delegated-authority`` and scope ``mcp.agent.delegated.authority.read`` with
-    ``target`` = Identity canonical issuer URL (same pattern as other MCP internal assertions). There is no
-    separate ``build_mcp_agent_authority_assertion`` export in the pinned ``shellui-django`` yet.
+    ``target`` = Identity canonical issuer URL (same pattern as other MCP internal assertions). ``shellui-django``
+    0.6.0 does not export ``build_mcp_agent_authority_assertion``.
     """
     sk = signing_kwargs()
     pem = sk['private_key_pem']

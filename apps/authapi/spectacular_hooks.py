@@ -52,7 +52,7 @@ def _path_parameter_description(operation_id: str, name: str) -> str:
 def inline_parameter_descriptions(result: dict[str, Any]) -> dict[str, Any]:
     """Copy parameter descriptions into ``schema.description``.
 
-    shellui-django 0.5.1 builds tool arguments from the parameter schema only, so a
+    shellui-django 0.6.0 builds tool arguments from the parameter schema only, so a
     description that lives on the parameter object never reaches the agent.
     """
     for path_item in (result.get('paths') or {}).values():
