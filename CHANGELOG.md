@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 🐛 Bug Fixes
+
+- Traces no longer carry a one span trace for every idle lane worker poll, gauge callback, or heartbeat. shellui-django 0.7.1 drops database and Redis calls made outside a span. Requests, Celery tasks, and `email.send` with its provider call are traced as before.
+
 ## [0.9.0] - 2026-11-24
 
 ### ✨ Feature
