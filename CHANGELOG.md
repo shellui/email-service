@@ -21,6 +21,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### ✨ Feature
+
+- OpenTelemetry traces, metrics, and log correlation via `shellui-django[otel]==0.7.0`. `service.name` defaults to `email-service`. Export stays off until `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Gunicorn, the Celery worker and beat, and `manage.py run_email_worker` (auth, transactional, and bulk) all call the setup. A message keeps the W3C `traceparent` of the request that queued it, so the provider send (Resend, Amazon SES, or SMTP) stays on that trace. Span attributes are lane, template id, provider, and status. Recipient addresses and message content are not recorded. Logs still carry `X-Request-ID` and now include `trace_id` and `span_id`.
+
+### 🚨 Changed
+
+- Prometheus gauges are now OpenTelemetry instruments with the same meaning. Names drop a trailing `_total` and use `.` instead of `_`. Queue depth, age, 24 hour send latency, provider errors, auth TTL expiries, fallback sent and refused, and the scheduled-job and lane-worker series are observable instruments read from the database and Redis. One process publishes each export. `company_id` is not a metric attribute. Per-company counts stay on `GET /api/v1/stats`.
+
+### 🗑 Removed
+
+- `GET /api/v1/metrics` and `GET /api/v1/metrics/all` (breaking). The `prometheus-client` dependency is gone. The `pat_agm` claim (`access_global_metrics`) is no longer read. No database column was dropped.
+
+### 🛠 Improvements
+
+- Shellui MCP on `shellui-django` 0.7.0 still verifies the bearer with this service's Identity JWKS check and the local HS256 fallback, and runs tools as the company owner on that token.
+
+### 📚 Documentation
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_SERVICE_NAME`, and `OTEL_RESOURCE_ATTRIBUTES` are in the env example, Compose, and [Metrics](docs/metrics.md).
+
 ## [0.8.0] - 2026-11-18
 
 ### ✨ Feature

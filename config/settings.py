@@ -241,7 +241,6 @@ SPECTACULAR_SETTINGS = {
         {'name': 'actions', 'description': 'Outbound Shellui Actions webhooks.'},
         {'name': 'service-clients', 'description': 'Service API keys issued to other Shellui services.'},
         {'name': 'newsletters', 'description': 'Newsletter lists, subscribers, and the public sign-up endpoint.'},
-        {'name': 'platform-metrics', 'description': 'Prometheus metrics.'},
         {'name': 'health', 'description': 'Service health checks.'},
         {'name': 'mcp-tools', 'description': 'Operations exposed to Shellui MCP agents.'},
     ],
@@ -270,6 +269,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'config.span_attributes.ShelluiSpanMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -724,7 +724,8 @@ LOGGING = {
     },
     'formatters': {
         'console': {
-            'format': '{asctime} {levelname} [{name}] [req={request_id}] {message}',
+            '()': 'shellui_django.telemetry.TraceContextFormatter',
+            'format': '{asctime} {levelname} [{name}] [req={request_id}] trace_id={trace_id} span_id={span_id} {message}',
             'style': '{',
             'datefmt': '%Y-%m-%d %H:%M:%S',
         },

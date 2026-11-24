@@ -1,7 +1,7 @@
 ---
 title: Metrics
 sidebar_label: Metrics
-description: Admin statistics and the Prometheus gauges on GET /api/v1/metrics.
+description: Admin statistics and the OpenTelemetry metrics email-service exports.
 ---
 
 # Metrics
@@ -20,32 +20,32 @@ Grouped by `by_lane`, `by_event` (catalog `event_type`), and `by_day`. Query `fr
 
 `skipped` counts accepted events that queued no message: `no_recipients`, `no_rule`, and `rule_disabled` (always 0).
 
-## Prometheus
+## OpenTelemetry
 
-`GET /api/v1/metrics`
+Traces, metrics, and log correlation come from `shellui_django.telemetry`. Nothing is exported until `OTEL_EXPORTER_OTLP_ENDPOINT` is set. `OTEL_SDK_DISABLED=true` leaves telemetry off even when an endpoint is set.
 
-Auth: identity JWT, same scope as storage-service metrics (not public). Optional `company_id`.
+`service.name` defaults to `email-service`. `service.version` is the package version. `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` override those. Set `deployment.environment` and `cloud.region` in `OTEL_RESOURCE_ATTRIBUTES`, for example `deployment.environment=production,cloud.region=eu`.
 
-The body is Prometheus text (`text/plain; version=0.0.4`). `Accept: text/plain` is accepted, including when it is listed with `application/json`. A missing `Accept` header is also accepted. `401` and `403` still return the JSON `error_code` body.
+The protocol is `http/protobuf` (`OTEL_EXPORTER_OTLP_PROTOCOL`). `OTEL_EXPORTER_OTLP_HEADERS` carries collector credentials, such as SigNoz basic auth. Do not wrap the process with `opentelemetry-instrument`. Gunicorn and the Celery thread pool call the setup themselves, and so does each `manage.py run_email_worker` lane.
 
-Gauges, computed from the database at scrape time:
+Outbound `requests` calls, including Resend and Amazon SES, send W3C `traceparent`. Celery task headers do the same. A message stores the `traceparent` of the request that queued it. The lane worker's `email.send` span and the provider span continue that trace. Span attributes are the lane, template id, provider name, and status, plus `shellui.company_id` and `shellui.user_id` when those ids exist. Recipient addresses, subjects, and message bodies are not span attributes.
 
-| Name | Labels | Meaning |
-| --- | --- | --- |
-| `shellui_email_queue_depth` | `lane` | `queued` and `retrying` messages |
-| `shellui_email_queue_oldest_age_seconds` | `lane` | Age of the oldest queued message |
-| `shellui_email_send_latency_seconds` | `lane`, `quantile` (`0.5`, `0.95`) | Accept-to-handoff over the last 24 hours |
-| `shellui_email_provider_errors` | `provider`, `error_code` | Errors recorded in the last 24 hours |
-| `shellui_email_auth_ttl_expiries` | none | Auth messages that expired before handoff |
+Log lines include `trace_id` and `span_id` (both `0` when there is no span) and still include `req=` for `X-Request-ID`.
 
-Empty lanes are reported as 0 for depth and age so a scrape still lists `auth`, `transactional`, and `bulk`.
+`GET /api/v1/metrics` and `GET /api/v1/metrics/all` are removed. The `pat_agm` claim is not read.
 
-This endpoint never includes scheduled job or lane worker metrics.
+### Instruments
 
-## Global Prometheus
+Gauges are computed from the database and Redis on the export interval (`OTEL_METRIC_EXPORT_INTERVAL`, default 60000 ms). One process publishes them, so a restart moves the series instead of multiplying it by the number of workers. Names are the old Prometheus names with `_total` removed and `_` turned into `.`.
 
-`GET /api/v1/metrics/all`
+| Instrument | Type | Attributes | Meaning |
+| --- | --- | --- | --- |
+| `shellui.email.queue.depth` | gauge | `lane` | `queued` and `retrying` messages. Empty lanes are 0 |
+| `shellui.email.queue.oldest.age.seconds` | gauge | `lane` | Age of the oldest queued message, in seconds. Empty lanes are 0 |
+| `shellui.email.send.latency.seconds` | gauge | `lane`, `quantile` (`0.5`, `0.95`) | Accept-to-handoff over the last 24 hours. Absent when that lane sent nothing |
+| `shellui.email.provider.errors` | gauge | `provider`, `error_code` | Errors recorded in the last 24 hours |
+| `shellui.email.auth.ttl.expiries` | gauge | none | Auth messages that expired before handoff |
+| `shellui.email.fallback.sent.today` | gauge | none | Mail accepted today (UTC) on the Shellui fallback provider (the global counter) |
+| `shellui.email.fallback.refused.today` | gauge | none | Mail refused today (UTC) by the fallback caps or kill switch (the global counter) |
 
-Auth: staff, or a personal access token with `access_global_metrics` (JWT claim `pat_agm`). Company owners get `403`. A call without a token gets `401`.
-
-The body is the same queue gauges as `GET /api/v1/metrics` with no `company_id`, plus `shellui_email_scheduled_job_*`, `shellui_email_scheduler_*`, and `shellui_email_lane_worker_*`. Names, labels, and alert rules are in [Scheduled jobs](scheduled-jobs.md#prometheus-metrics).
+Scheduled job and lane worker instruments are in [Scheduled jobs](scheduled-jobs.md#opentelemetry-metrics). There is no `company_id` attribute on these instruments. Per-company counts stay on `GET /api/v1/stats`.

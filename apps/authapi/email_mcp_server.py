@@ -169,6 +169,39 @@ def _flat_audit_entry(
 class EmailMcpServer(McpServer):
     """Runs company-owner tools. Production does not register ``on_call``, so tool activity is not posted to Identity."""
 
+    def _claims_from_bearer(self, request: HttpRequest) -> dict[str, Any] | None:
+        """Verify the bearer with this service's rules.
+
+        shellui-django 0.7.0 checks the token inside ``McpServer.handle`` and ignores
+        claims the view already verified. Its decoder allows RS256 only, and requires
+        ``jti`` and ``iat``. email-service also accepts the Identity JWKS path and the
+        local HS256 fallback, which is what ``agent_claims_from_token`` already enforces.
+        """
+        from rest_framework.exceptions import AuthenticationFailed
+
+        from apps.authapi.mcp_agent import agent_claims_from_token
+
+        header = str(request.META.get('HTTP_AUTHORIZATION') or '')
+        if not header.lower().startswith('bearer '):
+            return None
+        token = header[7:].strip()
+        if not token:
+            return None
+        try:
+            return agent_claims_from_token(token, request=request)
+        except AuthenticationFailed:
+            return None
+
+    def _attach_request_principal(self, target_request, agent_claims: dict[str, Any]) -> None:
+        """Run the inner view as the company owner named by the verified token."""
+        from rest_framework.test import force_authenticate
+
+        from apps.authapi.mcp_agent import agent_principal_from_claims
+
+        user = agent_principal_from_claims(agent_claims)
+        force_authenticate(target_request, user=user, token=agent_claims)
+        target_request.auth = agent_claims
+
     def handle(self, request: HttpRequest, *, agent_claims: dict[str, Any] | None) -> JsonResponse:
         if agent_claims is not None:
             try:
@@ -677,7 +710,7 @@ class EmailMcpServer(McpServer):
             inner_kwargs['data'] = json.dumps(payload, default=_json_default).encode('utf-8')
             inner_kwargs['content_type'] = 'application/json'
         drf_request = self._factory.generic(method, resolved_path, **inner_kwargs)
-        self._attach_request_principal(drf_request, request, agent_claims)
+        self._attach_request_principal(drf_request, agent_claims)
         from django.urls import resolve
 
         match = resolve(resolved_path, urlconf=self.urlconf)

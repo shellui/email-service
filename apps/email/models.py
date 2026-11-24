@@ -444,6 +444,9 @@ class Message(models.Model):
     sent_at = models.DateTimeField(null=True, blank=True)
     last_error_code = models.CharField(max_length=64, blank=True)
     event_type = models.CharField(max_length=128, blank=True)
+    # W3C trace context for the request that queued this message. Not recipient data.
+    traceparent = models.CharField(max_length=128, blank=True, default='')
+    tracestate = models.CharField(max_length=512, blank=True, default='')
 
     class Meta:
         indexes = [

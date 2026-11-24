@@ -25,8 +25,6 @@ from apps.email.views import (
     MessageCancelView,
     MessageDetailView,
     MessageListView,
-    MetricsAllView,
-    MetricsView,
     PrivacyEraseView,
     ProviderTestSendView,
     ProviderView,
@@ -50,8 +48,6 @@ from apps.email.views import (
 
 urlpatterns = [
     path('health', HealthView.as_view(), name='email-health'),
-    path('metrics/all', MetricsAllView.as_view(), name='email-metrics-all'),
-    path('metrics', MetricsView.as_view(), name='email-metrics'),
     path('send', SendView.as_view(), name='email-send'),
     path('send/batch', SendBatchView.as_view(), name='email-send-batch'),
     path('events', EventIngestView.as_view(), name='email-events'),
