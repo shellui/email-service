@@ -12,7 +12,7 @@ from apps.authapi.principal import EmailPrincipal
 from apps.email.checks import fallback_provider_configured
 from apps.email.crypto import encrypt_json
 from apps.email.keys import issue_service_key
-from apps.email.metrics import metrics_http_body
+from apps.email.metrics import FALLBACK_REFUSED, FALLBACK_SENT, queue_samples
 from apps.email.models import CompanyProfile, CompanyProvider, FallbackUsage
 from apps.email.service import _platform_credentials
 from apps.providers.registry import fake_provider
@@ -144,9 +144,9 @@ class FallbackProviderTests(TestCase):
         response = self._send(company_id=42)
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.json()['error_code'], 'fallback_global_limit')
-        body = metrics_http_body().decode()
-        self.assertIn('shellui_email_fallback_sent_today 2.0', body)
-        self.assertIn('shellui_email_fallback_refused_today 1.0', body)
+        values = {sample.name: sample.value for sample in queue_samples() if sample.name in {FALLBACK_SENT, FALLBACK_REFUSED}}
+        self.assertEqual(values[FALLBACK_SENT], 2)
+        self.assertEqual(values[FALLBACK_REFUSED], 1)
 
     @override_settings(EMAIL_PLATFORM_COMPANY_IDS=[40], EMAIL_FALLBACK_GLOBAL_DAILY_LIMIT=1)
     def test_platform_companies_are_not_capped(self):

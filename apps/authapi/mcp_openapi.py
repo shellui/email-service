@@ -22,8 +22,6 @@ MCP_FORBIDDEN_OPERATION_IDS: frozenset[str] = frozenset(
         'api_v1_events_create',
         'api_v1_lanes_switch',
         'api_v1_privacy_erase',
-        'api_v1_metrics_all_retrieve',
-        'api_v1_metrics_retrieve',
         'api_v1_provider_webhooks_resend_create',
         'api_v1_service_clients_list',
         'api_v1_service_clients_create',

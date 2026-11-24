@@ -87,7 +87,7 @@ Pick the row that matches what you are doing:
 | Call an HTTPS endpoint when mail changes state | [Webhooks](actions.md) and [n8n](n8n.md) |
 | Read past mail events | [Event log](event-log.md) |
 | Lock down a production install | [Security](security.md) |
-| Scrape Prometheus or read admin counts | [Metrics](metrics.md) |
+| Read admin counts or OpenTelemetry metrics | [Metrics](metrics.md) |
 | See retries and retention | [Scheduled jobs](scheduled-jobs.md) |
 | Fix a send that did not go out | [Troubleshooting](troubleshooting.md) |
 

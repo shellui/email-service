@@ -186,7 +186,7 @@ These routes are omitted from the published schema or never carry `x-mcp`:
 - `/api/v1/service-clients` (service API keys).
 - Provider ingress webhooks (`/api/v1/provider-webhooks/...`).
 - Public newsletter sign-up (`/api/v1/public/newsletters/...`).
-- Lane pause switches, privacy erase, and global Prometheus metrics.
+- Lane pause switches and privacy erase. Queue metrics are OpenTelemetry instruments, not an HTTP API.
 
 ## Calling render-preview
 

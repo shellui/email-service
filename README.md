@@ -35,7 +35,7 @@ For production, `python manage.py generate_env --host email.example.com` prints 
 | `EMAIL_CREDENTIALS_KEY` | Encrypts company provider credentials |
 | `EMAIL_FALLBACK_PROVIDER` | Off (`none`) by default. `resend` with `RESEND_API_KEY`, or `ses` with the `SES_*` keys |
 
-Every setting is in [Configuration](docs/configuration.md). Before the first real send, finish the [Resend account steps](docs/providers.md#resend-account-before-mail-leaves).
+Every setting is in [Configuration](docs/configuration.md). Traces and metrics are OpenTelemetry and stay off until `OTEL_EXPORTER_OTLP_ENDPOINT` is set. See [Metrics](docs/metrics.md). Before the first real send, finish the [Resend account steps](docs/providers.md#resend-account-before-mail-leaves).
 
 ## Documentation
 

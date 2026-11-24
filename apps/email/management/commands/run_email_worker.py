@@ -1,3 +1,4 @@
+import signal
 import time
 
 from django.core.management.base import BaseCommand
@@ -15,10 +16,33 @@ class Command(BaseCommand):
         parser.add_argument('--batch-size', type=int, default=20)
 
     def handle(self, *args, **options):
+        from config.telemetry import configure_telemetry
+
+        configure_telemetry()
         from apps.email.worker_heartbeat import HeartbeatThrottle
 
+        previous = {
+            signal.SIGTERM: signal.getsignal(signal.SIGTERM),
+            signal.SIGINT: signal.getsignal(signal.SIGINT),
+        }
+
+        def _stop(signum, _frame):
+            from shellui_django.telemetry import shutdown_telemetry
+
+            shutdown_telemetry()
+            raise SystemExit(128 + signum)
+
+        signal.signal(signal.SIGTERM, _stop)
+        signal.signal(signal.SIGINT, _stop)
         lane = options['lane']
         heartbeat = HeartbeatThrottle(lane)
+        try:
+            self._run(lane, heartbeat, options)
+        finally:
+            signal.signal(signal.SIGTERM, previous[signal.SIGTERM])
+            signal.signal(signal.SIGINT, previous[signal.SIGINT])
+
+    def _run(self, lane, heartbeat, options):
         while True:
             heartbeat.beat()
             broadcasts = 0
