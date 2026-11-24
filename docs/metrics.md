@@ -28,7 +28,7 @@ Traces, metrics, and log correlation come from `shellui_django.telemetry`. Nothi
 
 The protocol is `http/protobuf` (`OTEL_EXPORTER_OTLP_PROTOCOL`). `OTEL_EXPORTER_OTLP_HEADERS` carries collector credentials, such as SigNoz basic auth. Do not wrap the process with `opentelemetry-instrument`. Gunicorn and the Celery thread pool call the setup themselves, and so does each `manage.py run_email_worker` lane.
 
-Outbound `requests` calls, including Resend and Amazon SES, send W3C `traceparent`. Celery task headers do the same. A message stores the `traceparent` of the request that queued it. The lane worker's `email.send` span and the provider span continue that trace. Span attributes are the lane, template id, provider name, and status, plus `shellui.company_id` and `shellui.user_id` when those ids exist. Recipient addresses, subjects, and message bodies are not span attributes.
+Outbound `requests` calls, including Resend and Amazon SES, send W3C `traceparent`. Celery task headers do the same. A message stores the `traceparent` of the request that queued it. The lane worker's `email.send` span and the provider span continue that trace. Span attributes are the lane, template id, provider name, and status, plus `shellui.company_id` and `shellui.user_id` when those ids exist. Recipient addresses, subjects, and message bodies are not span attributes. Database and Redis calls made outside a span, such as an idle lane worker poll, a gauge callback, or a heartbeat, are not exported. A poll that finds a message still records it under `email.send`.
 
 Log lines include `trace_id` and `span_id` (both `0` when there is no span) and still include `req=` for `X-Request-ID`.
 
