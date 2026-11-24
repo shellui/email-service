@@ -5,12 +5,9 @@ from __future__ import annotations
 import json
 
 from django.conf import settings
-from django.http import HttpResponse
 from django.utils import timezone
-from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.permissions import AllowAny
-from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -40,7 +37,6 @@ from apps.email.models import (
     TemplateVersion,
     parse_message_id,
 )
-from apps.email.renderers import PrometheusTextRenderer
 from apps.authapi.mcp_openapi import mcp_tool
 from apps.email.openapi_admin import (
     ADMIN_API_ERRORS,
@@ -1457,81 +1453,6 @@ class PrivacyEraseView(APIView):
         BroadcastRecipient.objects.filter(broadcast__company_id=company_id, email_hmac=hmac_value).delete()
         NewsletterSubscriber.objects.filter(list__company_id=company_id, email_hmac=hmac_value).delete()
         return Response({'deleted_messages': deleted, 'email_masked': mask_email(email)})
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['platform-metrics'],
-        operation_id='api_v1_metrics_retrieve',
-        parameters=[COMPANY_QUERY],
-        responses={
-            (200, 'text/plain'): OpenApiResponse(
-                response=OpenApiTypes.STR,
-                description='text/plain Prometheus exposition',
-            ),
-            401: ErrorSerializer,
-            403: ErrorSerializer,
-        },
-    ),
-)
-class MetricsView(APIView):
-    renderer_classes = [PrometheusTextRenderer]
-
-    def get(self, request):
-        from apps.email.metrics import METRICS_CONTENT_TYPE, metrics_http_body
-
-        user = request.user
-        if isinstance(user, ServicePrincipal) or not getattr(user, 'is_authenticated', False):
-            return error_response(SendError(401, 'unauthorized'), request)
-        company_param = request.query_params.get('company_id')
-        if company_param:
-            try:
-                company_id = int(company_param)
-                require_admin(request, company_id)
-            except SendError as exc:
-                return error_response(exc, request)
-            body = metrics_http_body(company_id=company_id)
-        elif getattr(user, 'is_staff', False) or getattr(user, 'access_global_metrics', False):
-            body = metrics_http_body()
-        elif getattr(user, 'is_company_owner', False) and user.company_id is not None:
-            body = metrics_http_body(company_id=int(user.company_id))
-        else:
-            return error_response(SendError(403, 'forbidden'), request)
-        return HttpResponse(body, content_type=METRICS_CONTENT_TYPE)
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['platform-metrics'],
-        operation_id='api_v1_metrics_all_retrieve',
-        summary='Prometheus metrics for the deployment, including scheduled jobs (staff)',
-        description=(
-            'Global Prometheus text. Requires staff, or a personal access token with '
-            '`access_global_metrics` (`pat_agm`). Includes `shellui_email_scheduled_job_*`, '
-            '`shellui_email_scheduler_*`, and `shellui_email_lane_worker_*`. `GET /api/v1/metrics` does not.'
-        ),
-        responses={
-            (200, 'text/plain'): OpenApiResponse(
-                response=OpenApiTypes.STR,
-                description='text/plain Prometheus exposition',
-            ),
-            401: ErrorSerializer,
-            403: ErrorSerializer,
-        },
-    ),
-)
-class MetricsAllView(APIView):
-    renderer_classes = [PrometheusTextRenderer]
-
-    def get(self, request):
-        from apps.email.metrics import METRICS_CONTENT_TYPE, global_metrics_http_body
-
-        user = request.user
-        if isinstance(user, ServicePrincipal) or not getattr(user, 'is_authenticated', False):
-            return error_response(SendError(401, 'unauthorized'), request)
-        if not (getattr(user, 'is_staff', False) or getattr(user, 'access_global_metrics', False)):
-            return error_response(SendError(403, 'forbidden'), request)
-        return HttpResponse(global_metrics_http_body(), content_type=METRICS_CONTENT_TYPE)
 
 
 @extend_schema_view(

@@ -93,7 +93,7 @@ Set `SCHEDULER_ENABLED=false` and run the commands with the same image, environm
 
 ## Monitoring
 
-Every run of the three jobs is recorded, whether the in-container beat or your own cron started it, and each lane worker reports a heartbeat. Django staff can read both through the API and Prometheus. Company owners never see them.
+Every run of the three jobs is recorded, whether the in-container beat or your own cron started it, and each lane worker reports a heartbeat. Django staff can read both through the API. The same rows feed OpenTelemetry gauges. Company owners never see the API.
 
 ### What each run records
 
@@ -156,7 +156,7 @@ More signals cover the processes themselves:
 
 ### Admin API (staff only)
 
-The endpoints use the same Bearer JWT as other admin endpoints and need Django `is_staff`: other callers get `403`, including company owners and tokens with `access_global_metrics`, and calls without a token get `401`. No `company_id` is needed. Responses contain keys and enums only (`health`, `status`, `error_key`, count names).
+The endpoints use the same Bearer JWT as other admin endpoints and need Django `is_staff`: other callers get `403`, including company owners, and calls without a token get `401`. No `company_id` is needed. Responses contain keys and enums only (`health`, `status`, `error_key`, count names).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -206,30 +206,30 @@ A failed run:
 - is stored with `status=failed` and its `error_key`
 - logs one ERROR line with the job, run id, trigger, and sanitized error, plus the traceback. The original exception message is replaced by the sanitized one, so a URL query string or credential in it never reaches the logs
 - is reported to Sentry when `SENTRY_DSN` is set, tagged `scheduled_job`, `scheduled_job_trigger`, and `scheduled_job_run_id`
-- increments `shellui_email_scheduled_job_runs_total{status="failed"}`
+- is counted on `shellui.email.scheduled.job.runs` with `status=failed`
 - makes the command exit with status 1 and print `retry_webhooks failed: OperationalError: … (run_id=1234)`, so an external scheduler that alerts on failed jobs still works
 
 If Redis is down when a Celery run tries to take its lock, that run is recorded as `failed` with `error_key=redis_error`. The Celery task returns `failed` after the run is stored, so the error is logged once.
 
-### Prometheus metrics
+### OpenTelemetry metrics
 
-`GET /api/v1/metrics/all` includes the scheduled job and lane worker metrics. It needs staff, or a personal access token with `access_global_metrics` (`pat_agm`). `GET /api/v1/metrics` never includes them, including a company scrape. Values come from the database and Redis, so they are the same whichever gunicorn worker answers and survive restarts.
+These instruments are exported with the queue gauges. There is no scrape endpoint. Values come from the database and Redis, so they survive process restarts. One process publishes each export, which keeps a single series. Labels are `job`, `status`, `kind`, and `lane` only.
 
-| Metric | Type | Labels | Meaning |
+| Instrument | Type | Attributes | Meaning |
 | --- | --- | --- | --- |
-| `shellui_email_scheduled_job_runs_total` | counter | `job`, `status` | Finished runs: `succeeded`, `failed`, `skipped_locked` |
-| `shellui_email_scheduled_job_items_total` | counter | `job`, `kind` | Items processed, `kind` is a `counts` name |
-| `shellui_email_scheduled_job_last_success_timestamp_seconds` | gauge | `job` | Unix time of the last successful run (0 before the first one) |
-| `shellui_email_scheduled_job_last_run_timestamp_seconds` | gauge | `job` | Unix time the last run started (0 before the first one) |
-| `shellui_email_scheduled_job_last_run_duration_seconds` | gauge | `job` | Duration of the last finished run |
-| `shellui_email_scheduled_job_overdue` | gauge | `job` | 1 when overdue (see the table above) |
-| `shellui_email_scheduler_enabled` | gauge | none | 1 when `SCHEDULER_ENABLED` is true |
-| `shellui_email_scheduler_redis_up` | gauge | none | 1 when the broker answers `PING`. Absent without a broker |
-| `shellui_email_scheduler_beat_last_seen_timestamp_seconds` | gauge | none | Unix time beat last published a job. Absent before the first one |
-| `shellui_email_lane_worker_up` | gauge | `lane` | 1 when a worker of the lane polled within 60 seconds. Absent without a broker |
-| `shellui_email_lane_worker_last_seen_timestamp_seconds` | gauge | `lane` | Unix time a worker of the lane last polled. Absent before the first poll |
+| `shellui.email.scheduled.job.runs` | counter | `job`, `status` | Finished runs: `succeeded`, `failed`, `skipped_locked` |
+| `shellui.email.scheduled.job.items` | counter | `job`, `kind` | Items processed, `kind` is a `counts` name |
+| `shellui.email.scheduled.job.last.success.timestamp.seconds` | gauge | `job` | Unix time of the last successful run (0 before the first one) |
+| `shellui.email.scheduled.job.last.run.timestamp.seconds` | gauge | `job` | Unix time the last run started (0 before the first one) |
+| `shellui.email.scheduled.job.last.run.duration.seconds` | gauge | `job` | Duration of the last finished run. Absent before the first finished run |
+| `shellui.email.scheduled.job.overdue` | gauge | `job` | 1 when overdue (see the table above) |
+| `shellui.email.scheduler.enabled` | gauge | none | 1 when `SCHEDULER_ENABLED` is true |
+| `shellui.email.scheduler.redis.up` | gauge | none | 1 when the broker answers `PING`. Absent without a broker |
+| `shellui.email.scheduler.beat.last.seen.timestamp.seconds` | gauge | none | Unix time beat last published a job. Absent before the first one |
+| `shellui.email.lane.worker.up` | gauge | `lane` | 1 when a worker of the lane polled within 60 seconds. Absent without a broker |
+| `shellui.email.lane.worker.last.seen.timestamp.seconds` | gauge | `lane` | Unix time a worker of the lane last polled. Absent before the first poll |
 
-Suggested alert rules:
+Suggested alert rules (PromQL names are the instrument names):
 
 ```yaml
 groups:
@@ -243,7 +243,7 @@ groups:
         annotations:
           summary: "email-service job {{ $labels.job }} has no recent successful run"
       - alert: EmailScheduledJobFailing
-        expr: increase(shellui_email_scheduled_job_runs_total{status="failed"}[15m]) >= 3
+        expr: increase(shellui_email_scheduled_job_runs{status="failed"}[15m]) >= 3
         labels:
           severity: warning
       - alert: EmailLaneWorkerDown
@@ -259,12 +259,12 @@ groups:
         labels:
           severity: critical
       - alert: EmailWebhooksGivenUp
-        expr: increase(shellui_email_scheduled_job_items_total{kind="webhook_deliveries_given_up"}[1h]) > 0
+        expr: increase(shellui_email_scheduled_job_items{kind="webhook_deliveries_given_up"}[1h]) > 0
         labels:
           severity: info
 ```
 
-The overdue alert covers a stopped beat, a stuck Celery worker, and a missing cron line alike. `shellui_email_queue_oldest_age_seconds` (see [Metrics](metrics.md)) is a second signal for stuck lanes. Scrape every 30 to 60 seconds: each scrape runs a few indexed queries and two Redis calls.
+SigNoz stores the dotted instrument names. If a query language rewrites `.` to `_`, the names above match that form (`shellui.email.scheduled.job.overdue` and `shellui_email_scheduled_job_overdue` are the same series). The overdue alert covers a stopped beat, a stuck Celery worker, and a missing cron line alike. `shellui.email.queue.oldest.age.seconds` (see [Metrics](metrics.md)) is a second signal for stuck lanes. The export interval defaults to 60 seconds: each export runs a few indexed queries and two Redis calls.
 
 ## Related
 

@@ -15,7 +15,14 @@ class EmailConfig(AppConfig):
     verbose_name = 'Email'
 
     def ready(self):
+        from shellui_django.telemetry._state import state
+
         from apps.email import checks  # noqa: F401
+
+        if state.active:
+            from apps.email.metrics import register_observable_metrics
+
+            register_observable_metrics()
 
         post_migrate.connect(_sync_library, sender=self, dispatch_uid='email-library-sync')
         from corsheaders.signals import check_request_enabled

@@ -54,8 +54,6 @@ The token `kid` must name a key in the JWKS. A missing or unknown `kid` is rejec
 
 The principal needs `is_staff` or `is_company_owner`. If the token has `company_id`, it must equal the requested company unless the caller is staff. A mismatch is `403 company_mismatch`.
 
-`GET /api/v1/metrics` follows storage-service: staff, or the `pat_agm` claim, sees every company. A company owner sees their own company. The endpoint is not anonymous.
-
 ## Health
 
 `GET /api/v1/health` does not require a credential.

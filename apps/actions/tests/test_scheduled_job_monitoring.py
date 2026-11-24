@@ -1,6 +1,5 @@
 """Scheduled job monitoring: run recording, health, metrics, and the staff API."""
 
-import json
 from datetime import timedelta
 from io import StringIO
 from unittest import mock
@@ -35,8 +34,19 @@ from apps.actions.scheduled_jobs import (
 )
 from apps.authapi.principal import EmailPrincipal
 from apps.authapi.service_auth import ServicePrincipal
+from apps.actions.scheduled_job_metrics import (
+    DURATION,
+    ITEMS,
+    LAST_SUCCESS,
+    OVERDUE,
+    RUNS,
+    SCHEDULER_ENABLED,
+    WORKER_LAST_SEEN,
+    WORKER_UP,
+    scheduled_job_samples,
+)
 from apps.email import tasks as email_tasks
-from apps.email.metrics import metrics_http_body
+from apps.email.metrics import QUEUE_DEPTH, queue_samples
 from apps.email.worker_heartbeat import HeartbeatThrottle, read_worker_heartbeats, record_worker_heartbeat
 from config.request_context import request_id_var
 from config.task_lock import beat_heartbeat_key, lock_key
@@ -54,15 +64,18 @@ def _counter(job, name):
     return row.value if row else 0
 
 
-def _principal(*, staff=False, owner=False, company_id=10, global_metrics=False):
+def _principal(*, staff=False, owner=False, company_id=10):
     return EmailPrincipal(
         user_id=1,
         company_id=company_id,
         email='ada@acme.com',
         is_staff=staff,
         is_company_owner=owner,
-        access_global_metrics=global_metrics,
     )
+
+
+def _points(samples):
+    return {(sample.name, tuple(sorted(sample.attributes.items()))): sample.value for sample in samples}
 
 
 class FakeRedisWithGet(FakeRedis):
@@ -405,14 +418,12 @@ class StaffApiTests(TestCase):
         anonymous = APIClient()
         owner = self._client(owner=True)
         staff = self._client(staff=True)
-        global_metrics = self._client(owner=True, global_metrics=True)
         for path in paths:
             with self.subTest(path=path):
                 self.assertEqual(staff.get(path).status_code, 200)
                 denied = owner.get(path)
                 self.assertEqual(denied.status_code, 403)
                 self.assertEqual(denied.json()['error_code'], 'forbidden')
-                self.assertEqual(global_metrics.get(path).status_code, 403)
                 missing = anonymous.get(path)
                 self.assertEqual(missing.status_code, 401)
                 self.assertEqual(missing.json()['error_code'], 'unauthorized')
@@ -557,64 +568,45 @@ class MetricsTests(TestCase):
         client.force_authenticate(user=_principal(**kwargs))
         return client
 
-    def test_global_metrics_include_scheduled_jobs(self):
+    def test_scheduled_job_metrics_follow_the_run_tables(self):
         call_command('retry_webhooks', stdout=StringIO())
-        body = self._client(staff=True).get('/api/v1/metrics/all').content.decode()
-        self.assertIn('shellui_email_scheduled_job_runs_total{job="retry_webhooks",status="succeeded"} 1.0', body)
-        self.assertIn('shellui_email_scheduled_job_runs_total{job="sweep_email_queue",status="failed"} 0.0', body)
-        self.assertIn('shellui_email_scheduled_job_runs_total{job="purge_expired_data",status="failed"} 0.0', body)
-        self.assertIn(
-            'shellui_email_scheduled_job_items_total{job="retry_webhooks",kind="webhook_deliveries_attempted"} 0.0',
-            body,
+        points = _points(scheduled_job_samples())
+        self.assertEqual(points[(RUNS, (('job', 'retry_webhooks'), ('status', 'succeeded')))], 1)
+        self.assertEqual(points[(RUNS, (('job', 'sweep_email_queue'), ('status', 'failed')))], 0)
+        self.assertEqual(points[(RUNS, (('job', 'purge_expired_data'), ('status', 'failed')))], 0)
+        self.assertEqual(
+            points[(ITEMS, (('job', 'retry_webhooks'), ('kind', 'webhook_deliveries_attempted')))],
+            0,
         )
-        self.assertIn('shellui_email_scheduled_job_overdue{job="retry_webhooks"} 0.0', body)
-        self.assertIn('shellui_email_scheduled_job_last_success_timestamp_seconds{job="retry_webhooks"}', body)
-        self.assertIn('shellui_email_scheduled_job_last_run_duration_seconds{job="retry_webhooks"}', body)
-        self.assertIn('shellui_email_scheduler_enabled', body)
-        self.assertIn('shellui_email_queue_depth', body)
+        self.assertEqual(points[(OVERDUE, (('job', 'retry_webhooks'),))], 0)
+        self.assertGreater(points[(LAST_SUCCESS, (('job', 'retry_webhooks'),))], 0)
+        self.assertIn((DURATION, (('job', 'retry_webhooks'),)), points)
+        self.assertIn(SCHEDULER_ENABLED, {name for name, _attrs in points})
+        self.assertIn(QUEUE_DEPTH, {sample.name for sample in queue_samples()})
+        for path in ('/api/v1/metrics/all', '/api/v1/metrics'):
+            self.assertEqual(self._client(staff=True).get(path).status_code, 404)
+            self.assertEqual(APIClient().get(path).status_code, 404)
 
-        owner = self._client(owner=True).get('/api/v1/metrics/all')
-        self.assertEqual(owner.status_code, 403)
-        self.assertEqual(json.loads(owner.content)['error_code'], 'forbidden')
-        granted = self._client(owner=True, global_metrics=True).get('/api/v1/metrics/all')
-        self.assertEqual(granted.status_code, 200)
-        self.assertIn(b'shellui_email_scheduler_enabled', granted.content)
-        missing = APIClient().get('/api/v1/metrics/all')
-        self.assertEqual(missing.status_code, 401)
-
-    def test_company_metrics_never_include_scheduled_jobs(self):
+    def test_queue_samples_are_separate_from_scheduled_jobs(self):
         ScheduledJobCounter.objects.create(job='retry_webhooks', name='runs.succeeded', value=4)
-        body = metrics_http_body(company_id=10)
-        self.assertNotIn(b'scheduled_job', body)
-        self.assertNotIn(b'shellui_email_scheduler', body)
-
-        response = self._client(owner=True).get('/api/v1/metrics?company_id=10')
-        self.assertEqual(response.status_code, 200)
-        text = response.content.decode()
-        self.assertNotIn('shellui_email_scheduled_job', text)
-        self.assertNotIn('shellui_email_scheduler', text)
-        self.assertNotIn('lane_worker', text)
-        self.assertIn('shellui_email_queue_depth', text)
-
-        staff_company = self._client(staff=True).get('/api/v1/metrics')
-        self.assertEqual(staff_company.status_code, 200)
-        staff_text = staff_company.content.decode()
-        self.assertNotIn('shellui_email_scheduled_job', staff_text)
-        self.assertNotIn('lane_worker', staff_text)
+        names = {sample.name for sample in queue_samples()}
+        self.assertNotIn(RUNS, names)
+        self.assertNotIn(SCHEDULER_ENABLED, names)
+        self.assertIn(QUEUE_DEPTH, names)
 
     @override_settings(CELERY_BROKER_URL='redis://broker:6379/0')
-    def test_global_metrics_include_lane_workers(self):
+    def test_lane_worker_metrics(self):
         fake = FakeRedisWithGet()
         now = timezone.now().timestamp()
         record_worker_heartbeat('auth', now=now, client=fake)
         record_worker_heartbeat('bulk', now=now - 600, client=fake)
         with mock.patch('config.task_lock.get_lock_client', return_value=fake):
-            body = self._client(staff=True).get('/api/v1/metrics/all').content.decode()
-        self.assertIn('shellui_email_lane_worker_up{lane="auth"} 1.0', body)
-        self.assertIn('shellui_email_lane_worker_up{lane="bulk"} 0.0', body)
-        self.assertIn('shellui_email_lane_worker_up{lane="transactional"} 0.0', body)
-        self.assertIn('shellui_email_lane_worker_last_seen_timestamp_seconds{lane="auth"}', body)
-        self.assertNotIn('shellui_email_lane_worker_last_seen_timestamp_seconds{lane="transactional"}', body)
+            points = _points(scheduled_job_samples())
+        self.assertEqual(points[(WORKER_UP, (('lane', 'auth'),))], 1)
+        self.assertEqual(points[(WORKER_UP, (('lane', 'bulk'),))], 0)
+        self.assertEqual(points[(WORKER_UP, (('lane', 'transactional'),))], 0)
+        self.assertIn((WORKER_LAST_SEEN, (('lane', 'auth'),)), points)
+        self.assertNotIn((WORKER_LAST_SEEN, (('lane', 'transactional'),)), points)
 
 
 class DeliveryCorrelationTests(TestCase):

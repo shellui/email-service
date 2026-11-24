@@ -33,6 +33,7 @@ from apps.email.models import (
     Suppression,
 )
 from apps.email.substitution import SubstitutionError, substitute
+from apps.email.tracing import email_send_span, provider_send_span, tag_span, trace_fields
 from apps.providers.registry import get_provider
 
 logger = logging.getLogger(__name__)
@@ -387,6 +388,7 @@ def _queue_message(
         expires_at=expires_at,
         next_attempt_at=timezone.now(),
         event_type=event_type or template_key,
+        **trace_fields(),
     )
     MessageEvent.objects.create(
         message=message,
@@ -401,6 +403,7 @@ def accept_send(principal, body: dict) -> tuple[int, dict]:
     if not isinstance(body, dict):
         raise SendError(400, 'validation_failed')
     company_id = _require_company(principal, body.get('company_id'))
+    tag_span(company_id=company_id)
     template_key = str(body.get('template_key') or '')
     definition = get_definition(template_key)
     if definition is None:
@@ -516,6 +519,7 @@ def accept_batch(principal, body: dict) -> tuple[int, dict]:
     if not isinstance(body, dict):
         raise SendError(400, 'validation_failed')
     company_id = _require_company(principal, body.get('company_id'))
+    tag_span(company_id=company_id)
     template_key = str(body.get('template_key') or '')
     definition = get_definition(template_key)
     if definition is None:
@@ -630,6 +634,7 @@ def accept_event(principal, body: dict) -> tuple[int, dict]:
     if not isinstance(body, dict):
         raise SendError(400, 'validation_failed')
     company_id = _require_company(principal, body.get('company_id'))
+    tag_span(company_id=company_id)
     service = str(body.get('service') or principal.service)
     if service != principal.service:
         raise SendError(403, 'forbidden')
@@ -887,7 +892,8 @@ def deliver_message(message_id) -> None:
             return
         now = timezone.now()
         if message.expires_at and message.expires_at <= now:
-            _expire(message)
+            with email_send_span(message):
+                _expire(message)
             return
         if _lane_paused(message.lane, message.company_id):
             return
@@ -910,6 +916,12 @@ def deliver_message(message_id) -> None:
             'expires_at': message.expires_at,
             'event_type': message.event_type,
         }
+        traced = message
+    with email_send_span(traced):
+        _finish_delivery(message_id, snapshot)
+
+
+def _finish_delivery(message_id, snapshot) -> None:
     definition = get_definition(snapshot['template_key'])
     template = None
     if definition is None:
@@ -1022,7 +1034,8 @@ def deliver_message(message_id) -> None:
         _finish_failed(message_id, 'provider_not_configured')
         return
     try:
-        result = provider.send(provider_message, credentials)
+        with provider_send_span(provider_name, lane=snapshot['lane'], template_id=snapshot['template_key']):
+            result = provider.send(provider_message, credentials)
     except Exception:
         logger.exception('provider send crashed message=%s', message_id)
         _finish_failed(message_id, 'provider_error')

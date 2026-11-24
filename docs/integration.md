@@ -48,7 +48,7 @@ A key that is not allowed to use a lane receives `403 lane_not_allowed`. A key w
 | `esk_` service key | A Shellui service | `/send`, `/send/batch`, `/events`, `/messages/{id}`, `/catalog`, and identity-only `/privacy/erase` |
 | Identity JWT (RS256, JWKS) | Staff, or a company owner | Admin routes below. `company_id` on the token must match the requested company unless the caller is staff. |
 
-Health is public. Provider webhooks use Svix signatures, not a Bearer token. Metrics require a JWT (same pattern as storage-service). Service keys cannot read metrics.
+Health is public. Provider webhooks use Svix signatures, not a Bearer token. Delivery counts are `GET /api/v1/stats`. OpenTelemetry export is described in [metrics.md](metrics.md).
 
 See [authentication.md](authentication.md).
 
@@ -773,11 +773,7 @@ Response: `{deleted_messages, email_masked}`. Deletes message rows and their eve
 {"status": "ok", "version": "0.2.0"}
 ```
 
-`GET /api/v1/metrics` requires an identity JWT. Staff, or a token with the `pat_agm` claim (`access_global_metrics`), receives every company. Owners receive their company. `?company_id=` is allowed for staff and for the matching owner.
-
-Prometheus text. See [metrics.md](metrics.md).
-
-`GET /api/v1/metrics/all` requires staff or `pat_agm`. It adds `shellui_email_scheduled_job_*`, `shellui_email_scheduler_*`, and `shellui_email_lane_worker_*`. Company owners get `403`. `GET /api/v1/metrics` does not include those series.
+`GET /api/v1/stats` is the JSON delivery report. `GET /api/v1/metrics` and `GET /api/v1/metrics/all` are not served. Queue, provider, and scheduled-job series are OpenTelemetry instruments. See [metrics.md](metrics.md).
 
 ## Scheduled jobs (staff)
 
