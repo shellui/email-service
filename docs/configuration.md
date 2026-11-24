@@ -226,6 +226,7 @@ See [Newsletters](newsletters.md). Addresses are read as IPv4 or IPv6, with or w
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | Turns export on. Empty leaves traces and metrics off |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | The only protocol this service's telemetry accepts |
 | `OTEL_EXPORTER_OTLP_HEADERS` | empty | Collector headers, such as SigNoz basic auth. Not logged |
+| `OTEL_TRACES_SAMPLER` | empty | Empty keeps the shellui-django default, which drops database and Redis calls made outside a span. `parentbased_always_on` keeps every call |
 | `OTEL_RESOURCE_ATTRIBUTES` | empty | Overrides resource attributes, for example `deployment.environment=production,cloud.region=eu` |
 | `SENTRY_DSN` | empty | Optional error reporting |
 | `SENTRY_ENVIRONMENT` | `development` or `production` from `DEBUG` | Sentry environment name |
