@@ -78,7 +78,7 @@ SCHEDULER_ARGS=(
   --schedule "${CELERY_BEAT_SCHEDULE_FILE:-/tmp/celerybeat-schedule}"
   --pool threads
   --concurrency "${CELERY_WORKER_CONCURRENCY:-2}"
-  --hostname "email-service@%h"
+  --hostname "${OTEL_SERVICE_NAME:-email-service}@%h"
   --without-gossip
   --without-mingle
   --without-heartbeat

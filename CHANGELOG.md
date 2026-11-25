@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 🐛 Bug Fixes
+
+- Scope the Celery default queue, worker hostname, and `SCHEDULER_LOCK_PREFIX` (`<scope>:scheduler`) by `OTEL_SERVICE_NAME` (defaulting to `email-service`). Separate deployments or regions sharing a Redis broker no longer consume each other's scheduled tasks or skip runs on shared locks.
+
 ## [0.9.1] - 2026-11-24
 
 ### 🐛 Bug Fixes

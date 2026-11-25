@@ -222,7 +222,7 @@ See [Newsletters](newsletters.md). Addresses are read as IPv4 or IPv6, with or w
 | `ACTIONS_OUTBOX_MAX_ATTEMPTS` | `8` | Webhook attempts |
 | `ACTIONS_WEBHOOK_ALLOW_PRIVATE` | `false` | Allow webhook targets on private addresses. Local only |
 | `ACTIONS_WEBHOOK_SYNC_DELIVERY` | `false` | Deliver webhooks inside the request. Leave false outside tests |
-| `OTEL_SERVICE_NAME` | `email-service` | `service.name`. Overrides the default |
+| `OTEL_SERVICE_NAME` | `email-service` | `service.name`, Celery queue name, and scheduler Redis key prefix |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | Turns export on. Empty leaves traces and metrics off |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | The only protocol this service's telemetry accepts |
 | `OTEL_EXPORTER_OTLP_HEADERS` | empty | Collector headers, such as SigNoz basic auth. Not logged |
