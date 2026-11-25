@@ -1,6 +1,6 @@
 [project]
 name = "email-service"
-version = "0.9.2"
+version = "0.9.3"
 description = "Email templates and delivery for Shellui services"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -22,7 +22,7 @@ dependencies = [
     "requests==2.33.0",
     "redis==8.1.0",
     "celery==5.6.3",
-    "shellui-django[mcp,otel]==0.7.1",
+    "shellui-django[mcp,otel]==0.7.2",
 ]
 
 [dependency-groups]

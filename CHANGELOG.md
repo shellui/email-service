@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.9.3] - 2026-11-25
+
+### 🛠 Improvements
+
+- Newsletter confirm and unsubscribe pages use the same Shellui header, card, and dark-mode layout as Identity, via `shellui-django` 0.7.2.
+
 ## [0.9.2] - 2026-11-25
 
 ### 🐛 Bug Fixes
