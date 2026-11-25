@@ -188,6 +188,7 @@ INSTALLED_APPS = [
     # WhiteNoise serves static files in development too, with the CORS header web fonts need.
     'whitenoise.runserver_nostatic',
     'django.contrib.staticfiles',
+    'shellui_django.ui',
     'corsheaders',
     'rest_framework',
     'drf_spectacular',
