@@ -40,7 +40,7 @@ Every run is also recorded, see [Monitoring](#monitoring).
 
 Lane workers claim each message with a row lock, so several containers can run the same lanes without sending a message twice.
 
-Every scheduled job takes a Redis lock before it starts (`SET NX` with an expiry: 5 minutes for `retry_webhooks` and `sweep_email_queue`, 15 minutes for `purge_expired_data`). When another container already runs the same job, the run is skipped and logs `skipped, another run is in progress`. The lock expires on its own if a container dies mid-run. Jobs use their own queue (`email-service`) and lock keys (`email-service:scheduler:…`), so one Redis can serve email-service and other Shellui services.
+Every scheduled job takes a Redis lock before it starts (`SET NX` with an expiry: 5 minutes for `retry_webhooks` and `sweep_email_queue`, 15 minutes for `purge_expired_data`). When another container already runs the same job, the run is skipped and logs `skipped, another run is in progress`. The lock expires on its own if a container dies mid-run. Jobs use a queue and Redis key prefix derived from `OTEL_SERVICE_NAME` (default `email-service` and `email-service:scheduler:…`), so separate services or regions sharing a Redis instance do not consume each other's tasks or contend on locks. Because the default stays `email-service`, an instance keeping that name continues draining the default queue, while scheduled tasks also expire before their next period.
 
 ## Settings
 
@@ -51,6 +51,7 @@ Every scheduled job takes a Redis lock before it starts (`SET NX` with an expiry
 | `SCHEDULER_ENABLED` | `true` | `false` keeps the scheduled jobs out of this container |
 | `EMAIL_WORKERS_ENABLED` | `true` | `false` keeps the lane workers out of this container |
 | `CELERY_WORKER_CONCURRENCY` | `2` | Threads in the Celery worker, so an hourly purge never delays the minute jobs |
+| `OTEL_SERVICE_NAME` | `email-service` | Scopes the Celery queue (`<name>`) and Redis lock and heartbeat keys (`<name>:scheduler:…`), as well as telemetry `service.name` |
 
 ## Run the workers in their own container
 
