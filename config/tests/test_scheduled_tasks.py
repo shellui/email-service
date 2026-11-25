@@ -15,7 +15,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from apps.actions import tasks as action_tasks
 from apps.email import tasks as email_tasks
 from config.celery import app as celery_app
-from config.settings import _celery_broker_url
+from config.settings import _celery_broker_url, _service_scope
 from config.task_lock import lock_key, task_lock
 
 
@@ -225,3 +225,63 @@ class CelerySettingsTests(SimpleTestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("'celery'", result.stdout)
+
+    def test_service_scope_defaults_and_normalizes(self):
+        self.assertEqual(_service_scope(''), 'email-service')
+        self.assertEqual(_service_scope('   '), 'email-service')
+        self.assertEqual(_service_scope('email-service'), 'email-service')
+        self.assertEqual(_service_scope('email-global'), 'email-global')
+        self.assertEqual(_service_scope('email/eu:prod'), 'email-eu-prod')
+
+    def test_otel_service_name_scopes_queue_locks_and_heartbeats(self):
+        code = (
+            'import json, django; django.setup(); '
+            'from django.conf import settings; '
+            'from config.celery import app; '
+            'from config.task_lock import lock_key, beat_heartbeat_key; '
+            'from apps.email.worker_heartbeat import worker_heartbeat_key; '
+            "route = app.amqp.router.route({}, 'actions.purge_expired_data'); "
+            'print(json.dumps({'
+            '"queue": settings.CELERY_TASK_DEFAULT_QUEUE, '
+            '"prefix": settings.SCHEDULER_LOCK_PREFIX, '
+            '"lock": lock_key("purge_expired_data"), '
+            '"beat": beat_heartbeat_key(), '
+            '"worker": worker_heartbeat_key("auth"), '
+            '"celery_default": app.conf.task_default_queue, '
+            '"celery_queues": list(app.amqp.queues.keys()), '
+            '"routed_queue": route["queue"].name'
+            '}))'
+        )
+        env = dict(os.environ)
+        env.update(
+            {
+                'DJANGO_SETTINGS_MODULE': 'config.settings',
+                'OTEL_SERVICE_NAME': 'email-global',
+                'SECRET_KEY': settings.SECRET_KEY,
+                'DEBUG': 'true',
+            }
+        )
+        result = subprocess.run(
+            [sys.executable, '-c', code],
+            cwd=settings.BASE_DIR,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        import json
+        data = json.loads(result.stdout)
+        self.assertEqual(
+            data,
+            {
+                'queue': 'email-global',
+                'prefix': 'email-global:scheduler',
+                'lock': 'email-global:scheduler:lock:purge_expired_data',
+                'beat': 'email-global:scheduler:beat:heartbeat',
+                'worker': 'email-global:scheduler:worker:auth:heartbeat',
+                'celery_default': 'email-global',
+                'celery_queues': ['email-global'],
+                'routed_queue': 'email-global',
+            },
+        )

@@ -144,6 +144,7 @@ class DockerEntrypointTests(SimpleTestCase):
         self.assertIn('-A config --quiet worker --beat', celery_args)
         self.assertIn('--schedule /tmp/celerybeat-schedule', celery_args)
         self.assertIn('--pool threads --concurrency 2', celery_args)
+        self.assertIn('--hostname email-service@%h', celery_args)
         self.assertIn('config.wsgi:application', self.started('gunicorn')[0])
 
     def test_web_exits_when_the_scheduler_dies(self):
@@ -187,11 +188,13 @@ class DockerEntrypointTests(SimpleTestCase):
         result = self.run_entrypoint(
             CELERY_BROKER_URL='redis://broker:6379/1',
             CELERY_WORKER_CONCURRENCY='4',
+            OTEL_SERVICE_NAME='email-global',
             EMAIL_WORKERS_ENABLED='false',
             STUB_CELERY_EXIT='0',
         )
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn('--concurrency 4', self.started('celery')[0])
+        self.assertIn('--hostname email-global@%h', self.started('celery')[0])
 
     def test_worker_mode_runs_scheduler_and_lane_workers_without_web(self):
         result = self.run_entrypoint('worker', REDIS_URL='redis://redis:6379/0', STUB_CELERY_EXIT='0')

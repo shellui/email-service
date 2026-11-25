@@ -79,6 +79,12 @@ def _celery_broker_url(redis_url: str, override: str) -> str:
     return (override or '').strip() or (redis_url or '').strip()
 
 
+def _service_scope(service_name: str, default: str = 'email-service') -> str:
+    """Normalize ``OTEL_SERVICE_NAME`` into a Celery queue and Redis lock prefix."""
+    cleaned = re.sub(r'[^A-Za-z0-9._-]+', '-', (service_name or '').strip()).strip('-')
+    return cleaned or default
+
+
 def scheduled_jobs_beat_schedule() -> dict:
     """
     Celery beat entries for the scheduled jobs.
@@ -303,8 +309,9 @@ CACHES = _caches_config(REDIS_URL)
 SCHEDULER_ENABLED = _env_bool('SCHEDULER_ENABLED', True)
 EMAIL_WORKERS_ENABLED = _env_bool('EMAIL_WORKERS_ENABLED', True)
 CELERY_BROKER_URL = _celery_broker_url(REDIS_URL, os.getenv('CELERY_BROKER_URL', ''))
-CELERY_TASK_DEFAULT_QUEUE = 'email-service'
-SCHEDULER_LOCK_PREFIX = 'email-service:scheduler'
+_service_scope_name = _service_scope(os.getenv('OTEL_SERVICE_NAME', ''))
+CELERY_TASK_DEFAULT_QUEUE = _service_scope_name
+SCHEDULER_LOCK_PREFIX = f'{_service_scope_name}:scheduler'
 CELERY_TIMEZONE = 'UTC'
 CELERY_ENABLE_UTC = True
 CELERY_TASK_IGNORE_RESULT = True
