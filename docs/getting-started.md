@@ -54,7 +54,7 @@ Compose does not start Postgres. For a local Postgres, set `POSTGRES_DATABASE_UR
 
 ## Start from a checkout
 
-Use this path when you are changing the Python code. You need [uv](https://docs.astral.sh/uv/) and Node.js 22:
+Use this path when you are changing the Python code. You need [uv](https://docs.astral.sh/uv/) and Node.js 26:
 
 ```bash
 uv sync
