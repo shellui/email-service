@@ -18,6 +18,7 @@ from apps.authapi.mcp_openapi import MCP_REQUIRED_OPERATION_IDS, MCP_TOOL_NAMES
 from apps.authapi.mcp_tool_schema import TRANSPORT_ARGUMENT_NAMES, published_mcp_tools
 from apps.authapi.tests.test_mcp_endpoint import MCP_SETTINGS, _agent_token, _rpc
 from apps.authapi.tests.test_mcp_tool_calls import McpToolHappyPathTests, SPECS
+from shellui_django.mcp.approval_summary import destination_paths
 from shellui_django.mcp.openapi_tools import _client_prop_schema, tools_from_schema
 from shellui_django.mcp.write_gate import decide_write
 
@@ -158,20 +159,10 @@ class McpToolContractTests(TestCase):
     def test_destination_properties_are_marked_for_the_approval_prompt(self):
         from apps.authapi.mcp_views import _schema
 
-        def marked(node: dict, path: str = '') -> set[str]:
-            found: set[str] = set()
-            for key, value in (node.get('properties') or {}).items():
-                here = f'{path}.{key}' if path else key
-                target = value.get('items') or {} if value.get('type') == 'array' else value
-                if target.get('x-mcp-destination') is True:
-                    found.add(here)
-                found |= marked(value, here)
-            return found
-
         tools = {tool['name']: tool for tool in published_mcp_tools(_schema())}
         self.assertLessEqual(set(DESTINATION_PATHS), set(tools))
         for name, tool in tools.items():
-            self.assertEqual(marked(tool['inputSchema']), DESTINATION_PATHS.get(name, set()), name)
+            self.assertEqual(destination_paths(tool['inputSchema']), DESTINATION_PATHS.get(name, set()), name)
 
     def test_published_names_match_gateway_email_prefix(self):
         from apps.authapi.mcp_views import _schema
