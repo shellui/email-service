@@ -54,6 +54,8 @@ MUST_ENUM: dict[str, set[str]] = {
 ALLOWED_UNMARKED: dict[str, set[str]] = {
     # The address to stop sending to. Nothing is sent to it.
     'email_create_suppressions': {'email'},
+    # A shared secret the provider signs its webhooks with. It is stored encrypted and never sent anywhere.
+    'email_replace_provider': {'webhook_secret'},
 }
 DESTINATION_PATHS: dict[str, set[str]] = {
     'email_broadcasts_preview': {'audience.emails'},
