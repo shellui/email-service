@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.10 /uv /uvx /bin/
 COPY --from=frontend /usr/local/bin/node /usr/local/bin/node
 
 COPY pyproject.toml uv.lock /opt/deps/
@@ -63,7 +63,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.10 /uv /uvx /bin/
 COPY --from=frontend /usr/local/bin/node /usr/local/bin/node
 
 COPY pyproject.toml uv.lock /app/
