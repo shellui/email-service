@@ -22,7 +22,7 @@ dependencies = [
     "requests==2.34.2",
     "redis==8.2.0",
     "celery==5.7.0",
-    "shellui-django[mcp,otel]==0.8.0",
+    "shellui-django[mcp,otel]==0.9.0",
 ]
 
 [dependency-groups]
@@ -30,3 +30,7 @@ dev = []
 
 [tool.uv]
 package = false
+
+# Temporary: shellui-django 0.9.0 is not on PyPI yet. Remove this source once it is released.
+[tool.uv.sources]
+shellui-django = { url = "https://github.com/shellui/django-commons/archive/63af654422ba7178807544307b51a7fe7aa53f5d.tar.gz" }

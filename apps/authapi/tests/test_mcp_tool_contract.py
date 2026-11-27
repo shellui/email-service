@@ -45,6 +45,25 @@ MUST_ENUM: dict[str, set[str]] = {
     'email_broadcasts_preview': {'audience.mode', 'audience.roles.items', 'audience.access'},
 }
 
+# Properties that name where a call sends something. Each must carry `x-mcp-destination` (on the items
+# for a list) so the gateway shows it first in the approval prompt.
+DESTINATION_PATHS: dict[str, set[str]] = {
+    'email_broadcasts_preview': {'audience.emails'},
+    'email_create_broadcasts': {'audience.emails'},
+    'email_update_broadcasts': {'audience.emails'},
+    'email_create_action_rules': {'url'},
+    'email_update_action_rules': {'url'},
+    'email_create_newsletters': {'allowed_origins', 'confirmed_redirect_url'},
+    'email_update_newsletters': {'allowed_origins', 'confirmed_redirect_url'},
+    'email_create_newsletters_subscribers': {'email'},
+    'email_create_rules': {'static_recipients'},
+    'email_update_rules': {'static_recipients'},
+    'email_replace_auth_link_hosts': {'hosts'},
+    'email_replace_provider': {'from_email', 'sending_domain', 'bulk_from_email', 'credentials.host'},
+    'email_send_test_templates': {'to'},
+    'email_test_send_provider': {'to'},
+}
+
 _BANNED_COPY = re.compile(r'\b(easy|simple|quick|seamless|robust|powerful|just|very|really|simply)\b', re.I)
 
 
@@ -135,6 +154,24 @@ class McpToolContractTests(TestCase):
                 self.assertIn(field, schema['required'], name)
             self.assertFalse(TRANSPORT_ARGUMENT_NAMES & set(schema['properties']), name)
             self.assertFalse(TRANSPORT_ARGUMENT_NAMES & set(schema['required']), name)
+
+    def test_destination_properties_are_marked_for_the_approval_prompt(self):
+        from apps.authapi.mcp_views import _schema
+
+        def marked(node: dict, path: str = '') -> set[str]:
+            found: set[str] = set()
+            for key, value in (node.get('properties') or {}).items():
+                here = f'{path}.{key}' if path else key
+                target = value.get('items') or {} if value.get('type') == 'array' else value
+                if target.get('x-mcp-destination') is True:
+                    found.add(here)
+                found |= marked(value, here)
+            return found
+
+        tools = {tool['name']: tool for tool in published_mcp_tools(_schema())}
+        self.assertLessEqual(set(DESTINATION_PATHS), set(tools))
+        for name, tool in tools.items():
+            self.assertEqual(marked(tool['inputSchema']), DESTINATION_PATHS.get(name, set()), name)
 
     def test_published_names_match_gateway_email_prefix(self):
         from apps.authapi.mcp_views import _schema

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rest_framework import serializers
+from shellui_django.mcp.fields import McpDestinationCharField
 
 from apps.actions.registry import event_type_ids
 from apps.authapi.mcp_fields import McpSecretCharField, McpSensitiveCharField, McpSensitiveJSONField
@@ -48,7 +49,7 @@ class ActionRuleCreateSerializer(serializers.Serializer):
         choices=event_type_ids(),
         help_text='Shellui Actions event id this rule receives.',
     )
-    url = serializers.CharField(help_text='Public HTTPS URL that receives the signed webhook.')
+    url = McpDestinationCharField(help_text='Public HTTPS URL that receives the signed webhook.')
     description = serializers.CharField(required=False, allow_blank=True)
     enabled = serializers.BooleanField(required=False)
     secret = McpSecretCharField(required=False, allow_blank=True)
@@ -59,7 +60,7 @@ class ActionRuleUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(required=False)
     description = serializers.CharField(required=False, allow_blank=True)
     enabled = serializers.BooleanField(required=False)
-    url = serializers.CharField(required=False)
+    url = McpDestinationCharField(required=False)
     newsletter_id = serializers.IntegerField(required=False, allow_null=True, help_text='email.newsletter.* rules only: only events of this list. Null or 0 clears it.')
 
 
