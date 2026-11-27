@@ -19,6 +19,7 @@ from apps.authapi.mcp_tool_schema import TRANSPORT_ARGUMENT_NAMES, published_mcp
 from apps.authapi.tests.test_mcp_endpoint import MCP_SETTINGS, _agent_token, _rpc
 from apps.authapi.tests.test_mcp_tool_calls import McpToolHappyPathTests, SPECS
 from shellui_django.mcp.approval_summary import destination_paths
+from shellui_django.mcp.destinations import lint_destination_names
 from shellui_django.mcp.openapi_tools import _client_prop_schema, tools_from_schema
 from shellui_django.mcp.write_gate import decide_write
 
@@ -48,6 +49,12 @@ MUST_ENUM: dict[str, set[str]] = {
 
 # Properties that name where a call sends something. Each must carry `x-mcp-destination` (on the items
 # for a list) so the gateway shows it first in the approval prompt.
+# Write-tool arguments whose name looks like a destination but that are not one. Anything new that looks like a
+# destination must be marked `x-mcp-destination` (fix the serializer) or be added here with a reason.
+ALLOWED_UNMARKED: dict[str, set[str]] = {
+    # The address to stop sending to. Nothing is sent to it.
+    'email_create_suppressions': {'email'},
+}
 DESTINATION_PATHS: dict[str, set[str]] = {
     'email_broadcasts_preview': {'audience.emails'},
     'email_create_broadcasts': {'audience.emails'},
@@ -163,6 +170,13 @@ class McpToolContractTests(TestCase):
         self.assertLessEqual(set(DESTINATION_PATHS), set(tools))
         for name, tool in tools.items():
             self.assertEqual(destination_paths(tool['inputSchema']), DESTINATION_PATHS.get(name, set()), name)
+
+    def test_fields_named_like_destinations_are_marked_or_allow_listed(self):
+        from apps.authapi.mcp_views import _schema
+
+        tools = published_mcp_tools(_schema())
+        self.assertTrue(all(tool['_meta'].get('destinations_declared') is True for tool in tools))
+        self.assertEqual(lint_destination_names(tools, allow=ALLOWED_UNMARKED), [])
 
     def test_published_names_match_gateway_email_prefix(self):
         from apps.authapi.mcp_views import _schema
