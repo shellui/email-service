@@ -97,7 +97,7 @@ def published_mcp_tools(schema: dict[str, Any]) -> list[dict[str, Any]]:
     """Tools an agent sees on ``tools/list``, including ``_meta`` for the call handler."""
     operations = _operations(schema)
     published: list[dict[str, Any]] = []
-    for tool in tools_from_schema(schema):
+    for tool in tools_from_schema(schema, destinations_declared=True):
         meta = tool.get('_meta') or {}
         operation = operations.get((str(meta.get('path') or ''), str(meta.get('method') or '').upper()))
         if operation is None:

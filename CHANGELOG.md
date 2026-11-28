@@ -25,6 +25,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🚨 Changed
 
+- Request fields that name a destination are marked `x-mcp-destination` in the OpenAPI schema and the MCP tool schemas: `to`, `static_recipients`, `audience.emails`, subscriber `email`, `from_email`, `bulk_from_email`, `sending_domain`, `credentials.host`, `hosts`, `allowed_origins`, `confirmed_redirect_url` and the action rule `url`. The gateway reads the marker to show those values first and in full on the approval prompt. No request or response changes. Needs `shellui-django` 0.9.0.
+- The contract test fails when a new write-tool argument named like a destination (`*url`, `*uri`, `*host`, `*email`, `*domain`, `*origin`, `redirect*`, `callback*`) is neither marked `x-mcp-destination` nor on a short allow-list, and the tools now declare `destinations_declared` so the approval prompt does not warn about them. No request or response changes. The suppression `email` is allow-listed: it is the address to stop sending to.
 - `shellui-django` 0.8.0 with Django 6.1.3, Django REST framework 3.18.3 and drf-spectacular 0.30.0. The shellui-django pins are exact, so these move together.
 - gunicorn 27.0.1. A request whose `Transfer-Encoding` does not end with `chunked` (for example `identity` alone) now gets HTTP 400. No gunicorn setting changed.
 - Django 6.1 requires PostgreSQL 15 or newer, and drops 14. Check the database of any deployment before upgrading.

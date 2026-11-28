@@ -5,6 +5,7 @@ from __future__ import annotations
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter
 from rest_framework import serializers
+from shellui_django.mcp.fields import McpDestinationCharField, McpDestinationEmailField
 
 from apps.authapi.mcp_fields import McpSecretCharField, McpSensitiveCharField, McpSensitiveJSONField
 from apps.email.catalog import LANGUAGES, LANES, catalog_event_types, catalog_services, rule_event_types
@@ -406,7 +407,7 @@ class TemplatePublishResponseSerializer(serializers.Serializer):
 
 
 class TemplateTestSendRequestSerializer(serializers.Serializer):
-    to = serializers.EmailField(required=False)
+    to = McpDestinationEmailField(required=False)
     subject = serializers.CharField(required=False)
     preheader = serializers.CharField(required=False, allow_blank=True)
     document = serializers.JSONField(required=False)
@@ -488,7 +489,7 @@ class EmailRuleWriteSerializer(serializers.Serializer):
         required=False,
         help_text='hints uses addresses on the event. static uses static_recipients.',
     )
-    static_recipients = serializers.ListField(child=serializers.CharField(), required=False)
+    static_recipients = serializers.ListField(child=McpDestinationCharField(), required=False)
     language = serializers.ChoiceField(
         choices=LANGUAGES,
         required=False,
@@ -507,7 +508,7 @@ class EmailRulePatchSerializer(serializers.Serializer):
         required=False,
         help_text='hints uses addresses on the event. static uses static_recipients.',
     )
-    static_recipients = serializers.ListField(child=serializers.CharField(), required=False)
+    static_recipients = serializers.ListField(child=McpDestinationCharField(), required=False)
     language = serializers.ChoiceField(
         choices=LANGUAGES,
         required=False,
@@ -520,7 +521,7 @@ class EmailRulePatchSerializer(serializers.Serializer):
 
 class ProviderCredentialsSerializer(serializers.Serializer):
     api_key = McpSecretCharField(required=False)
-    host = serializers.CharField(required=False)
+    host = McpDestinationCharField(required=False)
     port = serializers.IntegerField(required=False)
     username = serializers.CharField(required=False, allow_blank=True)
     password = McpSecretCharField(required=False)
@@ -558,7 +559,7 @@ class AuthLinkHostsSerializer(serializers.Serializer):
 
 
 class AuthLinkHostsWriteSerializer(serializers.Serializer):
-    hosts = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+    hosts = serializers.ListField(child=McpDestinationCharField(), allow_empty=True)
 
 
 class ProviderWriteSerializer(serializers.Serializer):
@@ -566,16 +567,16 @@ class ProviderWriteSerializer(serializers.Serializer):
         choices=['resend', 'ses', 'smtp'],
         help_text='Sending provider: resend, ses, or smtp.',
     )
-    from_email = serializers.EmailField()
+    from_email = McpDestinationEmailField()
     from_name = serializers.CharField(required=False, allow_blank=True)
-    sending_domain = serializers.CharField(required=False, allow_blank=True)
-    bulk_from_email = serializers.CharField(required=False, allow_blank=True)
+    sending_domain = McpDestinationCharField(required=False, allow_blank=True)
+    bulk_from_email = McpDestinationCharField(required=False, allow_blank=True)
     credentials = ProviderCredentialsSerializer(required=False)
     webhook_secret = McpSecretCharField(required=False, allow_blank=True)
 
 
 class ProviderTestSendRequestSerializer(serializers.Serializer):
-    to = serializers.EmailField(required=False)
+    to = McpDestinationEmailField(required=False)
 
 
 class CountSerializer(serializers.Serializer):
@@ -732,7 +733,7 @@ class BroadcastAudienceSerializer(serializers.Serializer):
     seen_after = serializers.CharField(required=False, allow_blank=True, help_text='ISO date.')
     seen_before = serializers.CharField(required=False, allow_blank=True, help_text='ISO date, inclusive. Never-seen users match.')
     user_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
-    emails = serializers.ListField(child=serializers.CharField(), required=False, help_text='Addresses outside the directory. They get the main language.')
+    emails = serializers.ListField(child=McpDestinationCharField(), required=False, help_text='Addresses outside the directory. They get the main language.')
 
 
 class BroadcastCountsSerializer(serializers.Serializer):
@@ -849,8 +850,8 @@ class NewsletterWriteSerializer(serializers.Serializer):
         required=False,
         help_text='en or fr. Default en.',
     )
-    allowed_origins = serializers.ListField(child=serializers.CharField(), required=False)
-    confirmed_redirect_url = serializers.CharField(required=False, allow_blank=True)
+    allowed_origins = serializers.ListField(child=McpDestinationCharField(), required=False)
+    confirmed_redirect_url = McpDestinationCharField(required=False, allow_blank=True)
     turnstile_site_key = serializers.CharField(required=False, allow_blank=True)
     turnstile_secret = McpSecretCharField(
         required=False,
@@ -869,8 +870,8 @@ class NewsletterCreateSerializer(serializers.Serializer):
         required=False,
         help_text='en or fr. Default en.',
     )
-    allowed_origins = serializers.ListField(child=serializers.CharField(), required=False)
-    confirmed_redirect_url = serializers.CharField(required=False, allow_blank=True)
+    allowed_origins = serializers.ListField(child=McpDestinationCharField(), required=False)
+    confirmed_redirect_url = McpDestinationCharField(required=False, allow_blank=True)
     turnstile_site_key = serializers.CharField(required=False, allow_blank=True)
     turnstile_secret = McpSecretCharField(
         required=False,
@@ -900,7 +901,7 @@ class NewsletterSubscriberPageSerializer(serializers.Serializer):
 
 
 class NewsletterSubscriberCreateSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    email = McpDestinationEmailField()
     first_name = serializers.CharField(required=False, allow_blank=True)
     language = serializers.ChoiceField(
         choices=LANGUAGES,
