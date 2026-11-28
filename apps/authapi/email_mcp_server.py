@@ -233,7 +233,7 @@ class EmailMcpServer(McpServer):
             arguments = {}
         req_trace = (getattr(request, 'request_id', None) or '').strip() or None
         schema = self.schema_provider()
-        tools = tools_from_schema(schema)
+        tools = tools_from_schema(schema, destinations_declared=True)
         tool = next((t for t in tools if t['name'] == tool_name), None)
         if tool is None:
             return JsonResponse(self._error(req_id, -32602, 'Unknown tool'))

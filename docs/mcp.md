@@ -120,6 +120,8 @@ x-mcp:
 
 Response fields can carry `x-mcp-secret` (never return to agents) or `x-mcp-sensitive` (mask in read-safe MCP modes).
 
+Request fields that say where a call sends something carry `x-mcp-destination: true` (on the list items for a list). The gateway shows those values first, in full, when a person approves the call. Here they are: `to` (test sends), `static_recipients`, `audience.emails`, `email` (newsletter subscriber), `from_email`, `bulk_from_email`, `sending_domain`, `credentials.host`, `hosts` (auth link hosts), `allowed_origins`, `confirmed_redirect_url` and the action rule `url`. Declare a new field with `McpDestinationCharField`, `McpDestinationEmailField` or `McpDestinationURLField` from `shellui_django.mcp.fields`, and add its path to `DESTINATION_PATHS` in `apps/authapi/tests/test_mcp_tool_contract.py`.
+
 ## Endpoints available to agents
 
 The tables list the HTTP API. Paths are under `/api/v1/`. Agents act as the company owner for the JWT `company_id`.

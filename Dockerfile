@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:22-bookworm-slim AS frontend
+FROM node:26-bookworm-slim AS frontend
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ COPY templates ./templates
 COPY renderer ./renderer
 RUN npm run build:css
 
-FROM python:3.14-slim AS dev
+FROM python:3.14.10-slim AS dev
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.10 /uv /uvx /bin/
 COPY --from=frontend /usr/local/bin/node /usr/local/bin/node
 
 COPY pyproject.toml uv.lock /opt/deps/
@@ -47,7 +47,7 @@ RUN chmod +x /usr/local/bin/docker-dev-entrypoint.sh
 ENTRYPOINT ["docker-dev-entrypoint.sh"]
 CMD ["web"]
 
-FROM python:3.14-slim AS production
+FROM python:3.14.10-slim AS production
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -63,7 +63,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.10 /uv /uvx /bin/
 COPY --from=frontend /usr/local/bin/node /usr/local/bin/node
 
 COPY pyproject.toml uv.lock /app/

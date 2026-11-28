@@ -81,7 +81,8 @@
                 "description": "Addresses outside the directory. They get the main language.",
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "type": "string",
+                  "x-mcp-destination": true
                 }
               }
             },
@@ -176,7 +177,8 @@
           },
           "url": {
             "description": "Public HTTPS URL that receives the signed webhook.",
-            "type": "string"
+            "type": "string",
+            "x-mcp-destination": true
           },
           "description": {
             "type": "string"
@@ -302,7 +304,8 @@
                 "description": "Addresses outside the directory. They get the main language.",
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "type": "string",
+                  "x-mcp-destination": true
                 }
               }
             },
@@ -392,11 +395,13 @@
           "allowed_origins": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "x-mcp-destination": true
             }
           },
           "confirmed_redirect_url": {
-            "type": "string"
+            "type": "string",
+            "x-mcp-destination": true
           },
           "turnstile_site_key": {
             "type": "string"
@@ -428,7 +433,8 @@
           },
           "email": {
             "type": "string",
-            "format": "email"
+            "format": "email",
+            "x-mcp-destination": true
           },
           "first_name": {
             "type": "string"
@@ -525,7 +531,8 @@
           "static_recipients": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "x-mcp-destination": true
             }
           },
           "language": {
@@ -1727,7 +1734,8 @@
           "hosts": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "x-mcp-destination": true
             }
           }
         },
@@ -1810,16 +1818,19 @@
           },
           "from_email": {
             "type": "string",
-            "format": "email"
+            "format": "email",
+            "x-mcp-destination": true
           },
           "from_name": {
             "type": "string"
           },
           "sending_domain": {
-            "type": "string"
+            "type": "string",
+            "x-mcp-destination": true
           },
           "bulk_from_email": {
-            "type": "string"
+            "type": "string",
+            "x-mcp-destination": true
           },
           "credentials": {
             "type": "object",
@@ -1828,7 +1839,8 @@
                 "type": "string"
               },
               "host": {
-                "type": "string"
+                "type": "string",
+                "x-mcp-destination": true
               },
               "port": {
                 "type": "integer"
@@ -1976,7 +1988,8 @@
           },
           "to": {
             "type": "string",
-            "format": "email"
+            "format": "email",
+            "x-mcp-destination": true
           },
           "subject": {
             "type": "string"
@@ -2017,7 +2030,8 @@
           },
           "to": {
             "type": "string",
-            "format": "email"
+            "format": "email",
+            "x-mcp-destination": true
           }
         },
         "required": [],
@@ -2048,7 +2062,8 @@
             "type": "boolean"
           },
           "url": {
-            "type": "string"
+            "type": "string",
+            "x-mcp-destination": true
           },
           "newsletter_id": {
             "description": "email.newsletter.* rules only: only events of this list. Null or 0 clears it.",
@@ -2151,7 +2166,8 @@
                 "description": "Addresses outside the directory. They get the main language.",
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "type": "string",
+                  "x-mcp-destination": true
                 }
               }
             },
@@ -2198,11 +2214,13 @@
           "allowed_origins": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "x-mcp-destination": true
             }
           },
           "confirmed_redirect_url": {
-            "type": "string"
+            "type": "string",
+            "x-mcp-destination": true
           },
           "turnstile_site_key": {
             "type": "string"
@@ -2250,7 +2268,8 @@
           "static_recipients": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "x-mcp-destination": true
             }
           },
           "language": {

@@ -21,6 +21,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.10.0] - 2026-11-28
+
+### 🚨 Changed
+
+- Request fields that name a destination are marked `x-mcp-destination` in the OpenAPI schema and the MCP tool schemas: `to`, `static_recipients`, `audience.emails`, subscriber `email`, `from_email`, `bulk_from_email`, `sending_domain`, `credentials.host`, `hosts`, `allowed_origins`, `confirmed_redirect_url` and the action rule `url`. The gateway reads the marker to show those values first and in full on the approval prompt. No request or response changes. Needs `shellui-django` 0.9.0.
+- The contract test fails when a new write-tool argument named like a destination (`*url`, `*uri`, `*host`, `*email`, `*domain`, `*origin`, `redirect*`, `callback*`) is neither marked `x-mcp-destination` nor on a short allow-list, and the tools now declare `destinations_declared` so the approval prompt does not warn about them. No request or response changes. The suppression `email` is allow-listed: it is the address to stop sending to.
+- `shellui-django` 0.9.0 with Django 6.1.3, Django REST framework 3.18.3 and drf-spectacular 0.30.0. The shellui-django pins are exact, so these move together.
+- gunicorn 27.0.1. A request whose `Transfer-Encoding` does not end with `chunked` (for example `identity` alone) now gets HTTP 400. No gunicorn setting changed.
+- Django 6.1 requires PostgreSQL 15 or newer, and drops 14. Check the database of any deployment before upgrading.
+- drf-spectacular 0.30 describes blank URL and slug fields as `oneOf` (the field's format or an empty string) in the OpenAPI schema. Generated clients and the published schema see that change. The API itself does not change.
+
+### 🔒 Security
+
+- Django 6.1.3 includes the Django security releases of October and November 2026, among them a fix for memory use when parsing large multipart uploads.
+
+### 🏗 Chore
+
+- Node.js 26, the current LTS, for the image build stage and CI.
+- GitHub Actions: actions/checkout v7, actions/setup-node v7, astral-sh/setup-uv v10.4.0, docker/build-push-action v7, docker/login-action v4, docker/metadata-action v6, docker/setup-buildx-action v4, docker/setup-qemu-action v4, peter-evans/dockerhub-description v5.0.0.
+- Python dependencies: python-dotenv 1.2.4, psycopg 3.3.9, sentry-sdk 2.77.0, cryptography 50.0.2, requests 2.34.2, redis 8.2.0, celery 5.7.0.
+- npm dependencies: @react-email/editor 1.8.12, @react-email/render 2.3.1, react 19.3.1, react-dom 19.3.1, react-email 6.11.17, @tailwindcss/cli 4.3.5, tailwindcss 4.3.5.
+- CI runs `manage.py makemigrations --check --dry-run`, so a model change without a migration fails the build.
+- CI pins Python 3.14.10 and uv 0.13.10, and the Dockerfile copies the same uv, so CI and the image run the same interpreter and the same tool.
+
 ## [0.9.3] - 2026-11-25
 
 ### 🛠 Improvements

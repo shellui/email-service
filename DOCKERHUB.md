@@ -6,7 +6,7 @@ email-service sends mail for Shellui. identity-service, storage-service, and hos
 
 The production stage is `python:3.14-slim`. Gunicorn listens on port 8000. The entrypoint is `/app/tools/docker-entrypoint.sh`, and the process runs as the non-root user `appuser`.
 
-The default command migrates, then starts Gunicorn, the scheduler, and a worker per mail lane (auth, transactional, bulk). Pass `worker` to run the scheduler and lane workers without Gunicorn or migrations. The image includes Node.js 22 for React Email rendering. The image declares a volume at `/app/data`.
+The default command migrates, then starts Gunicorn, the scheduler, and a worker per mail lane (auth, transactional, bulk). Pass `worker` to run the scheduler and lane workers without Gunicorn or migrations. The image includes Node.js 26 for React Email rendering. The image declares a volume at `/app/data`.
 
 ## Start with docker run
 
